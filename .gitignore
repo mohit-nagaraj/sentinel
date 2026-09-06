@@ -1,0 +1,21 @@
+node_modules/
+.turbo/
+.next/
+dist/
+out/
+_pagefind/
+.playwright-cli/
+output/playwright/
+.context/
+.claude/hooks/
+# Secrets and local environment files
+.env
+.env.*
+!.env.example
+*Neo4j*Created*.txt
+*.private-key.pem
+github-app*.pem
+
+*.tsbuildinfo
+excalidraw.log
+
