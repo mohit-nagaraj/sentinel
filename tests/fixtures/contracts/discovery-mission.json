@@ -26,11 +26,17 @@
   "budget": {
     "toolCalls": 15,
     "contentBytes": 50000,
+    "documentBytes": 0,
+    "documentPages": 0,
+    "documentSections": 0,
     "sourceLines": 500,
+    "repositoryBytes": 5000000,
+    "repositoryFiles": 1000,
     "browserActions": 0,
     "modelCalls": 8,
     "modelInputTokens": 12000,
     "modelOutputTokens": 4000,
+    "reconciliationRounds": 0,
     "elapsedMs": 120000
   },
   "successCriteria": [

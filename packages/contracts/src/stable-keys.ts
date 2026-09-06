@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { createStableEntityId } from "./identity.ts"
+import { hashCanonical } from "./identity.ts"
 import {
   applicationIdSchema,
   commitShaSchema,
@@ -10,6 +10,7 @@ import {
   documentSourceIdSchema,
   httpMethodSchema,
   normalizedPathSchema,
+  publicHttpUrlSchema,
   reasonCodeSchema,
   repositoryIdentitySchema,
   repositoryPathSchema,
@@ -17,6 +18,7 @@ import {
   runIdSchema,
   shortTextSchema,
   sourceUriSchema,
+  stableEntityIdSchema,
   screenIdSchema,
   type StableEntityId,
   workflowIdSchema,
@@ -27,7 +29,7 @@ const applicationIdField = { applicationId: applicationIdSchema }
 export const stableKeyInputSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("application"),
-    deploymentUrl: z.url({ protocol: /^https?$/ }),
+    deploymentUrl: publicHttpUrlSchema,
     repository: repositoryIdentitySchema,
   }),
   z.strictObject({
@@ -85,6 +87,7 @@ export const stableKeyInputSchema = z.discriminatedUnion("kind", [
     screenId: screenIdSchema,
     role: reasonCodeSchema,
     accessibleName: shortTextSchema,
+    contextFingerprint: contentHashSchema,
   }),
   z.strictObject({
     kind: z.literal("frontend-route"),
@@ -141,5 +144,10 @@ export type StableKeyInput = z.infer<typeof stableKeyInputSchema>
 
 export function createStableKey(input: StableKeyInput): StableEntityId {
   const parsed = stableKeyInputSchema.parse(input)
-  return createStableEntityId(parsed.kind, parsed)
+  const digest = hashCanonical({
+    identity: parsed,
+    kind: parsed.kind,
+    version: 1,
+  }).slice("sha256:".length)
+  return stableEntityIdSchema.parse(`${parsed.kind}:v1:${digest}`)
 }

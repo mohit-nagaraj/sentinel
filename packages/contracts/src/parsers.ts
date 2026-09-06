@@ -13,6 +13,7 @@ import {
   codeFactEnvelopeSchema,
   codeSymbolFactSchema,
   documentFactEnvelopeSchema,
+  evidenceReferenceSchema,
   requirementCandidateSchema,
 } from "./facts.ts"
 import {
@@ -44,6 +45,8 @@ export const parseRequirementCandidate = (input: unknown) =>
   parseContract("requirement candidate", requirementCandidateSchema, input)
 export const parseCodeSymbolFact = (input: unknown) =>
   parseContract("code symbol", codeSymbolFactSchema, input)
+export const parseEvidenceReference = (input: unknown) =>
+  parseContract("evidence reference", evidenceReferenceSchema, input)
 export const parseBrowserTransition = (input: unknown) =>
   parseContract("browser transition", browserTransitionSchema, input)
 export const parseEvidenceLink = (input: unknown) =>

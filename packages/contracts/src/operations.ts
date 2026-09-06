@@ -7,8 +7,11 @@ import {
   commitShaSchema,
   contentHashSchema,
   evidenceIdSchema,
+  hostnameSchema,
   missionIdSchema,
   nonEmptyStringSchema,
+  persistedTextSchema,
+  publicHttpUrlSchema,
   reasonCodeSchema,
   repositoryIdentitySchema,
   repositoryPathSchema,
@@ -42,7 +45,7 @@ export const applicationSchema = z.strictObject({
   schemaVersion: schemaVersionSchema,
   id: applicationIdSchema,
   name: shortTextSchema,
-  deploymentUrl: z.url({ protocol: /^https?$/ }),
+  deploymentUrl: publicHttpUrlSchema,
   status: applicationStatusSchema,
   indexedCommitSha: commitShaSchema.optional(),
   graphRevision: z.number().int().nonnegative(),
@@ -80,7 +83,8 @@ export const runSchema = z.strictObject({
   applicationId: applicationIdSchema,
   type: runTypeSchema,
   status: runStatusSchema,
-  idempotencyKey: z.string().trim().min(1).max(512),
+  idempotencyKey: persistedTextSchema,
+  budget: z.lazy(() => executionBudgetSchema),
   createdAt: timestampSchema,
   startedAt: timestampSchema.optional(),
   finishedAt: timestampSchema.optional(),
@@ -100,24 +104,29 @@ export const missionModeSchema = z.enum([
   "flow_recovery",
 ])
 
-export const missionBudgetSchema = z.strictObject({
+export const executionBudgetSchema = z.strictObject({
   toolCalls: z.number().int().nonnegative(),
   contentBytes: z.number().int().nonnegative(),
+  documentBytes: z.number().int().nonnegative(),
+  documentPages: z.number().int().nonnegative(),
+  documentSections: z.number().int().nonnegative(),
   sourceLines: z.number().int().nonnegative(),
+  repositoryBytes: z.number().int().nonnegative(),
+  repositoryFiles: z.number().int().nonnegative(),
   browserActions: z.number().int().nonnegative(),
   modelCalls: z.number().int().nonnegative(),
   modelInputTokens: z.number().int().nonnegative(),
   modelOutputTokens: z.number().int().nonnegative(),
+  reconciliationRounds: z.number().int().nonnegative(),
   elapsedMs: z.number().int().nonnegative(),
 })
+
+export const missionBudgetSchema = executionBudgetSchema
 
 export const missionScopeSchema = z.strictObject({
   repositoryPaths: z.array(repositoryPathSchema).max(100).default([]),
   sourceUris: z.array(sourceUriSchema).max(100).default([]),
-  allowedHosts: z
-    .array(z.string().trim().toLowerCase().min(1).max(253))
-    .max(50)
-    .default([]),
+  allowedHosts: z.array(hostnameSchema).max(50).default([]),
   allowedTools: z.array(reasonCodeSchema).min(1).max(50),
 })
 
@@ -149,12 +158,12 @@ export const discoveryMissionSchema = z
     applicationId: applicationIdSchema,
     agent: agentKindSchema.exclude(["curator", "system"]),
     mode: missionModeSchema,
-    goal: nonEmptyStringSchema,
+    goal: persistedTextSchema,
     seedEvidenceIds: z.array(evidenceIdSchema).max(100),
-    questions: z.array(nonEmptyStringSchema).min(1).max(20),
+    questions: z.array(persistedTextSchema).min(1).max(20),
     scope: missionScopeSchema,
     budget: missionBudgetSchema,
-    successCriteria: z.array(nonEmptyStringSchema).min(1).max(20),
+    successCriteria: z.array(persistedTextSchema).min(1).max(20),
   })
   .superRefine(({ agent, mode }, context) => {
     if (!modesByAgent[agent].has(mode)) {
@@ -167,18 +176,19 @@ export const discoveryMissionSchema = z
   })
 
 export const unresolvedQuestionSchema = z.strictObject({
-  question: nonEmptyStringSchema,
+  question: persistedTextSchema,
   reasonCode: reasonCodeSchema,
   evidenceIds: z.array(evidenceIdSchema).max(100),
 })
 
 export const proposedClaimSchema = z.strictObject({
   id: claimIdSchema,
+  status: z.literal("proposed"),
   subjectId: stableEntityIdSchema,
   predicate: reasonCodeSchema,
   objectId: stableEntityIdSchema,
   evidenceIds: z.array(evidenceIdSchema).min(1).max(100),
-  explanation: nonEmptyStringSchema,
+  explanation: persistedTextSchema,
 })
 
 export const missionResultSchema = z.strictObject({
@@ -191,7 +201,7 @@ export const missionResultSchema = z.strictObject({
   suggestedFollowups: z.array(discoveryMissionSchema).max(20),
   stopReason: z.strictObject({
     code: reasonCodeSchema,
-    summary: nonEmptyStringSchema,
+    summary: persistedTextSchema,
   }),
   budgetUsed: missionBudgetSchema,
 })

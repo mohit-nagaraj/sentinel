@@ -5,7 +5,7 @@ import {
   eventIdSchema,
   evidenceIdSchema,
   missionIdSchema,
-  nonEmptyStringSchema,
+  persistedTextSchema,
   reasonCodeSchema,
   runIdSchema,
   schemaVersionSchema,
@@ -41,7 +41,7 @@ export const publicErrorSchema = z.strictObject({
     "unknown",
   ]),
   code: reasonCodeSchema,
-  message: nonEmptyStringSchema,
+  message: persistedTextSchema,
   retryable: z.boolean(),
 })
 
@@ -58,7 +58,7 @@ export const runEventSchema = z.strictObject({
   nodeName: reasonCodeSchema.optional(),
   toolName: reasonCodeSchema.optional(),
   status: z.enum(["started", "completed", "warning", "failed", "blocked"]),
-  summary: nonEmptyStringSchema,
+  summary: persistedTextSchema,
   reasonCode: reasonCodeSchema,
   evidenceIds: z.array(evidenceIdSchema).max(100),
   budget: z

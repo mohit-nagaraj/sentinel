@@ -12,6 +12,7 @@ import {
   createRunScopedEvidenceId,
   createStableKey,
   hashCanonical,
+  repositoryPathSchema,
   runIdSchema,
   stableKeyInputSchema,
 } from "@sentinel/contracts"
@@ -96,6 +97,7 @@ const stableKeyInputs: readonly unknown[] = [
     screenId,
     role: "button",
     accessibleName: "Continue",
+    contextFingerprint: hash,
   },
   {
     kind: "frontend-route",
@@ -169,6 +171,80 @@ describe("canonical identity", () => {
     expect(first).toMatch(new RegExp(`^${parsed.kind}:v1:[a-f0-9]{64}$`))
   })
 
+  it("normalizes public URLs before building stable keys", () => {
+    const lower = stableKeyInputSchema.parse({
+      kind: "application",
+      deploymentUrl: "https://demo.example.com",
+      repository,
+    })
+    const mixedCase = stableKeyInputSchema.parse({
+      kind: "application",
+      deploymentUrl: "https://DEMO.EXAMPLE.COM/",
+      repository,
+    })
+
+    expect(createStableKey(lower)).toBe(createStableKey(mixedCase))
+  })
+
+  it("normalizes GitHub repository casing and distinguishes repeated controls", () => {
+    const lowerRepositoryKey = createStableKey(
+      stableKeyInputSchema.parse({
+        kind: "code-file",
+        applicationId: appId,
+        repository,
+        commitSha,
+        path: "frontend/src/Checkout.tsx",
+      })
+    )
+    const mixedRepositoryKey = createStableKey(
+      stableKeyInputSchema.parse({
+        kind: "code-file",
+        applicationId: appId,
+        repository: {
+          host: "GitHub.com",
+          owner: "Mohit-Nagaraj",
+          name: "HI.EVENTS",
+        },
+        commitSha,
+        path: "frontend/src/Checkout.tsx",
+      })
+    )
+    expect(mixedRepositoryKey).toBe(lowerRepositoryKey)
+
+    const firstControl = createStableKey(
+      stableKeyInputSchema.parse({
+        kind: "ui-element",
+        applicationId: appId,
+        screenId,
+        role: "button",
+        accessibleName: "Remove",
+        contextFingerprint: hash,
+      })
+    )
+    const secondControl = createStableKey(
+      stableKeyInputSchema.parse({
+        kind: "ui-element",
+        applicationId: appId,
+        screenId,
+        role: "button",
+        accessibleName: "Remove",
+        contextFingerprint:
+          "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      })
+    )
+    expect(secondControl).not.toBe(firstControl)
+  })
+
+  it.each([
+    "C:\\Windows\\win.ini",
+    "\\\\server\\share\\secret",
+    "folder\\file.ts",
+    "../secret",
+    "/absolute/path",
+  ])("rejects unsafe repository path %s", (path) => {
+    expect(repositoryPathSchema.safeParse(path).success).toBe(false)
+  })
+
   it("rejects values outside canonical JSON", () => {
     expect(() => hashCanonical({ invalid: undefined })).toThrow(
       "undefined at $.invalid is not canonical JSON"
@@ -179,20 +255,78 @@ describe("canonical identity", () => {
     const circular: Record<string, unknown> = {}
     circular["self"] = circular
     expect(() => hashCanonical(circular)).toThrow("Circular reference")
+
+    const accessor = Object.defineProperty({}, "secret", {
+      enumerable: true,
+      get: () => "must-not-run",
+    })
+    expect(() => hashCanonical(accessor)).toThrow("Accessor")
   })
 
   it("creates distinct branded evidence and workflow identifiers", () => {
     const runId = runIdSchema.parse("run:11111111-1111-4111-8111-111111111111")
-    const identity = { source: "fixture", ordinal: 1 }
+    const missionId = createMissionId({
+      applicationId: appId,
+      runId,
+      agent: "code",
+      mode: "implementation_trace",
+      ordinal: 1,
+    })
+    const claimId = createClaimId({
+      applicationId: appId,
+      missionId,
+      subjectId:
+        "api-endpoint:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      predicate: "handled_by",
+      objectId:
+        "code-symbol:v1:1111111111111111111111111111111111111111111111111111111111111111",
+      ordinal: 1,
+    })
+    const evidenceId = createRunScopedEvidenceId({
+      applicationId: appId,
+      runId,
+      sourceId:
+        "code-symbol:v1:1111111111111111111111111111111111111111111111111111111111111111",
+      kind: "source_range",
+      ordinal: 1,
+    })
+    const artifactId = createArtifactId({
+      applicationId: appId,
+      contentHash: hash,
+      kind: "screenshot",
+    })
+    const actionId = createActionId({
+      applicationId: appId,
+      runId,
+      stateFingerprint: hash,
+      actionType: "click",
+      ordinal: 1,
+    })
+    const findingId = createFindingId({
+      applicationId: appId,
+      pullRequestId:
+        "pull-request:v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      titleFingerprint: hash,
+    })
 
-    expect(createMissionId(identity)).toMatch(/^mission:v1:[a-f0-9]{64}$/)
-    expect(createClaimId(identity)).toMatch(/^claim:v1:[a-f0-9]{64}$/)
-    expect(createRunScopedEvidenceId(runId, identity)).toMatch(
-      /^evidence:v1:[a-f0-9]{64}$/
-    )
-    expect(createArtifactId(identity)).toMatch(/^artifact:v1:[a-f0-9]{64}$/)
-    expect(createActionId(runId, identity)).toMatch(/^action:v1:[a-f0-9]{64}$/)
+    expect(missionId).toMatch(/^mission:v1:[a-f0-9]{64}$/)
+    expect(claimId).toMatch(/^claim:v1:[a-f0-9]{64}$/)
+    expect(evidenceId).toMatch(/^evidence:v1:[a-f0-9]{64}$/)
+    expect(artifactId).toMatch(/^artifact:v1:[a-f0-9]{64}$/)
+    expect(actionId).toMatch(/^action:v1:[a-f0-9]{64}$/)
     expect(createEventId(runId, 1)).toMatch(/^event:v1:[a-f0-9]{64}$/)
-    expect(createFindingId(identity)).toMatch(/^finding:v1:[a-f0-9]{64}$/)
+    expect(findingId).toMatch(/^finding:v1:[a-f0-9]{64}$/)
+
+    expect(() => createMissionId({ ordinal: 1 })).toThrow()
+    expect(
+      createMissionId({
+        applicationId:
+          "application:v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        runId,
+        agent: "code",
+        mode: "implementation_trace",
+        ordinal: 1,
+      })
+    ).not.toBe(missionId)
   })
 })

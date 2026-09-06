@@ -5,11 +5,32 @@ export const WIRE_SCHEMA_VERSION = 1 as const
 export const schemaVersionSchema = z.literal(WIRE_SCHEMA_VERSION)
 export const nonEmptyStringSchema = z.string().trim().min(1).max(4_096)
 export const shortTextSchema = z.string().trim().min(1).max(512)
+const sensitiveTextPatterns = [
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/i,
+  /\b(?:authorization|proxy-authorization)\s*:\s*(?:basic|bearer)\s+\S+/i,
+  /\b(?:cookie|set-cookie)\s*:\s*\S+/i,
+  /\b(?:api[_-]?key|client[_-]?secret|password|private[_-]?key|secret|token)\s*[:=]\s*\S+/i,
+  /\bgh[pousr]_[A-Za-z0-9]{20,}\b/,
+  /\bsk-[A-Za-z0-9_-]{20,}\b/,
+] as const
+
+export const persistedTextSchema = nonEmptyStringSchema.refine(
+  (value) => !sensitiveTextPatterns.some((pattern) => pattern.test(value)),
+  { message: "Persisted text contains credential or secret material" }
+)
 export const reasonCodeSchema = z
   .string()
   .regex(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/)
   .max(96)
 export const timestampSchema = z.iso.datetime({ offset: true })
+export const hostnameSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .refine(
+    (value) => value === "localhost" || z.hostname().safeParse(value).success,
+    { message: "Invalid hostname" }
+  )
 export const commitShaSchema = z
   .string()
   .regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/)
@@ -24,12 +45,48 @@ export const repositoryPathSchema = z
   .min(1)
   .max(2_048)
   .refine(
-    (value) => !value.startsWith("/") && !value.split(/[\\/]/).includes(".."),
+    (value) =>
+      !value.startsWith("/") &&
+      !value.startsWith("\\") &&
+      !/^[A-Za-z]:/.test(value) &&
+      !value.includes("\\") &&
+      !value.split("/").includes(".."),
     {
       message: "Repository paths must be relative and cannot traverse parents",
     }
   )
-const httpUrlSchema = z.url({ protocol: /^https?$/ })
+const sensitiveQueryKey =
+  /(?:api[_-]?key|password|private[_-]?key|secret|signature|token)/i
+
+function normalizePublicUrl(value: string): string {
+  const url = new URL(value)
+  url.hash = ""
+  url.searchParams.sort()
+  return url.toString()
+}
+
+export const publicHttpUrlSchema = z
+  .url({ protocol: /^https?$/ })
+  .superRefine((value, context) => {
+    const url = new URL(value)
+    if (url.username.length > 0 || url.password.length > 0) {
+      context.addIssue({
+        code: "custom",
+        message: "Public URLs cannot contain credentials",
+      })
+    }
+
+    for (const key of url.searchParams.keys()) {
+      if (sensitiveQueryKey.test(key)) {
+        context.addIssue({
+          code: "custom",
+          message: `Public URLs cannot contain sensitive query parameter ${key}`,
+        })
+      }
+    }
+  })
+  .transform(normalizePublicUrl)
+
 export const sourceUriSchema = z
   .string()
   .min(1)
@@ -51,13 +108,17 @@ export const sourceUriSchema = z
       return
     }
 
-    if (!httpUrlSchema.safeParse(value).success) {
+    const result = publicHttpUrlSchema.safeParse(value)
+    if (!result.success) {
       context.addIssue({
         code: "custom",
-        message: "Source URIs must use HTTP, HTTPS, or repository://",
+        message: result.error.issues[0]?.message ?? "Invalid source URI",
       })
     }
   })
+  .transform((value) =>
+    value.startsWith("repository://") ? value : publicHttpUrlSchema.parse(value)
+  )
 
 export const runIdSchema = z
   .string()
@@ -175,6 +236,13 @@ export const httpMethodSchema = z.enum([
   "PUT",
 ])
 export const evidenceTierSchema = z.enum(["A", "B", "C", "D"])
+export const evidenceStatusSchema = z.enum([
+  "captured",
+  "validated",
+  "rejected",
+  "expired",
+])
+export const claimStatusSchema = z.enum(["proposed", "superseded", "withdrawn"])
 export const reviewStateSchema = z.enum([
   "not_required",
   "pending",
@@ -224,11 +292,21 @@ export const lineRangeSchema = z
     path: ["endLine"],
   })
 
-export const repositoryIdentitySchema = z.strictObject({
-  host: z.string().trim().toLowerCase().min(1).max(253),
-  owner: z.string().trim().min(1).max(100),
-  name: z.string().trim().min(1).max(100),
-})
+export const repositoryIdentitySchema = z
+  .strictObject({
+    host: hostnameSchema,
+    owner: z.string().trim().min(1).max(100),
+    name: z.string().trim().min(1).max(100),
+  })
+  .transform((repository) =>
+    repository.host === "github.com"
+      ? {
+          ...repository,
+          owner: repository.owner.toLowerCase(),
+          name: repository.name.toLowerCase(),
+        }
+      : repository
+  )
 
 export const extractorIdentitySchema = z.strictObject({
   name: reasonCodeSchema,
@@ -250,7 +328,7 @@ export const provenanceSchema = z.discriminatedUnion("sourceKind", [
   }),
   z.strictObject({
     sourceKind: z.literal("browser"),
-    sourceUri: z.url({ protocol: /^https?$/ }),
+    sourceUri: publicHttpUrlSchema,
     observedAt: timestampSchema,
   }),
   z.strictObject({
@@ -298,3 +376,5 @@ export type CommitSha = z.infer<typeof commitShaSchema>
 export type TerminalStatus = z.infer<typeof terminalStatusSchema>
 export type RunStatus = z.infer<typeof runStatusSchema>
 export type EvidenceTier = z.infer<typeof evidenceTierSchema>
+export type EvidenceStatus = z.infer<typeof evidenceStatusSchema>
+export type ClaimStatus = z.infer<typeof claimStatusSchema>

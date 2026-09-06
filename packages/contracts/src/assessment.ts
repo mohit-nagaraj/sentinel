@@ -2,18 +2,28 @@ import { z } from "zod"
 
 import {
   applicationIdSchema,
+  apiEndpointIdSchema,
   artifactIdSchema,
+  capabilityIdSchema,
   codeSymbolIdSchema,
   commitShaSchema,
   contentHashSchema,
   coverageAssessmentIdSchema,
+  documentPageIdSchema,
+  documentSectionIdSchema,
+  documentSourceIdSchema,
+  domainEntityIdSchema,
   evidenceIdSchema,
   evidenceTierSchema,
   findingIdSchema,
+  flowStepIdSchema,
+  frontendRouteIdSchema,
   httpMethodSchema,
   lineRangeSchema,
   nonEmptyStringSchema,
   normalizedPathSchema,
+  persistedTextSchema,
+  publicHttpUrlSchema,
   pullRequestIdSchema,
   repositoryIdentitySchema,
   repositoryPathSchema,
@@ -25,6 +35,7 @@ import {
   shortTextSchema,
   stableEntityIdSchema,
   timestampSchema,
+  uiElementIdSchema,
   workflowIdSchema,
 } from "./primitives.ts"
 
@@ -53,16 +64,13 @@ export const evidenceRelationshipSchema = z.enum([
   "HAS_ASSESSMENT",
 ])
 
-export const evidenceLinkSchema = z.strictObject({
+const evidenceLinkFields = {
   schemaVersion: schemaVersionSchema,
   id: evidenceIdSchema,
   applicationId: applicationIdSchema,
-  fromId: stableEntityIdSchema,
-  relationship: evidenceRelationshipSchema,
-  toId: stableEntityIdSchema,
-  extractionMethod: nonEmptyStringSchema,
+  extractionMethod: z.string().trim().min(1).max(128),
   evidenceTier: evidenceTierSchema,
-  explanation: nonEmptyStringSchema,
+  explanation: persistedTextSchema,
   evidenceIds: z.array(evidenceIdSchema).min(1).max(100),
   sourceCommitSha: commitShaSchema.optional(),
   crawlRunId: runIdSchema.optional(),
@@ -70,7 +78,55 @@ export const evidenceLinkSchema = z.strictObject({
   reviewState: reviewStateSchema,
   graphRevision: z.number().int().nonnegative(),
   lastConfirmedAt: timestampSchema,
-})
+}
+
+function evidenceLinkVariant<
+  const Relationship extends z.infer<typeof evidenceRelationshipSchema>,
+>(relationship: Relationship, fromId: z.ZodType, toId: z.ZodType) {
+  return z.strictObject({
+    ...evidenceLinkFields,
+    fromId,
+    relationship: z.literal(relationship),
+    toId,
+  })
+}
+
+export const evidenceLinkSchema = z.discriminatedUnion("relationship", [
+  evidenceLinkVariant("HAS_PAGE", documentSourceIdSchema, documentPageIdSchema),
+  evidenceLinkVariant(
+    "HAS_SECTION",
+    documentPageIdSchema,
+    documentSectionIdSchema
+  ),
+  evidenceLinkVariant("LINKS_TO", documentPageIdSchema, documentPageIdSchema),
+  evidenceLinkVariant("STATES", documentSectionIdSchema, requirementIdSchema),
+  evidenceLinkVariant("REQUIRES", requirementIdSchema, capabilityIdSchema),
+  evidenceLinkVariant("COVERED_BY", requirementIdSchema, workflowIdSchema),
+  evidenceLinkVariant("HAS_STEP", workflowIdSchema, flowStepIdSchema),
+  evidenceLinkVariant("NEXT", flowStepIdSchema, flowStepIdSchema),
+  evidenceLinkVariant("ON_SCREEN", flowStepIdSchema, screenIdSchema),
+  evidenceLinkVariant("ACTS_ON", flowStepIdSchema, uiElementIdSchema),
+  evidenceLinkVariant("CONTAINS", screenIdSchema, uiElementIdSchema),
+  evidenceLinkVariant("MATCHES_ROUTE", screenIdSchema, frontendRouteIdSchema),
+  evidenceLinkVariant(
+    "RENDERED_BY",
+    z.union([screenIdSchema, uiElementIdSchema]),
+    codeSymbolIdSchema
+  ),
+  evidenceLinkVariant("BINDS", uiElementIdSchema, codeSymbolIdSchema),
+  evidenceLinkVariant("TRIGGERS_API", uiElementIdSchema, apiEndpointIdSchema),
+  evidenceLinkVariant("CALLS_API", codeSymbolIdSchema, apiEndpointIdSchema),
+  evidenceLinkVariant("HANDLED_BY", apiEndpointIdSchema, codeSymbolIdSchema),
+  evidenceLinkVariant("CALLS", codeSymbolIdSchema, codeSymbolIdSchema),
+  evidenceLinkVariant("READS", codeSymbolIdSchema, domainEntityIdSchema),
+  evidenceLinkVariant("WRITES", codeSymbolIdSchema, domainEntityIdSchema),
+  evidenceLinkVariant("CHANGES", pullRequestIdSchema, codeSymbolIdSchema),
+  evidenceLinkVariant(
+    "HAS_ASSESSMENT",
+    requirementIdSchema,
+    coverageAssessmentIdSchema
+  ),
+])
 
 export const coverageStatusSchema = z.enum([
   "observed",
@@ -106,25 +162,81 @@ export const pullRequestSchema = z.strictObject({
   analyzedAt: timestampSchema,
 })
 
-export const prChangeSchema = z.strictObject({
-  schemaVersion: schemaVersionSchema,
-  pullRequestId: pullRequestIdSchema,
-  changeType: z.enum([
-    "added",
-    "modified",
-    "deleted",
-    "renamed",
-    "configuration",
-    "schema",
-  ]),
-  oldPath: repositoryPathSchema.optional(),
-  newPath: repositoryPathSchema.optional(),
-  baseRanges: z.array(lineRangeSchema).max(1_000),
-  headRanges: z.array(lineRangeSchema).max(1_000),
-  baseSymbolIds: z.array(codeSymbolIdSchema).max(500),
-  headSymbolIds: z.array(codeSymbolIdSchema).max(500),
-  diffHash: contentHashSchema,
-})
+export const prChangeSchema = z
+  .strictObject({
+    schemaVersion: schemaVersionSchema,
+    pullRequestId: pullRequestIdSchema,
+    operation: z.enum(["added", "modified", "deleted", "renamed"]),
+    classifications: z
+      .array(z.enum(["configuration", "schema"]))
+      .max(2)
+      .refine((values) => new Set(values).size === values.length, {
+        message: "File classifications must be unique",
+      }),
+    oldPath: repositoryPathSchema.optional(),
+    newPath: repositoryPathSchema.optional(),
+    baseRanges: z.array(lineRangeSchema).max(1_000),
+    headRanges: z.array(lineRangeSchema).max(1_000),
+    baseSymbolIds: z.array(codeSymbolIdSchema).max(500),
+    headSymbolIds: z.array(codeSymbolIdSchema).max(500),
+    diffHash: contentHashSchema,
+  })
+  .superRefine(({ newPath, oldPath, operation }, context) => {
+    const requirePath = (
+      path: string | undefined,
+      field: "newPath" | "oldPath"
+    ) => {
+      if (path === undefined) {
+        context.addIssue({
+          code: "custom",
+          message: `${field} is required for ${operation} changes`,
+          path: [field],
+        })
+      }
+    }
+
+    if (operation === "added" || operation === "modified") {
+      requirePath(newPath, "newPath")
+      if (operation === "added" && oldPath !== undefined) {
+        context.addIssue({
+          code: "custom",
+          message: "Added changes cannot include oldPath",
+          path: ["oldPath"],
+        })
+      }
+      if (
+        operation === "modified" &&
+        oldPath !== undefined &&
+        newPath !== undefined &&
+        oldPath !== newPath
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Modified paths must match; use renamed for path changes",
+          path: ["newPath"],
+        })
+      }
+    } else if (operation === "deleted") {
+      requirePath(oldPath, "oldPath")
+      if (newPath !== undefined) {
+        context.addIssue({
+          code: "custom",
+          message: "Deleted changes cannot include newPath",
+          path: ["newPath"],
+        })
+      }
+    } else {
+      requirePath(oldPath, "oldPath")
+      requirePath(newPath, "newPath")
+      if (oldPath !== undefined && oldPath === newPath) {
+        context.addIssue({
+          code: "custom",
+          message: "Renamed changes require distinct oldPath and newPath",
+          path: ["newPath"],
+        })
+      }
+    }
+  })
 
 export const riskSchema = z.enum(["high", "medium", "low", "unknown"])
 export const verificationStatusSchema = z.enum([
@@ -144,7 +256,7 @@ export const assessmentFindingSchema = z.strictObject({
   risk: riskSchema,
   evidenceStrength: evidenceTierSchema,
   title: shortTextSchema,
-  summary: nonEmptyStringSchema,
+  summary: persistedTextSchema,
   changedSymbolIds: z.array(codeSymbolIdSchema).max(500),
   screenIds: z.array(screenIdSchema).max(500),
   workflowIds: z.array(workflowIdSchema).max(500),
@@ -153,35 +265,92 @@ export const assessmentFindingSchema = z.strictObject({
     .array(z.array(stableEntityIdSchema).min(2).max(50))
     .min(1)
     .max(100),
-  recommendedScenarios: z.array(nonEmptyStringSchema).max(50),
+  recommendedScenarios: z.array(persistedTextSchema).max(50),
   verificationStatus: verificationStatusSchema,
 })
 
-export const verificationResultSchema = z.strictObject({
+const verificationAssertionSchema = z.strictObject({
+  name: shortTextSchema,
+  passed: z.boolean(),
+  evidenceIds: z.array(evidenceIdSchema).min(1).max(100),
+})
+
+const verificationRequestSchema = z.strictObject({
+  method: httpMethodSchema,
+  normalizedPath: normalizedPathSchema,
+  status: z.number().int().min(100).max(599),
+})
+
+const verificationBase = {
   schemaVersion: schemaVersionSchema,
   runId: runIdSchema,
   pullRequestId: pullRequestIdSchema,
   headSha: commitShaSchema,
-  deploymentUrl: z.url({ protocol: /^https?$/ }),
-  status: verificationStatusSchema,
   workflowId: workflowIdSchema,
   requirementIds: z.array(requirementIdSchema).max(100),
-  assertions: z.array(
-    z.strictObject({
-      name: shortTextSchema,
-      passed: z.boolean(),
-      evidenceIds: z.array(evidenceIdSchema).min(1).max(100),
-    })
-  ),
-  requests: z.array(
-    z.strictObject({
-      method: httpMethodSchema,
-      normalizedPath: normalizedPathSchema,
-      status: z.number().int().min(100).max(599),
-    })
-  ),
   completedAt: timestampSchema,
-})
+}
+
+function executedVerificationVariant(
+  status: "passed" | "failed" | "behavior_changed"
+) {
+  return z.strictObject({
+    ...verificationBase,
+    status: z.literal(status),
+    deploymentUrl: publicHttpUrlSchema,
+    requirementIds: z.array(requirementIdSchema).min(1).max(100),
+    assertions: z.array(verificationAssertionSchema).min(1).max(100),
+    requests: z.array(verificationRequestSchema).max(500),
+  })
+}
+
+export const verificationResultSchema = z
+  .discriminatedUnion("status", [
+    executedVerificationVariant("passed"),
+    executedVerificationVariant("failed"),
+    executedVerificationVariant("behavior_changed"),
+    z.strictObject({
+      ...verificationBase,
+      status: z.literal("blocked"),
+      deploymentUrl: publicHttpUrlSchema,
+      assertions: z.array(verificationAssertionSchema).max(100),
+      requests: z.array(verificationRequestSchema).max(500),
+    }),
+    z.strictObject({
+      ...verificationBase,
+      status: z.literal("not_run"),
+      assertions: z.array(verificationAssertionSchema).max(0),
+      requests: z.array(verificationRequestSchema).max(0),
+    }),
+    z.strictObject({
+      ...verificationBase,
+      status: z.literal("verification_unavailable"),
+      assertions: z.array(verificationAssertionSchema).max(0),
+      requests: z.array(verificationRequestSchema).max(0),
+    }),
+  ])
+  .superRefine(({ assertions, status }, context) => {
+    if (
+      status === "passed" &&
+      assertions.some((assertion) => !assertion.passed)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Passed verification cannot contain failed assertions",
+        path: ["assertions"],
+      })
+    }
+    if (
+      status === "failed" &&
+      assertions.every((assertion) => assertion.passed)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Failed verification requires at least one failed assertion",
+        path: ["assertions"],
+      })
+    }
+  })
 
 export type EvidenceLink = z.infer<typeof evidenceLinkSchema>
 export type CoverageAssessment = z.infer<typeof coverageAssessmentSchema>

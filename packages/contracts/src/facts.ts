@@ -15,6 +15,7 @@ import {
   documentSourceIdSchema,
   domainEntityIdSchema,
   evidenceIdSchema,
+  evidenceStatusSchema,
   extractorIdentitySchema,
   flowStepIdSchema,
   frontendRouteIdSchema,
@@ -24,6 +25,7 @@ import {
   nonEmptyStringSchema,
   normalizedPathSchema,
   provenanceSchema,
+  publicHttpUrlSchema,
   reasonCodeSchema,
   repositoryIdentitySchema,
   repositoryPathSchema,
@@ -33,6 +35,7 @@ import {
   screenIdSchema,
   shortTextSchema,
   sourceUriSchema,
+  stableEntityIdSchema,
   timestampSchema,
   uiElementIdSchema,
   workflowIdSchema,
@@ -121,6 +124,7 @@ export const uiElementFactSchema = z.strictObject({
   screenId: screenIdSchema,
   role: reasonCodeSchema,
   accessibleName: shortTextSchema,
+  contextFingerprint: contentHashSchema,
   selectorHint: z.string().trim().min(1).max(512).optional(),
   observedAt: timestampSchema,
   sourceRunId: runIdSchema,
@@ -216,7 +220,7 @@ export const browserScreenObservationSchema = z.strictObject({
   evidenceId: evidenceIdSchema,
   screenId: screenIdSchema,
   runId: runIdSchema,
-  url: z.url({ protocol: /^https?$/ }),
+  url: publicHttpUrlSchema,
   normalizedRoute: normalizedPathSchema,
   title: shortTextSchema,
   headings: z.array(shortTextSchema).max(50),
@@ -228,10 +232,31 @@ export const browserScreenObservationSchema = z.strictObject({
 
 export const browserActionSchema = z.strictObject({
   actionId: actionIdSchema,
-  type: z.enum(["click", "fill", "select", "navigate", "reload", "back"]),
+  type: z.enum([
+    "click",
+    "fill",
+    "select",
+    "check",
+    "navigate",
+    "reload",
+    "back",
+  ]),
   elementRole: reasonCodeSchema.optional(),
   elementName: shortTextSchema.optional(),
   safeInputSlot: reasonCodeSchema.optional(),
+})
+
+export const evidenceReferenceSchema = z.strictObject({
+  schemaVersion: schemaVersionSchema,
+  id: evidenceIdSchema,
+  applicationId: applicationIdSchema,
+  runId: runIdSchema,
+  status: evidenceStatusSchema,
+  kind: reasonCodeSchema,
+  sourceEntityId: stableEntityIdSchema.optional(),
+  contentHash: contentHashSchema.optional(),
+  artifactId: artifactIdSchema.optional(),
+  capturedAt: timestampSchema,
 })
 
 export const browserTransitionSchema = z.strictObject({
@@ -325,6 +350,7 @@ export type BrowserScreenObservation = z.infer<
   typeof browserScreenObservationSchema
 >
 export type BrowserTransition = z.infer<typeof browserTransitionSchema>
+export type EvidenceReference = z.infer<typeof evidenceReferenceSchema>
 export type DocumentFactEnvelope = z.infer<typeof documentFactEnvelopeSchema>
 export type CodeFactEnvelope = z.infer<typeof codeFactEnvelopeSchema>
 export type BrowserFactEnvelope = z.infer<typeof browserFactEnvelopeSchema>

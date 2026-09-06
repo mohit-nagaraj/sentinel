@@ -67,8 +67,8 @@ and cross-process payloads carry `schemaVersion: 1` and reject unknown fields.
 
 Stable graph identities are SHA-256 hashes of recursively canonicalized,
 versioned inputs. Use `createStableKey` with one of the entity-specific input
-variants; do not construct graph IDs from ad hoc strings. Run-scoped evidence,
-action, artifact, event, mission, claim, and finding IDs have separate builders.
+variants; do not construct graph IDs from ad hoc strings. Evidence and workflow
+identifier builders validate structured application/run scopes before hashing.
 
 Sanitized wire fixtures live in `tests/fixtures/contracts`. Focused checks run
 with:

@@ -9,7 +9,10 @@ import missionResultFixture from "../../../tests/fixtures/contracts/mission-resu
 import requirementCandidateFixture from "../../../tests/fixtures/contracts/requirement-candidate.json" with { type: "json" }
 import runEventFixture from "../../../tests/fixtures/contracts/run-event.json" with { type: "json" }
 import {
+  browserActionSchema,
+  claimStatusSchema,
   ContractValidationError,
+  evidenceStatusSchema,
   parseApplication,
   parseAssessmentFinding,
   parseBrowserFactEnvelope,
@@ -19,11 +22,14 @@ import {
   parseDiscoveryMission,
   parseDocumentFactEnvelope,
   parseEvidenceLink,
+  parseEvidenceReference,
   parseMissionResult,
+  parsePrChange,
   parseRequirementCandidate,
   parseRun,
   parseRunEvent,
   parseSource,
+  parseVerificationResult,
 } from "@sentinel/contracts"
 
 const fixtureParsers = [
@@ -88,6 +94,41 @@ describe("versioned wire contracts", () => {
     ).toThrow("Unrecognized key")
   })
 
+  it("defines claim and evidence lifecycle states and downstream browser actions", () => {
+    expect(claimStatusSchema.options).toEqual([
+      "proposed",
+      "superseded",
+      "withdrawn",
+    ])
+    expect(evidenceStatusSchema.options).toEqual([
+      "captured",
+      "validated",
+      "rejected",
+      "expired",
+    ])
+    expect(
+      parseEvidenceReference({
+        schemaVersion: 1,
+        id: browserTransitionFixture.evidenceId,
+        applicationId: discoveryMissionFixture.applicationId,
+        runId: discoveryMissionFixture.runId,
+        status: "captured",
+        kind: "browser_transition",
+        sourceEntityId: browserTransitionFixture.toStateId,
+        artifactId: browserTransitionFixture.screenshotArtifactId,
+        capturedAt: browserTransitionFixture.observedAt,
+      })
+    ).toMatchObject({ status: "captured" })
+    expect(
+      browserActionSchema.parse({
+        actionId: browserTransitionFixture.action.actionId,
+        type: "check",
+        elementRole: "checkbox",
+        elementName: "Accept terms",
+      })
+    ).toMatchObject({ type: "check" })
+  })
+
   it("requires claim evidence and enforces agent-specific mission modes", () => {
     const claim = missionResultFixture.claims[0]
     expect(claim).toBeDefined()
@@ -146,6 +187,7 @@ describe("versioned wire contracts", () => {
         type: "initialize_knowledge",
         status: "queued",
         idempotencyKey: "initialize:hi-events:0497418",
+        budget: discoveryMissionFixture.budget,
         createdAt: "2026-09-07T00:00:00.000Z",
       })
     ).toMatchObject({ status: "queued" })
@@ -157,7 +199,20 @@ describe("versioned wire contracts", () => {
         applicationId,
         type: "initialize_knowledge",
         status: "queued",
+        idempotencyKey: "initialize:missing-budget",
+        createdAt: "2026-09-07T00:00:00.000Z",
+      })
+    ).toThrow("budget")
+
+    expect(() =>
+      parseRun({
+        schemaVersion: 1,
+        id: discoveryMissionFixture.runId,
+        applicationId,
+        type: "initialize_knowledge",
+        status: "queued",
         idempotencyKey: "initialize:hi-events:0497418",
+        budget: discoveryMissionFixture.budget,
         createdAt: "2026-09-07T00:00:00.000Z",
         credential: "plaintext-must-not-fit",
       })
@@ -171,9 +226,46 @@ describe("versioned wire contracts", () => {
         type: "initialize_knowledge",
         status: "queued",
         idempotencyKey: "initialize:wrong-namespace",
+        budget: discoveryMissionFixture.budget,
         createdAt: "2026-09-07T00:00:00.000Z",
       })
     ).toThrow("Invalid string")
+
+    expect(() =>
+      parseApplication({
+        schemaVersion: 1,
+        id: applicationId,
+        name: "Hi.Events",
+        deploymentUrl: "https://operator:password@demo.example.com",
+        status: "ready",
+        graphRevision: 1,
+      })
+    ).toThrow("cannot contain credentials")
+
+    expect(() =>
+      parseApplication({
+        schemaVersion: 1,
+        id: applicationId,
+        name: "Hi.Events",
+        deploymentUrl: "https://demo.example.com?access_token=plaintext",
+        status: "ready",
+        graphRevision: 1,
+      })
+    ).toThrow("sensitive query parameter")
+
+    expect(() =>
+      parseDiscoveryMission({
+        ...discoveryMissionFixture,
+        goal: "Use Cookie: session=plaintext-secret to inspect checkout.",
+      })
+    ).toThrow("secret material")
+
+    expect(() =>
+      parseRunEvent({
+        ...runEventFixture,
+        summary: "Authorization: Bearer plaintext-secret",
+      })
+    ).toThrow("secret material")
 
     expect(() =>
       parseSource({
@@ -270,5 +362,93 @@ describe("versioned wire contracts", () => {
         fact: {},
       })
     ).toThrow("repository")
+  })
+
+  it("enforces typed graph relationship endpoints", () => {
+    expect(() =>
+      parseEvidenceLink({
+        ...evidenceLinkFixture,
+        relationship: "HAS_PAGE",
+        fromId: discoveryMissionFixture.applicationId,
+        toId: assessmentFindingFixture.pullRequestId,
+      })
+    ).toThrow("Invalid string")
+  })
+
+  it("models PR operations separately from file classifications", () => {
+    const baseChange = {
+      schemaVersion: 1,
+      pullRequestId: assessmentFindingFixture.pullRequestId,
+      operation: "modified",
+      classifications: ["configuration", "schema"],
+      newPath: "supabase/migrations/001.sql",
+      baseRanges: [],
+      headRanges: [{ startLine: 1, endLine: 5 }],
+      baseSymbolIds: [],
+      headSymbolIds: [],
+      diffHash: requirementCandidateFixture.source.contentHash,
+    }
+
+    expect(parsePrChange(baseChange)).toMatchObject({
+      operation: "modified",
+      classifications: ["configuration", "schema"],
+    })
+    expect(() =>
+      parsePrChange({ ...baseChange, operation: "added", newPath: undefined })
+    ).toThrow("newPath is required")
+    expect(() =>
+      parsePrChange({
+        ...baseChange,
+        operation: "renamed",
+        oldPath: "old.ts",
+        newPath: "old.ts",
+      })
+    ).toThrow("distinct oldPath and newPath")
+  })
+
+  it("separates unavailable verification from executed deterministic verdicts", () => {
+    const unavailable = {
+      schemaVersion: 1,
+      runId: discoveryMissionFixture.runId,
+      pullRequestId: assessmentFindingFixture.pullRequestId,
+      headSha: codeSymbolFixture.commitSha,
+      status: "verification_unavailable",
+      workflowId: assessmentFindingFixture.workflowIds[0],
+      requirementIds: assessmentFindingFixture.requirementIds,
+      assertions: [],
+      requests: [],
+      completedAt: "2026-09-07T00:00:00.000Z",
+    }
+
+    expect(parseVerificationResult(unavailable)).toMatchObject({
+      status: "verification_unavailable",
+    })
+    expect(() =>
+      parseVerificationResult({
+        ...unavailable,
+        deploymentUrl: "https://baseline.example.com",
+      })
+    ).toThrow("Unrecognized key")
+    expect(() =>
+      parseVerificationResult({
+        ...unavailable,
+        status: "passed",
+        deploymentUrl: "https://head.example.com",
+      })
+    ).toThrow("Too small")
+    expect(() =>
+      parseVerificationResult({
+        ...unavailable,
+        status: "passed",
+        deploymentUrl: "https://head.example.com",
+        assertions: [
+          {
+            name: "Order confirmation is visible",
+            passed: false,
+            evidenceIds: [browserTransitionFixture.evidenceId],
+          },
+        ],
+      })
+    ).toThrow("cannot contain failed assertions")
   })
 })
