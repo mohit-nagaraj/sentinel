@@ -3,7 +3,6 @@ import {
   contentHashSchema,
   persistedTextSchema,
   redactPersistedText,
-  shortTextSchema,
 } from "@sentinel/contracts"
 import { z } from "zod"
 
@@ -115,7 +114,12 @@ export class RecordsRepository {
   }): Promise<string> {
     const assessmentId = z.uuid().parse(input.assessmentId)
     const stableKey = z.string().trim().min(1).max(512).parse(input.stableKey)
-    const title = shortTextSchema.parse(input.title)
+    const title = persistedTextSchema
+      .refine(
+        (value) => value.length <= 512,
+        "Finding titles are limited to 512 characters"
+      )
+      .parse(input.title)
     const summary = persistedTextSchema.parse(input.summary)
     const evidencePathCount = z
       .number()

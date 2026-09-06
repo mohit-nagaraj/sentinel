@@ -68,4 +68,25 @@ describe("records repository", () => {
     ).resolves.toBe(recordId)
     expect(query.mock.calls[0]?.[1]?.[6]).toBe('{"a":"deterministic","z":true}')
   })
+
+  it("rejects credential-shaped report titles before executing SQL", async () => {
+    const query = vi.fn().mockResolvedValue([{ id: recordId }])
+    const repository = new RecordsRepository({
+      query: query as DatabaseExecutor["query"],
+    })
+
+    await expect(
+      repository.addAssessmentFinding({
+        assessmentId: applicationId,
+        stableKey: "finding:v1:fixture",
+        risk: "high",
+        evidenceStrength: "A",
+        title: "Authorization: Bearer synthetic-secret-value",
+        summary: "A secret-safe summary.",
+        verificationStatus: "not_run",
+        evidencePathCount: 1,
+      })
+    ).rejects.toThrow("secret-shaped syntax")
+    expect(query).not.toHaveBeenCalled()
+  })
 })
