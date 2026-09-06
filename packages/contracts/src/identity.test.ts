@@ -261,6 +261,7 @@ describe("canonical identity", () => {
       get: () => "must-not-run",
     })
     expect(() => hashCanonical(accessor)).toThrow("Accessor")
+    expect(() => hashCanonical(new Array(1))).toThrow("Sparse array entry")
   })
 
   it("creates distinct branded evidence and workflow identifiers", () => {

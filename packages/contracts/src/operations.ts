@@ -9,7 +9,6 @@ import {
   evidenceIdSchema,
   hostnameSchema,
   missionIdSchema,
-  nonEmptyStringSchema,
   persistedTextSchema,
   publicHttpUrlSchema,
   reasonCodeSchema,
@@ -197,7 +196,7 @@ export const missionResultSchema = z.strictObject({
   status: terminalStatusSchema,
   claims: z.array(proposedClaimSchema).max(500),
   unresolved: z.array(unresolvedQuestionSchema).max(100),
-  exclusions: z.array(nonEmptyStringSchema).max(100),
+  exclusions: z.array(persistedTextSchema).max(100),
   suggestedFollowups: z.array(discoveryMissionSchema).max(20),
   stopReason: z.strictObject({
     code: reasonCodeSchema,

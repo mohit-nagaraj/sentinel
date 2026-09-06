@@ -78,4 +78,4 @@ Do not encode Hi.Events-specific expected entities in generic contracts. Hi.Even
 - Stable key inputs are defined for all 17 PRD §12 graph entity categories.
 - Provider-independent hashing uses `@noble/hashes`; no Node environment or secret loading occurs on import.
 - Sanitized wire fixtures cover every stage artifact in PRD §14 plus redacted run events.
-- Focused verification on 2026-09-07: 3 files and 48 contract/identity tests passed; the cumulative default suite passed 51 tests.
+- Focused verification on 2026-09-07: 3 files and 49 contract/identity tests passed; the cumulative default suite passed 52 tests.

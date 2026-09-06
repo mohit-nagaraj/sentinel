@@ -271,6 +271,51 @@ describe("versioned wire contracts", () => {
     ).toThrow("secret material")
 
     expect(() =>
+      parseRunEvent({
+        ...runEventFixture,
+        summary: "sessionid=plaintext-secret",
+      })
+    ).toThrow("secret material")
+
+    expect(() =>
+      parseDiscoveryMission({
+        ...discoveryMissionFixture,
+        scope: {
+          ...discoveryMissionFixture.scope,
+          sourceUris: ["https://example.com/callback?auth=plaintext-secret"],
+        },
+      })
+    ).toThrow("sensitive query parameter")
+
+    expect(() =>
+      parseMissionResult({
+        ...missionResultFixture,
+        exclusions: ["Authorization: Bearer plaintext-secret"],
+      })
+    ).toThrow("secret material")
+
+    expect(
+      parseDiscoveryMission({
+        ...discoveryMissionFixture,
+        goal: "Determine whether password: must contain a number.",
+      })
+    ).toMatchObject({ agent: "code" })
+
+    expect(
+      parseDiscoveryMission({
+        ...discoveryMissionFixture,
+        goal: "Confirm that Authorization: Bearer token is required and Cookie: must be secure.",
+      })
+    ).toMatchObject({ agent: "code" })
+
+    expect(() =>
+      parseRunEvent({
+        ...runEventFixture,
+        summary: "Provider returned access key AKIAABCDEFGHIJKLMNOP.",
+      })
+    ).toThrow("secret material")
+
+    expect(() =>
       parseSource({
         schemaVersion: 1,
         id: "document-source:v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -414,6 +459,22 @@ describe("versioned wire contracts", () => {
         newPath: "old.ts",
       })
     ).toThrow("distinct oldPath and newPath")
+    expect(() =>
+      parsePrChange({
+        ...baseChange,
+        operation: "added",
+        baseRanges: [{ startLine: 1, endLine: 2 }],
+      })
+    ).toThrow("cannot contain base-side")
+    expect(() =>
+      parsePrChange({
+        ...baseChange,
+        operation: "deleted",
+        oldPath: "supabase/migrations/001.sql",
+        newPath: undefined,
+        headSymbolIds: [codeSymbolFixture.id],
+      })
+    ).toThrow("cannot contain head-side")
   })
 
   it("separates unavailable verification from executed deterministic verdicts", () => {
@@ -460,5 +521,27 @@ describe("versioned wire contracts", () => {
         ],
       })
     ).toThrow("cannot contain failed assertions")
+  })
+
+  it("requires replayable payloads for budget update events", () => {
+    expect(() =>
+      parseRunEvent({
+        ...runEventFixture,
+        kind: "budget_updated",
+        budget: undefined,
+      })
+    ).toThrow("require a budget payload")
+
+    expect(
+      parseRunEvent({
+        ...runEventFixture,
+        kind: "budget_updated",
+        budget: {
+          consumed: 12,
+          limit: 1000,
+          unit: "repository_files",
+        },
+      })
+    ).toMatchObject({ budget: { unit: "repository_files" } })
   })
 })

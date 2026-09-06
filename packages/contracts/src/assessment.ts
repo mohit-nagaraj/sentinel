@@ -239,6 +239,33 @@ export const prChangeSchema = z
       }
     }
   })
+  .superRefine(
+    (
+      { baseRanges, baseSymbolIds, headRanges, headSymbolIds, operation },
+      context
+    ) => {
+      if (
+        operation === "added" &&
+        (baseRanges.length > 0 || baseSymbolIds.length > 0)
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Added changes cannot contain base-side ranges or symbols",
+          path: ["baseRanges"],
+        })
+      }
+      if (
+        operation === "deleted" &&
+        (headRanges.length > 0 || headSymbolIds.length > 0)
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Deleted changes cannot contain head-side ranges or symbols",
+          path: ["headRanges"],
+        })
+      }
+    }
+  )
 
 export const riskSchema = z.enum(["high", "medium", "low", "unknown"])
 export const verificationStatusSchema = z.enum([

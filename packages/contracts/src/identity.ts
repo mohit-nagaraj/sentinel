@@ -68,9 +68,27 @@ export function canonicalSerialize(value: unknown): string {
         )
       }
       ancestors.add(current)
-      const result = `[${current
-        .map((item, index) => serialize(item, `${path}[${index}]`))
-        .join(",")}]`
+      const items: string[] = []
+      for (let index = 0; index < current.length; index += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(current, index)
+        if (descriptor === undefined) {
+          throw new TypeError(
+            `Sparse array entry at ${path}[${index}] is not canonical JSON`
+          )
+        }
+        if (!("value" in descriptor)) {
+          throw new TypeError(
+            `Accessor at ${path}[${index}] is not canonical JSON`
+          )
+        }
+        items.push(serialize(descriptor.value, `${path}[${index}]`))
+      }
+      if (Object.keys(current).length !== current.length) {
+        throw new TypeError(
+          `Non-index array property at ${path} is not canonical JSON`
+        )
+      }
+      const result = `[${items.join(",")}]`
       ancestors.delete(current)
       return result
     }

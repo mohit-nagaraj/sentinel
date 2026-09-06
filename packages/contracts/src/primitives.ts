@@ -7,15 +7,83 @@ export const nonEmptyStringSchema = z.string().trim().min(1).max(4_096)
 export const shortTextSchema = z.string().trim().min(1).max(512)
 const sensitiveTextPatterns = [
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/i,
-  /\b(?:authorization|proxy-authorization)\s*:\s*(?:basic|bearer)\s+\S+/i,
-  /\b(?:cookie|set-cookie)\s*:\s*\S+/i,
-  /\b(?:api[_-]?key|client[_-]?secret|password|private[_-]?key|secret|token)\s*[:=]\s*\S+/i,
   /\bgh[pousr]_[A-Za-z0-9]{20,}\b/,
   /\bsk-[A-Za-z0-9_-]{20,}\b/,
+  /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/,
 ] as const
 
+const requirementWords = new Set([
+  "at",
+  "can",
+  "cannot",
+  "field",
+  "input",
+  "is",
+  "maximum",
+  "may",
+  "minimum",
+  "must",
+  "optional",
+  "required",
+  "should",
+  "token",
+])
+
+function looksLikeCredentialValue(candidate: string): boolean {
+  const normalized = candidate.replace(/^["']|["'.]$/g, "").toLowerCase()
+
+  if (
+    requirementWords.has(normalized) ||
+    normalized === "[redacted]" ||
+    normalized === "<redacted>"
+  ) {
+    return false
+  }
+
+  return (
+    normalized.includes("secret") ||
+    candidate.length >= 12 ||
+    (candidate.length >= 6 &&
+      /[a-z]/i.test(candidate) &&
+      /[0-9]/.test(candidate))
+  )
+}
+
+function containsCredentialAssignment(value: string): boolean {
+  const assignments = value.matchAll(
+    /\b(?:api[_-]?key|auth|client[_-]?secret|credential|password|private[_-]?key|secret|session(?:[_-]?id)?|token)\s*[:=]\s*([^\s,;]+)/gi
+  )
+
+  for (const assignment of assignments) {
+    if (looksLikeCredentialValue(assignment[1] ?? "")) {
+      return true
+    }
+  }
+
+  return false
+}
+
+function containsCredentialHeader(value: string): boolean {
+  const authorization =
+    /\b(?:authorization|proxy-authorization)\s*:\s*(?:basic|bearer)\s+([^\s,;]+)/i.exec(
+      value
+    )
+  if (
+    authorization !== null &&
+    looksLikeCredentialValue(authorization[1] ?? "")
+  ) {
+    return true
+  }
+
+  const cookie = /\b(?:cookie|set-cookie)\s*:\s*([^\s,;]+)/i.exec(value)
+  return cookie !== null && looksLikeCredentialValue(cookie[1] ?? "")
+}
+
 export const persistedTextSchema = nonEmptyStringSchema.refine(
-  (value) => !sensitiveTextPatterns.some((pattern) => pattern.test(value)),
+  (value) =>
+    !sensitiveTextPatterns.some((pattern) => pattern.test(value)) &&
+    !containsCredentialAssignment(value) &&
+    !containsCredentialHeader(value),
   { message: "Persisted text contains credential or secret material" }
 )
 export const reasonCodeSchema = z
@@ -56,7 +124,7 @@ export const repositoryPathSchema = z
     }
   )
 const sensitiveQueryKey =
-  /(?:api[_-]?key|password|private[_-]?key|secret|signature|token)/i
+  /(?:api[_-]?key|auth|credential|password|private[_-]?key|secret|session|signature|token)/i
 
 function normalizePublicUrl(value: string): string {
   const url = new URL(value)
@@ -83,6 +151,13 @@ export const publicHttpUrlSchema = z
           message: `Public URLs cannot contain sensitive query parameter ${key}`,
         })
       }
+    }
+
+    if (!persistedTextSchema.safeParse(value).success) {
+      context.addIssue({
+        code: "custom",
+        message: "Public URLs cannot contain credential or secret material",
+      })
     }
   })
   .transform(normalizePublicUrl)
