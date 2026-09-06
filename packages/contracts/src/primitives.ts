@@ -22,18 +22,23 @@ export function redactPersistedText(value: string): string {
       "[REDACTED]"
     )
     .replace(
-      /(\b(?:authorization|proxy-authorization)\s*:\s*(?:basic|bearer)\s+)[^\s,;]+/gi,
+      /(\b(?:authorization|proxy-authorization)\s*:\s*(?:basic|bearer)\s+)[^\r\n]*/gi,
       "$1[REDACTED]"
     )
-    .replace(/(\b(?:cookie|set-cookie)\s*:\s*)[^\s,;]+/gi, "$1[REDACTED]")
+    .replace(/(\b(?:cookie|set-cookie)\s*:\s*)[^\r\n]*/gi, "$1[REDACTED]")
     .replace(
-      new RegExp(`(\\b(?:${credentialLabels})\\s*[:=]\\s*)[^\\s,;]+`, "gi"),
+      new RegExp(`(\\b(?:${credentialLabels})\\s*[:=]\\s*)[^\\r\\n]*`, "gi"),
       "$1[REDACTED]"
     )
 }
 
+// Credentials can be ordinary words, so assignment-like prose is ambiguous.
+// Fail closed and require callers to redact or rephrase it before persistence.
 export const persistedTextSchema = nonEmptyStringSchema
-  .transform(redactPersistedText)
+  .refine((value) => redactPersistedText(value) === value, {
+    message:
+      "Persisted text contains secret-shaped syntax; redact it or rephrase without credential assignment/header notation",
+  })
   .brand<"PersistedText">()
 export const reasonCodeSchema = z
   .string()
