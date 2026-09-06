@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M1 — Foundation and durable execution |
-| Status | `review` |
+| Status | `done` |
 | Depends on | None |
 | Blocks | SNT-002, SNT-003, SNT-004, SNT-005 |
 | PRD references | §9.3, §10, §20 |

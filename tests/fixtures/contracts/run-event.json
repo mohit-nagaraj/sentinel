@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "event:v1:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "runId": "run:11111111-1111-4111-8111-111111111111",
+  "sequence": 1,
+  "kind": "evidence_gained",
+  "occurredAt": "2026-09-07T00:00:00.000Z",
+  "agent": "code",
+  "missionId": "mission:v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "graphName": "initialize_knowledge",
+  "nodeName": "code_explorer",
+  "toolName": "find_endpoint_handler",
+  "status": "completed",
+  "summary": "Mapped the order endpoint to its handler.",
+  "reasonCode": "direct_route_match",
+  "evidenceIds": [
+    "evidence:v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  ],
+  "budget": {
+    "consumed": 4,
+    "limit": 15,
+    "unit": "tool_calls"
+  }
+}

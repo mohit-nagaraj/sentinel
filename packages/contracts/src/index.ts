@@ -1,6 +1,15 @@
+export * from "./assessment.ts"
 export {
   loadEnvironment,
   type EnvironmentSource,
   type SentinelEnvironment,
 } from "./environment.ts"
+export * from "./events.ts"
+export * from "./facts.ts"
 export { createHealthReport, type HealthReport } from "./health.ts"
+export * from "./identity.ts"
+export * from "./operations.ts"
+export * from "./parsers.ts"
+export * from "./primitives.ts"
+export * from "./stable-keys.ts"
+export * from "./validation.ts"

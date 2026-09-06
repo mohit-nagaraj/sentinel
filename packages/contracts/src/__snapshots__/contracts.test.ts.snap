@@ -1,0 +1,238 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`versioned wire contracts > parses and snapshots the assessment finding fixture 1`] = `
+{
+  "applicationId": "application:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "changedSymbolIds": [
+    "code-symbol:v1:1111111111111111111111111111111111111111111111111111111111111111",
+  ],
+  "evidencePaths": [
+    [
+      "pull-request:v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "code-symbol:v1:1111111111111111111111111111111111111111111111111111111111111111",
+      "api-endpoint:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "workflow:v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "requirement:v1:2222222222222222222222222222222222222222222222222222222222222222",
+    ],
+  ],
+  "evidenceStrength": "B",
+  "id": "finding:v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "pullRequestId": "pull-request:v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "recommendedScenarios": [
+    "Complete a free-ticket checkout and verify the resulting order.",
+  ],
+  "requirementIds": [
+    "requirement:v1:2222222222222222222222222222222222222222222222222222222222222222",
+  ],
+  "risk": "high",
+  "schemaVersion": 1,
+  "screenIds": [
+    "screen:v1:8888888888888888888888888888888888888888888888888888888888888888",
+  ],
+  "summary": "The changed order handler is connected to the observed buyer checkout workflow.",
+  "title": "Attendee checkout and order creation",
+  "verificationStatus": "not_run",
+  "workflowIds": [
+    "workflow:v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  ],
+}
+`;
+
+exports[`versioned wire contracts > parses and snapshots the browser transition fixture 1`] = `
+{
+  "action": {
+    "actionId": "action:v1:7777777777777777777777777777777777777777777777777777777777777777",
+    "elementName": "Continue",
+    "elementRole": "button",
+    "type": "click",
+  },
+  "evidenceId": "evidence:v1:5555555555555555555555555555555555555555555555555555555555555555",
+  "fromStateId": "screen:v1:6666666666666666666666666666666666666666666666666666666666666666",
+  "observedAt": "2026-09-07T00:00:00.000Z",
+  "requests": [
+    {
+      "method": "POST",
+      "normalizedPath": "/api/events/{eventId}/orders",
+      "status": 201,
+    },
+  ],
+  "runId": "run:11111111-1111-4111-8111-111111111111",
+  "schemaVersion": 1,
+  "screenshotArtifactId": "artifact:v1:9999999999999999999999999999999999999999999999999999999999999999",
+  "toStateId": "screen:v1:8888888888888888888888888888888888888888888888888888888888888888",
+}
+`;
+
+exports[`versioned wire contracts > parses and snapshots the code symbol fixture 1`] = `
+{
+  "applicationId": "application:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "commitSha": "0497418d5c66d20693751e68be066260eda3f37f",
+  "filePath": "backend/app/Domain/Order/CreateOrderHandler.php",
+  "id": "code-symbol:v1:1111111111111111111111111111111111111111111111111111111111111111",
+  "kind": "handler",
+  "language": "php",
+  "qualifiedName": "HiEvents\\Domain\\Order\\CreateOrderHandler::handle",
+  "range": {
+    "endLine": 88,
+    "startLine": 31,
+  },
+  "repository": {
+    "host": "github.com",
+    "name": "Hi.Events",
+    "owner": "mohit-nagaraj",
+  },
+  "schemaVersion": 1,
+}
+`;
+
+exports[`versioned wire contracts > parses and snapshots the discovery mission fixture 1`] = `
+{
+  "agent": "code",
+  "applicationId": "application:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "budget": {
+    "browserActions": 0,
+    "contentBytes": 50000,
+    "elapsedMs": 120000,
+    "modelCalls": 8,
+    "modelInputTokens": 12000,
+    "modelOutputTokens": 4000,
+    "sourceLines": 500,
+    "toolCalls": 15,
+  },
+  "goal": "Trace order creation from the observed endpoint.",
+  "id": "mission:v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "mode": "implementation_trace",
+  "questions": [
+    "Which backend symbol handles the endpoint?",
+    "Which frontend symbol calls it?",
+  ],
+  "runId": "run:11111111-1111-4111-8111-111111111111",
+  "schemaVersion": 1,
+  "scope": {
+    "allowedHosts": [],
+    "allowedTools": [
+      "search_symbols",
+      "inspect_symbol",
+      "find_endpoint_handler",
+    ],
+    "repositoryPaths": [
+      "frontend/src",
+      "backend/app",
+      "backend/routes",
+    ],
+    "sourceUris": [],
+  },
+  "seedEvidenceIds": [
+    "evidence:v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  ],
+  "successCriteria": [
+    "Frontend and backend paths are established or unresolved boundaries are reported.",
+  ],
+}
+`;
+
+exports[`versioned wire contracts > parses and snapshots the evidence link fixture 1`] = `
+{
+  "applicationId": "application:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "artifactId": "artifact:v1:9999999999999999999999999999999999999999999999999999999999999999",
+  "crawlRunId": "run:11111111-1111-4111-8111-111111111111",
+  "evidenceIds": [
+    "evidence:v1:5555555555555555555555555555555555555555555555555555555555555555",
+  ],
+  "evidenceTier": "A",
+  "explanation": "The request began inside the action observation window.",
+  "extractionMethod": "playwright_network_observation",
+  "fromId": "ui-element:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab",
+  "graphRevision": 1,
+  "id": "evidence:v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "lastConfirmedAt": "2026-09-07T00:00:00.000Z",
+  "relationship": "TRIGGERS_API",
+  "reviewState": "not_required",
+  "schemaVersion": 1,
+  "toId": "api-endpoint:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+}
+`;
+
+exports[`versioned wire contracts > parses and snapshots the mission result fixture 1`] = `
+{
+  "budgetUsed": {
+    "browserActions": 0,
+    "contentBytes": 12000,
+    "elapsedMs": 19000,
+    "modelCalls": 3,
+    "modelInputTokens": 4200,
+    "modelOutputTokens": 900,
+    "sourceLines": 180,
+    "toolCalls": 4,
+  },
+  "claims": [
+    {
+      "evidenceIds": [
+        "evidence:v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      ],
+      "explanation": "The normalized route points to this handler symbol.",
+      "id": "claim:v1:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "objectId": "code-symbol:v1:1111111111111111111111111111111111111111111111111111111111111111",
+      "predicate": "handled_by",
+      "subjectId": "api-endpoint:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    },
+  ],
+  "exclusions": [],
+  "missionId": "mission:v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "schemaVersion": 1,
+  "status": "complete",
+  "stopReason": {
+    "code": "criteria_met",
+    "summary": "The requested implementation path was established.",
+  },
+  "suggestedFollowups": [],
+  "unresolved": [],
+}
+`;
+
+exports[`versioned wire contracts > parses and snapshots the requirement fixture 1`] = `
+{
+  "actor": "buyer",
+  "applicationId": "application:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "capability": "select ticket",
+  "expectedOutcome": "The selected quantity appears in checkout.",
+  "id": "requirement:v1:2222222222222222222222222222222222222222222222222222222222222222",
+  "schemaVersion": 1,
+  "source": {
+    "contentHash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "excerpt": "Buyers select available tickets before continuing to checkout.",
+    "heading": "Ticket sales",
+    "sectionId": "document-section:v1:3333333333333333333333333333333333333333333333333333333333333333",
+    "uri": "https://hi.events/docs/tickets",
+  },
+  "statement": "A buyer can select an available ticket and continue to checkout.",
+  "testable": true,
+}
+`;
+
+exports[`versioned wire contracts > parses and snapshots the run event fixture 1`] = `
+{
+  "agent": "code",
+  "budget": {
+    "consumed": 4,
+    "limit": 15,
+    "unit": "tool_calls",
+  },
+  "evidenceIds": [
+    "evidence:v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  ],
+  "graphName": "initialize_knowledge",
+  "id": "event:v1:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "kind": "evidence_gained",
+  "missionId": "mission:v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "nodeName": "code_explorer",
+  "occurredAt": "2026-09-07T00:00:00.000Z",
+  "reasonCode": "direct_route_match",
+  "runId": "run:11111111-1111-4111-8111-111111111111",
+  "schemaVersion": 1,
+  "sequence": 1,
+  "status": "completed",
+  "summary": "Mapped the order endpoint to its handler.",
+  "toolName": "find_endpoint_handler",
+}
+`;

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "mission:v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "runId": "run:11111111-1111-4111-8111-111111111111",
+  "applicationId": "application:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "agent": "code",
+  "mode": "implementation_trace",
+  "goal": "Trace order creation from the observed endpoint.",
+  "seedEvidenceIds": [
+    "evidence:v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  ],
+  "questions": [
+    "Which backend symbol handles the endpoint?",
+    "Which frontend symbol calls it?"
+  ],
+  "scope": {
+    "repositoryPaths": ["frontend/src", "backend/app", "backend/routes"],
+    "sourceUris": [],
+    "allowedHosts": [],
+    "allowedTools": [
+      "search_symbols",
+      "inspect_symbol",
+      "find_endpoint_handler"
+    ]
+  },
+  "budget": {
+    "toolCalls": 15,
+    "contentBytes": 50000,
+    "sourceLines": 500,
+    "browserActions": 0,
+    "modelCalls": 8,
+    "modelInputTokens": 12000,
+    "modelOutputTokens": 4000,
+    "elapsedMs": 120000
+  },
+  "successCriteria": [
+    "Frontend and backend paths are established or unresolved boundaries are reported."
+  ]
+}
