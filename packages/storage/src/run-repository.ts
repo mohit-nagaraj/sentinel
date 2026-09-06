@@ -2,6 +2,8 @@ import {
   executionBudgetSchema,
   parseRunEvent,
   persistedTextSchema,
+  publicErrorSchema,
+  reasonCodeSchema,
   runStatusSchema,
   runTypeSchema,
   type MissionBudget,
@@ -127,15 +129,29 @@ export class RunRepository {
   }): Promise<boolean> {
     const runId = z.uuid().parse(input.runId)
     const owner = z.string().trim().min(1).max(255).parse(input.owner)
+    const errorCategory =
+      input.errorCategory === undefined
+        ? null
+        : publicErrorSchema.shape.category.parse(input.errorCategory)
+    const errorCode =
+      input.errorCode === undefined
+        ? null
+        : reasonCodeSchema.parse(input.errorCode)
+    if (
+      input.status === "failed" &&
+      (errorCategory === null || errorCode === null)
+    ) {
+      throw new Error("Failed runs require an error category and code")
+    }
+    if (
+      input.status !== "failed" &&
+      (errorCategory !== null || errorCode !== null)
+    ) {
+      throw new Error("Non-failed runs cannot persist error fields")
+    }
     const rows = await this.database.query<{ finish_run: boolean }>(
       "select sentinel.finish_run($1::uuid, $2, $3, $4, $5) as finish_run",
-      [
-        runId,
-        owner,
-        input.status,
-        input.errorCategory ?? null,
-        input.errorCode ?? null,
-      ]
+      [runId, owner, input.status, errorCategory, errorCode]
     )
     return rows[0]?.finish_run ?? false
   }

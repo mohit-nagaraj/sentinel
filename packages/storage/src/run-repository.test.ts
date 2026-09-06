@@ -81,4 +81,30 @@ describe("run repository", () => {
     expect(result.event.kind).toBe("evidence_gained")
     expect(query.mock.calls[0]?.[1]?.[0]).toBe(runId)
   })
+
+  it("requires typed, non-secret failure codes", async () => {
+    const query = vi.fn().mockResolvedValue([{ finish_run: true }])
+    const repository = new RunRepository({
+      query: query as DatabaseExecutor["query"],
+    })
+
+    await expect(
+      repository.finish({
+        runId,
+        owner: "worker-a",
+        status: "failed",
+        errorCategory: "provider",
+        errorCode: "Cookie: sid=secret",
+      })
+    ).rejects.toThrow()
+    await expect(
+      repository.finish({
+        runId,
+        owner: "worker-a",
+        status: "failed",
+        errorCategory: "provider",
+        errorCode: "provider_timeout",
+      })
+    ).resolves.toBe(true)
+  })
 })

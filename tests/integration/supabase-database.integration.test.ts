@@ -97,13 +97,36 @@ describeIntegration("Supabase operational database", () => {
       runs.heartbeat(first.id, "integration-worker-c", 60)
     ).resolves.toBe(true)
     await expect(runs.requestCancellation(first.id)).resolves.toBe("cancelling")
+    await database.query(
+      "update sentinel.runs set lease_expires_at = now() - interval '1 second' where id = $1::uuid",
+      [first.id]
+    )
     await expect(
       runs.finish({
         runId: first.id,
         owner: "integration-worker-c",
         status: "cancelled",
       })
+    ).resolves.toBe(false)
+    const cancellationRecovery = await runs.claim("integration-worker-d", 60)
+    expect(cancellationRecovery).toMatchObject({
+      id: first.id,
+      status: "cancelling",
+      leaseOwner: "integration-worker-d",
+    })
+    await expect(
+      runs.finish({
+        runId: first.id,
+        owner: "integration-worker-d",
+        status: "cancelled",
+      })
     ).resolves.toBe(true)
+    await expect(
+      database.query(
+        "update sentinel.runs set status = 'running' where id = $1::uuid",
+        [first.id]
+      )
+    ).rejects.toThrow("invalid run status transition")
   })
 
   it("allocates durable event order under concurrent appends", async () => {
@@ -142,6 +165,9 @@ describeIntegration("Supabase operational database", () => {
 
     const events = await runs.listEvents(run.id)
     expect(events.map((event) => event.sequence)).toEqual([1, 2])
+    for (const event of events) {
+      expect(event.id).toBe(createEventId(contractRunId, event.sequence))
+    }
   })
 
   it("rolls transactions back and denies direct anon/authenticated table access", async () => {
@@ -224,6 +250,39 @@ describeIntegration("Supabase operational database", () => {
         superseded_by_id: null,
       }),
     ])
+
+    const reactivated = await assessments.createOrGet(firstInput)
+    expect(reactivated).toMatchObject({ id: first.id, isCurrent: true })
+    const current = await database.query<{
+      id: string
+      is_current: boolean
+      superseded_by_id: string | null
+    }>(
+      `select id, is_current, superseded_by_id
+       from sentinel.pr_assessments
+       where application_id = $1::uuid and pull_request_number = 42
+       order by created_at`,
+      [applicationId]
+    )
+    expect(current).toEqual([
+      expect.objectContaining({
+        id: first.id,
+        is_current: true,
+        superseded_by_id: null,
+      }),
+      expect.objectContaining({
+        id: second.id,
+        is_current: false,
+        superseded_by_id: first.id,
+      }),
+    ])
+
+    await expect(
+      assessments.createOrGet({
+        ...firstInput,
+        baseSha: "7777777777777777777777777777777777777777",
+      })
+    ).rejects.toThrow("idempotency conflict")
   })
 
   it("deduplicates webhook delivery identifiers", async () => {

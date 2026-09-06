@@ -9,6 +9,55 @@ import { z } from "zod"
 
 import type { DatabaseExecutor } from "./database.ts"
 
+const sensitiveDetailKeys = new Set([
+  "apikey",
+  "auth",
+  "authorization",
+  "clientsecret",
+  "connectsid",
+  "cookie",
+  "credential",
+  "laravelsession",
+  "password",
+  "phpsessid",
+  "privatekey",
+  "secret",
+  "sessionid",
+  "sid",
+  "token",
+])
+
+function assertSecretSafeDetails(value: unknown, path = "$"): void {
+  if (typeof value === "string") {
+    const result = persistedTextSchema.safeParse(value)
+    if (!result.success) {
+      throw new Error(`Eval details contain secret-shaped text at ${path}`)
+    }
+    return
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) =>
+      assertSecretSafeDetails(item, `${path}[${index}]`)
+    )
+    return
+  }
+  if (value === null || typeof value !== "object") return
+
+  for (const [key, child] of Object.entries(value)) {
+    const normalizedKey = key.replace(/[^a-z0-9]/gi, "").toLowerCase()
+    if (
+      sensitiveDetailKeys.has(normalizedKey) &&
+      child !== null &&
+      child !== "[REDACTED]"
+    ) {
+      throw new Error(
+        `Eval details contain a sensitive field at ${path}.${key}`
+      )
+    }
+    assertSecretSafeDetails(child, `${path}.${key}`)
+  }
+}
+
 export class RecordsRepository {
   constructor(private readonly database: DatabaseExecutor) {}
 
@@ -104,7 +153,7 @@ export class RecordsRepository {
   }
 
   async recordEvalResult(input: {
-    readonly applicationId: string | null
+    readonly applicationId: string
     readonly runId: string | null
     readonly fixtureKey: string
     readonly metricKey: string
@@ -112,11 +161,11 @@ export class RecordsRepository {
     readonly value: number | null
     readonly details: Readonly<Record<string, unknown>>
   }): Promise<string> {
-    const applicationId =
-      input.applicationId === null ? null : z.uuid().parse(input.applicationId)
+    const applicationId = z.uuid().parse(input.applicationId)
     const runId = input.runId === null ? null : z.uuid().parse(input.runId)
     const fixtureKey = z.string().trim().min(1).max(256).parse(input.fixtureKey)
     const metricKey = z.string().trim().min(1).max(256).parse(input.metricKey)
+    assertSecretSafeDetails(input.details)
     const details = canonicalSerialize(input.details)
     if (redactPersistedText(details) !== details) {
       throw new Error("Eval details contain secret-shaped syntax")
@@ -125,7 +174,7 @@ export class RecordsRepository {
       `insert into sentinel.eval_results (
          application_id, run_id, fixture_key, metric_key, outcome, value, details
        ) values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7::text::jsonb)
-       on conflict (run_id, fixture_key, metric_key) do update
+       on conflict (application_id, run_id, fixture_key, metric_key) do update
        set application_id = excluded.application_id,
            outcome = excluded.outcome,
            value = excluded.value,

@@ -55,5 +55,12 @@ describe("storage environment", () => {
         SUPABASE_DB_URL: validEnvironment.SUPABASE_DB_URL,
       })
     ).toThrow("must not equal SUPABASE_DB_URL")
+    expect(() =>
+      loadIntegrationEnvironment({
+        RUN_SUPABASE_INTEGRATION_TESTS: "1",
+        SENTINEL_TEST_DATABASE_URL:
+          "postgresql://postgres.test-project:secret@region.pooler.supabase.com:6543/postgres",
+      })
+    ).toThrow("SENTINEL_TEST_DATABASE_URL")
   })
 })

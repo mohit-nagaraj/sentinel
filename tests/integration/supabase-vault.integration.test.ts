@@ -88,4 +88,31 @@ describeIntegration("Supabase Vault target secrets", () => {
       secrets.resolve(applicationId, created.reference)
     ).rejects.toThrow("not found")
   })
+
+  it("removes Vault material when its application is deleted", async () => {
+    const secrets = new TargetSecretService(database)
+    const created = await secrets.create({
+      applicationId,
+      name: `cascade_${randomUUID().replaceAll("-", "")}`,
+      value: "synthetic-cascade-value",
+    })
+    const mappings = await database.query<{ vault_secret_id: string }>(
+      `select vault_secret_id
+       from sentinel.target_secrets
+       where application_id = $1::uuid and opaque_reference = $2`,
+      [applicationId, created.reference]
+    )
+    const vaultSecretId = mappings[0]?.vault_secret_id
+    expect(vaultSecretId).toBeDefined()
+
+    await database.query(
+      "delete from sentinel.applications where id = $1::uuid",
+      [applicationId]
+    )
+    const remaining = await database.query<{ count: number }>(
+      "select count(*)::int as count from vault.secrets where id = $1::uuid",
+      [vaultSecretId ?? null]
+    )
+    expect(remaining[0]?.count).toBe(0)
+  })
 })

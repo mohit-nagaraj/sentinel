@@ -1,3 +1,4 @@
+import { artifactIdSchema } from "@sentinel/contracts"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -10,6 +11,8 @@ import {
 } from "./artifact-storage.ts"
 
 const applicationId = "11111111-1111-4111-8111-111111111111"
+const applicationStableId =
+  "application:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 class FakeObjects implements PrivateObjectStore {
   readonly stored = new Map<string, Uint8Array>()
@@ -42,8 +45,11 @@ class FakeMetadata implements ArtifactMetadataStore {
 
   async create(input: ArtifactMetadata) {
     if (this.failCreate) throw new Error("metadata failed")
+    if (this.record?.id === input.id) {
+      return { artifact: this.record, created: false }
+    }
     this.record = input
-    return input
+    return { artifact: input, created: true }
   }
   async find() {
     return this.record
@@ -58,6 +64,13 @@ class FakeMetadata implements ArtifactMetadataStore {
   async assertPrivateBucket(bucket: string) {
     if (bucket !== "sentinel-artifacts") throw new Error("not private")
   }
+  async ensurePrivateBucket() {}
+  async assertApplicationIdentity(
+    _applicationId: string,
+    candidateStableId: string
+  ) {
+    if (candidateStableId !== applicationStableId) throw new Error("mismatch")
+  }
 }
 
 describe("artifact service", () => {
@@ -70,6 +83,7 @@ describe("artifact service", () => {
     await service.initialize()
     const saved = await service.persist({
       applicationId,
+      applicationStableId,
       runId: null,
       artifactType: "screenshot",
       mimeType: "image/png",
@@ -78,11 +92,25 @@ describe("artifact service", () => {
     })
 
     expect(saved.objectKey).toBe(
-      buildArtifactObjectKey(applicationId, saved.id)
+      buildArtifactObjectKey(applicationId, saved.databaseId)
     )
+    expect(artifactIdSchema.parse(saved.id)).toBe(saved.id)
     expect(saved.contentHash).toBe(hashArtifact(body))
     expect(saved.contentHash).not.toContain("artifact fixture")
     await expect(service.signedDownloadUrl(saved.id, 901)).rejects.toThrow()
+
+    const duplicate = await service.persist({
+      applicationId,
+      applicationStableId,
+      runId: null,
+      artifactType: "screenshot",
+      mimeType: "image/png",
+      body,
+      retainUntil: null,
+    })
+    expect(duplicate.id).toBe(saved.id)
+    expect(objects.stored.size).toBe(1)
+    expect(objects.deleted).toHaveLength(1)
   })
 
   it("compensates failed metadata writes and restores failed object deletion", async () => {
@@ -94,6 +122,7 @@ describe("artifact service", () => {
     await expect(
       service.persist({
         applicationId,
+        applicationStableId,
         runId: null,
         artifactType: "trace",
         mimeType: "application/zip",
@@ -109,6 +138,7 @@ describe("artifact service", () => {
     metadata.failCreate = false
     const saved = await service.persist({
       applicationId,
+      applicationStableId,
       runId: null,
       artifactType: "trace",
       mimeType: "application/zip",

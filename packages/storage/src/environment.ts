@@ -1,9 +1,14 @@
 import { publicHttpUrlSchema } from "@sentinel/contracts"
 import { z } from "zod"
 
-const databaseUrlSchema = z
-  .string()
-  .regex(/^postgres(?:ql)?:\/\//, "Expected a PostgreSQL connection URL")
+const databaseUrlSchema = z.url({ protocol: /^postgres(?:ql)?$/ })
+
+const disposableDatabaseUrlSchema = databaseUrlSchema.refine((value) => {
+  const hostname = new URL(value).hostname.toLowerCase()
+  return (
+    hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]"
+  )
+}, "Integration tests require a loopback disposable database")
 
 const bucketSchema = z
   .string()
@@ -23,7 +28,7 @@ export const storageEnvironmentSchema = z.strictObject({
 
 export const integrationEnvironmentSchema = z.strictObject({
   RUN_SUPABASE_INTEGRATION_TESTS: z.literal("1"),
-  SENTINEL_TEST_DATABASE_URL: databaseUrlSchema,
+  SENTINEL_TEST_DATABASE_URL: disposableDatabaseUrlSchema,
 })
 
 export type StorageEnvironment = z.infer<typeof storageEnvironmentSchema>
@@ -92,6 +97,7 @@ export function loadIntegrationEnvironment(
 
 function databaseTarget(connectionString: string): string {
   const url = new URL(connectionString)
+  url.protocol = "postgresql:"
   url.username = ""
   url.password = ""
   url.search = ""

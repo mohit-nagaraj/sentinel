@@ -71,8 +71,11 @@ create table if not exists sentinel.runs (
   attempt_count integer not null default 0 check (attempt_count >= 0),
   next_event_sequence bigint not null default 0 check (next_event_sequence >= 0),
   cancel_requested_at timestamptz,
-  error_category text,
-  error_code text,
+  error_category text check (error_category in (
+    'validation', 'configuration', 'authorization', 'rate_limit', 'timeout',
+    'provider', 'storage', 'cancelled', 'unknown'
+  )),
+  error_code text check (error_code ~ '^[a-z][a-z0-9]*(_[a-z0-9]+)*$'),
   created_at timestamptz not null default now(),
   started_at timestamptz,
   finished_at timestamptz,
@@ -80,6 +83,7 @@ create table if not exists sentinel.runs (
   unique (application_id, id),
   unique (application_id, run_type, idempotency_key),
   check ((lease_owner is null) = (lease_expires_at is null)),
+  check ((error_category is null) = (error_code is null)),
   check (finished_at is null or status in ('cancelled', 'succeeded', 'failed'))
 );
 
@@ -167,6 +171,7 @@ create table if not exists sentinel.assessment_findings (
 
 create table if not exists sentinel.artifacts (
   id uuid primary key default gen_random_uuid(),
+  stable_key text not null unique check (stable_key ~ '^artifact:v1:[a-f0-9]{64}$'),
   application_id uuid not null references sentinel.applications(id) on delete cascade,
   run_id uuid,
   artifact_type text not null,
@@ -212,15 +217,18 @@ create table if not exists sentinel.link_reviews (
 
 create table if not exists sentinel.eval_results (
   id uuid primary key default gen_random_uuid(),
-  application_id uuid references sentinel.applications(id) on delete cascade,
-  run_id uuid references sentinel.runs(id) on delete set null,
+  application_id uuid not null references sentinel.applications(id) on delete cascade,
+  run_id uuid,
   fixture_key text not null,
   metric_key text not null,
   outcome text not null check (outcome in ('passed', 'failed', 'blocked')),
   value numeric,
   details jsonb not null default '{}'::jsonb check (octet_length(details::text) <= 16384),
   created_at timestamptz not null default now(),
-  unique nulls not distinct (run_id, fixture_key, metric_key)
+  unique nulls not distinct (application_id, run_id, fixture_key, metric_key),
+  foreign key (application_id, run_id)
+    references sentinel.runs(application_id, id)
+    on delete set null (run_id)
 );
 
 create table if not exists sentinel.target_secrets (
@@ -257,6 +265,56 @@ drop trigger if exists runs_set_updated_at on sentinel.runs;
 create trigger runs_set_updated_at
 before update on sentinel.runs
 for each row execute function sentinel.set_updated_at();
+
+create or replace function sentinel.enforce_run_status_transition()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.status = old.status then
+    return new;
+  end if;
+  if old.status = 'queued' and new.status in ('running', 'cancelled') then
+    return new;
+  end if;
+  if old.status = 'running' and new.status in (
+    'cancelling', 'cancelled', 'succeeded', 'failed', 'interrupted'
+  ) then
+    return new;
+  end if;
+  if old.status = 'interrupted' and new.status in ('queued', 'running', 'cancelled') then
+    return new;
+  end if;
+  if old.status = 'cancelling' and new.status in ('cancelled', 'failed') then
+    return new;
+  end if;
+  raise exception 'invalid run status transition from % to %', old.status, new.status;
+end;
+$$;
+
+drop trigger if exists runs_enforce_status_transition on sentinel.runs;
+create trigger runs_enforce_status_transition
+before update of status on sentinel.runs
+for each row execute function sentinel.enforce_run_status_transition();
+
+create or replace function sentinel.delete_vault_secret_mapping()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  delete from vault.secrets where id = old.vault_secret_id;
+  return old;
+end;
+$$;
+
+drop trigger if exists target_secrets_delete_vault_secret
+  on sentinel.target_secrets;
+create trigger target_secrets_delete_vault_secret
+after delete on sentinel.target_secrets
+for each row execute function sentinel.delete_vault_secret_mapping();
 
 create or replace function sentinel.enqueue_run(
   p_application_id uuid,
@@ -305,17 +363,17 @@ begin
   with candidate as (
     select id
     from sentinel.runs
-    where cancel_requested_at is null
-      and (
-        status = 'queued'
-        or (status = 'running' and lease_expires_at < now())
-      )
+    where (status = 'queued' and cancel_requested_at is null)
+       or (status in ('running', 'cancelling') and lease_expires_at < now())
     order by created_at, id
     for update skip locked
     limit 1
   )
   update sentinel.runs as run
-  set status = 'running',
+  set status = case
+        when run.cancel_requested_at is null then 'running'
+        else 'cancelling'
+      end,
       lease_owner = p_owner,
       lease_expires_at = now() + make_interval(secs => p_lease_seconds),
       attempt_count = run.attempt_count + 1,
@@ -340,7 +398,7 @@ as $$
     update sentinel.runs
     set lease_expires_at = now() + make_interval(secs => p_lease_seconds)
     where id = p_run_id
-      and status = 'running'
+      and status in ('running', 'cancelling')
       and lease_owner = p_owner
       and lease_expires_at > now()
       and p_lease_seconds between 5 and 3600
@@ -367,6 +425,12 @@ begin
   if p_status not in ('succeeded', 'failed', 'cancelled') then
     raise exception 'invalid terminal run status';
   end if;
+  if p_status = 'failed' and (p_error_category is null or p_error_code is null) then
+    raise exception 'failed runs require an error category and code';
+  end if;
+  if p_status <> 'failed' and (p_error_category is not null or p_error_code is not null) then
+    raise exception 'non-failed runs cannot persist error fields';
+  end if;
 
   update sentinel.runs
   set status = p_status,
@@ -377,7 +441,9 @@ begin
       finished_at = now()
   where id = p_run_id
     and lease_owner = p_owner
-    and status in ('running', 'cancelling');
+    and lease_expires_at > now()
+    and status in ('running', 'cancelling')
+    and (status = 'running' or p_status in ('cancelled', 'failed'));
   get diagnostics changed = row_count;
   return changed = 1;
 end;
@@ -401,6 +467,12 @@ begin
   where id = p_run_id
     and status in ('queued', 'running')
   returning status into resulting_status;
+
+  if resulting_status is null then
+    select status into resulting_status
+    from sentinel.runs
+    where id = p_run_id and status in ('cancelling', 'cancelled');
+  end if;
   return resulting_status;
 end;
 $$;
@@ -418,6 +490,7 @@ set search_path = ''
 as $$
 declare
   allocated_sequence bigint;
+  allocated_event_id text;
   result sentinel.run_events;
 begin
   update sentinel.runs
@@ -429,11 +502,30 @@ begin
     raise exception 'run not found';
   end if;
 
+  allocated_event_id := 'event:v1:' || encode(
+    extensions.digest(
+      convert_to(
+        format(
+          '{"kind":"event","runId":"run:%s","sequence":%s,"version":1}',
+          p_run_id,
+          allocated_sequence
+        ),
+        'UTF8'
+      ),
+      'sha256'
+    ),
+    'hex'
+  );
+
   insert into sentinel.run_events (
     run_id, sequence, event_kind, event, occurred_at
   ) values (
     p_run_id, allocated_sequence, p_event_kind,
-    p_event || jsonb_build_object('sequence', allocated_sequence),
+    p_event || jsonb_build_object(
+      'id', allocated_event_id,
+      'runId', 'run:' || p_run_id::text,
+      'sequence', allocated_sequence
+    ),
     p_occurred_at
   ) returning * into result;
   return result;
@@ -478,7 +570,34 @@ begin
     and pull_request_number = p_pull_request_number
     and head_sha = p_head_sha;
 
+  if found and (
+    existing.base_sha <> p_base_sha
+    or existing.diff_hash <> p_diff_hash
+    or existing.baseline_status <> p_baseline_status
+  ) then
+    raise exception 'assessment idempotency conflict for existing PR head';
+  end if;
+
+  if found and existing.is_current then
+    return existing;
+  end if;
+
   if found then
+    update sentinel.pr_assessments
+    set is_current = false,
+        superseded_by_id = existing.id
+    where application_id = p_application_id
+      and repository_host = lower(p_repository_host)
+      and repository_owner = lower(p_repository_owner)
+      and repository_name = lower(p_repository_name)
+      and pull_request_number = p_pull_request_number
+      and is_current;
+
+    update sentinel.pr_assessments
+    set is_current = true,
+        superseded_by_id = null
+    where id = existing.id
+    returning * into existing;
     return existing;
   end if;
 

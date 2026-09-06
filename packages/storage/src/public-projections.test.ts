@@ -1,4 +1,4 @@
-import { contentHashSchema } from "@sentinel/contracts"
+import { artifactIdSchema, contentHashSchema } from "@sentinel/contracts"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -65,7 +65,10 @@ describe("public storage projections", () => {
       checkedAt: now,
     })
     const artifact = toPublicArtifactSummary({
-      id: "44444444-4444-4444-8444-444444444444",
+      id: artifactIdSchema.parse(
+        "artifact:v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      ),
+      databaseId: "44444444-4444-4444-8444-444444444444",
       applicationId: application.id,
       runId: run.id,
       artifactType: "screenshot",

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto"
 
 import {
+  DeleteBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
@@ -8,7 +9,15 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
-import { contentHashSchema, type ContentHash } from "@sentinel/contracts"
+import {
+  applicationIdSchema,
+  artifactIdSchema,
+  contentHashSchema,
+  createArtifactId,
+  reasonCodeSchema,
+  type ArtifactId,
+  type ContentHash,
+} from "@sentinel/contracts"
 import { z } from "zod"
 
 import type { DatabaseExecutor } from "./database.ts"
@@ -21,7 +30,8 @@ const mimeTypeSchema = z
   .regex(/^[a-z0-9][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/i)
 
 export interface ArtifactMetadata {
-  readonly id: string
+  readonly id: ArtifactId
+  readonly databaseId: string
   readonly applicationId: string
   readonly runId: string | null
   readonly artifactType: string
@@ -36,6 +46,7 @@ export interface ArtifactMetadata {
 
 const artifactRowSchema = z.object({
   id: databaseIdSchema,
+  stable_key: artifactIdSchema,
   application_id: databaseIdSchema,
   run_id: databaseIdSchema.nullable(),
   artifact_type: z.string().min(1),
@@ -52,7 +63,8 @@ type ArtifactRow = z.infer<typeof artifactRowSchema> & Record<string, unknown>
 function mapArtifact(row: ArtifactRow): ArtifactMetadata {
   const parsed = artifactRowSchema.parse(row)
   return {
-    id: parsed.id,
+    id: parsed.stable_key,
+    databaseId: parsed.id,
     applicationId: parsed.application_id,
     runId: parsed.run_id,
     artifactType: parsed.artifact_type,
@@ -69,14 +81,19 @@ function mapArtifact(row: ArtifactRow): ArtifactMetadata {
 export class ArtifactMetadataRepository {
   constructor(private readonly database: DatabaseExecutor) {}
 
-  async create(input: ArtifactMetadata): Promise<ArtifactMetadata> {
+  async create(input: ArtifactMetadata): Promise<{
+    readonly artifact: ArtifactMetadata
+    readonly created: boolean
+  }> {
     const rows = await this.database.query<ArtifactRow>(
       `insert into sentinel.artifacts (
-         id, application_id, run_id, artifact_type, bucket, object_key,
+         id, stable_key, application_id, run_id, artifact_type, bucket, object_key,
          content_hash, mime_type, size_bytes, reference_count, retain_until
-       ) values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11)
+       ) values ($1::uuid, $2, $3::uuid, $4::uuid, $5, $6, $7, $8, $9, $10, $11, $12)
+       on conflict (stable_key) do nothing
        returning *`,
       [
+        input.databaseId,
         input.id,
         input.applicationId,
         input.runId,
@@ -91,15 +108,19 @@ export class ArtifactMetadataRepository {
       ]
     )
     const row = rows[0]
-    if (row === undefined) {
-      throw new Error("Artifact metadata creation returned no row")
+    if (row !== undefined) {
+      return { artifact: mapArtifact(row), created: true }
     }
-    return mapArtifact(row)
+    const existing = await this.find(input.id)
+    if (existing === null) {
+      throw new Error("Artifact metadata conflict returned no existing row")
+    }
+    return { artifact: existing, created: false }
   }
 
-  async find(id: string): Promise<ArtifactMetadata | null> {
+  async find(id: ArtifactId): Promise<ArtifactMetadata | null> {
     const rows = await this.database.query<ArtifactRow>(
-      "select * from sentinel.artifacts where id = $1::uuid and deleted_at is null",
+      "select * from sentinel.artifacts where stable_key = $1 and deleted_at is null",
       [id]
     )
     return rows[0] === undefined ? null : mapArtifact(rows[0])
@@ -153,6 +174,40 @@ export class ArtifactMetadataRepository {
       throw new Error("Configured artifact bucket is missing or not private")
     }
   }
+
+  async ensurePrivateBucket(bucket: string): Promise<void> {
+    await this.database.query(
+      `insert into storage.buckets (
+         id, name, public, file_size_limit, allowed_mime_types
+       ) values (
+         $1, $1, false, 52428800,
+         array[
+           'application/json', 'application/pdf', 'application/zip',
+           'image/jpeg', 'image/png', 'text/html', 'text/markdown', 'text/plain'
+         ]::text[]
+       )
+       on conflict (id) do update
+       set public = false,
+           file_size_limit = excluded.file_size_limit,
+           allowed_mime_types = excluded.allowed_mime_types`,
+      [bucket]
+    )
+  }
+
+  async assertApplicationIdentity(
+    applicationId: string,
+    applicationStableId: string
+  ): Promise<void> {
+    const rows = await this.database.query<{ matches: boolean }>(
+      `select exists(
+         select 1 from sentinel.applications where id = $1::uuid and stable_key = $2
+       ) as matches`,
+      [applicationId, applicationStableId]
+    )
+    if (rows[0]?.matches !== true) {
+      throw new Error("Application identity does not match operational record")
+    }
+  }
 }
 
 export interface PrivateObjectStore {
@@ -164,11 +219,19 @@ export interface PrivateObjectStore {
 }
 
 export interface ArtifactMetadataStore {
-  create(input: ArtifactMetadata): Promise<ArtifactMetadata>
-  find(id: string): Promise<ArtifactMetadata | null>
+  create(input: ArtifactMetadata): Promise<{
+    readonly artifact: ArtifactMetadata
+    readonly created: boolean
+  }>
+  find(id: ArtifactId): Promise<ArtifactMetadata | null>
   markDeleted(id: string): Promise<boolean>
   restore(id: string): Promise<void>
   assertPrivateBucket(bucket: string): Promise<void>
+  ensurePrivateBucket(bucket: string): Promise<void>
+  assertApplicationIdentity(
+    applicationId: string,
+    applicationStableId: string
+  ): Promise<void>
 }
 
 export class S3PrivateObjectStore implements PrivateObjectStore {
@@ -237,6 +300,10 @@ export class S3PrivateObjectStore implements PrivateObjectStore {
       new DeleteObjectCommand({ Bucket: this.bucket, Key: key })
     )
   }
+
+  async deleteEmptyBucket(): Promise<void> {
+    await this.client.send(new DeleteBucketCommand({ Bucket: this.bucket }))
+  }
 }
 
 export function hashArtifact(body: Uint8Array): ContentHash {
@@ -262,40 +329,62 @@ export class ArtifactService {
   ) {}
 
   async initialize(): Promise<void> {
+    await this.metadata.ensurePrivateBucket(this.bucket)
     await this.objects.assertPrivateBucket()
     await this.metadata.assertPrivateBucket(this.bucket)
   }
 
   async persist(input: {
     readonly applicationId: string
+    readonly applicationStableId: string
     readonly runId: string | null
     readonly artifactType: string
     readonly mimeType: string
     readonly body: Uint8Array
     readonly retainUntil: Date | null
   }): Promise<ArtifactMetadata> {
-    databaseIdSchema.parse(input.applicationId)
-    if (input.runId !== null) databaseIdSchema.parse(input.runId)
-    mimeTypeSchema.parse(input.mimeType)
+    const applicationId = databaseIdSchema.parse(input.applicationId)
+    const applicationStableId = applicationIdSchema.parse(
+      input.applicationStableId
+    )
+    const runId =
+      input.runId === null ? null : databaseIdSchema.parse(input.runId)
+    const artifactType = reasonCodeSchema.parse(input.artifactType)
+    const mimeType = mimeTypeSchema.parse(input.mimeType)
+    const contentHash = hashArtifact(input.body)
+    const stableId = createArtifactId({
+      applicationId: applicationStableId,
+      contentHash,
+      kind: artifactType,
+    })
 
-    const artifactId = randomUUID()
-    const objectKey = buildArtifactObjectKey(input.applicationId, artifactId)
-    await this.objects.put(objectKey, input.body, input.mimeType)
+    const databaseId = randomUUID()
+    const objectKey = buildArtifactObjectKey(applicationId, databaseId)
+    await this.metadata.assertApplicationIdentity(
+      applicationId,
+      applicationStableId
+    )
+    await this.objects.put(objectKey, input.body, mimeType)
 
     try {
-      return await this.metadata.create({
-        id: artifactId,
-        applicationId: input.applicationId,
-        runId: input.runId,
-        artifactType: input.artifactType,
+      const result = await this.metadata.create({
+        id: stableId,
+        databaseId,
+        applicationId,
+        runId,
+        artifactType,
         bucket: this.bucket,
         objectKey,
-        contentHash: hashArtifact(input.body),
-        mimeType: input.mimeType,
+        contentHash,
+        mimeType,
         sizeBytes: input.body.byteLength,
         referenceCount: 0,
         retainUntil: input.retainUntil,
       })
+      if (!result.created) {
+        await this.objects.delete(objectKey)
+      }
+      return result.artifact
     } catch (error) {
       await this.objects.delete(objectKey).catch(() => undefined)
       throw error
@@ -306,21 +395,21 @@ export class ArtifactService {
     id: string,
     expiresInSeconds: number
   ): Promise<string> {
-    const artifact = await this.metadata.find(databaseIdSchema.parse(id))
+    const artifact = await this.metadata.find(artifactIdSchema.parse(id))
     if (artifact === null) throw new Error("Artifact not found")
     const expires = z.number().int().min(1).max(900).parse(expiresInSeconds)
     return this.objects.signedDownloadUrl(artifact.objectKey, expires)
   }
 
   async delete(id: string): Promise<boolean> {
-    const artifact = await this.metadata.find(databaseIdSchema.parse(id))
+    const artifact = await this.metadata.find(artifactIdSchema.parse(id))
     if (artifact === null || artifact.referenceCount > 0) return false
-    if (!(await this.metadata.markDeleted(artifact.id))) return false
+    if (!(await this.metadata.markDeleted(artifact.databaseId))) return false
     try {
       await this.objects.delete(artifact.objectKey)
       return true
     } catch (error) {
-      await this.metadata.restore(artifact.id)
+      await this.metadata.restore(artifact.databaseId)
       throw error
     }
   }

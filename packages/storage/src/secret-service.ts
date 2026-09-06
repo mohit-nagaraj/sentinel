@@ -179,9 +179,6 @@ export class TargetSecretService {
         "delete from sentinel.target_secrets where id = $1::uuid",
         [mapping.id]
       )
-      await transaction.query("delete from vault.secrets where id = $1::uuid", [
-        mapping.vault_secret_id,
-      ])
       return true
     })
   }

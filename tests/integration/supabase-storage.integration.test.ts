@@ -1,38 +1,106 @@
+import { readFileSync } from "node:fs"
 import { randomUUID } from "node:crypto"
 
-import { loadStorageEnvironment, S3PrivateObjectStore } from "@sentinel/storage"
+import { artifactIdSchema } from "@sentinel/contracts"
+import {
+  ApplicationRepository,
+  ArtifactMetadataRepository,
+  ArtifactService,
+  createPostgresDatabase,
+  loadIntegrationEnvironment,
+  loadStorageEnvironment,
+  S3PrivateObjectStore,
+  type ArtifactMetadata,
+  type DatabaseClient,
+} from "@sentinel/storage"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
+
+import { createOperationalTestApplication } from "../fixtures/operational.ts"
 
 const enabled = process.env["RUN_SUPABASE_STORAGE_TESTS"] === "1"
 const describeIntegration = enabled ? describe : describe.skip
+const migration = readFileSync(
+  new URL(
+    "../../supabase/migrations/20260907000100_operational_state.sql",
+    import.meta.url
+  ),
+  "utf8"
+)
 
 describeIntegration("Supabase private Storage", () => {
-  let store: S3PrivateObjectStore
-  let publicObjectUrl: string
-  const key = `integration/${randomUUID()}.txt`
+  let database: DatabaseClient
+  let service: ArtifactService
+  let objects: S3PrivateObjectStore
+  let saved: ArtifactMetadata | undefined
+  let applicationId: string
+  let publicObjectRoot: string
+  const applicationInput = createOperationalTestApplication(
+    "sentinel-storage-integration"
+  )
+  const bucketName = `sentinel-test-${randomUUID().replaceAll("-", "").slice(0, 20)}`
 
   beforeAll(async () => {
-    const environment = loadStorageEnvironment(process.env)
-    store = new S3PrivateObjectStore(
-      environment.SUPABASE_STORAGE_BUCKET,
-      environment
+    const storageEnvironment = loadStorageEnvironment(process.env)
+    const integrationEnvironment = loadIntegrationEnvironment({
+      ...process.env,
+      RUN_SUPABASE_INTEGRATION_TESTS: "1",
+    })
+    const migrationDatabase = createPostgresDatabase(
+      integrationEnvironment.SENTINEL_TEST_DATABASE_URL,
+      { maxConnections: 1 }
     )
-    publicObjectUrl = `${new URL(environment.SUPABASE_S3_ENDPOINT).origin}/storage/v1/object/public/${environment.SUPABASE_STORAGE_BUCKET}/${key}`
-    await store.assertPrivateBucket()
-  })
+    await migrationDatabase.query(migration)
+    await migrationDatabase.close()
+    database = createPostgresDatabase(
+      integrationEnvironment.SENTINEL_TEST_DATABASE_URL
+    )
+    applicationId = (
+      await new ApplicationRepository(database).upsert(applicationInput)
+    ).id
+
+    objects = new S3PrivateObjectStore(bucketName, storageEnvironment)
+    service = new ArtifactService(
+      bucketName,
+      objects,
+      new ArtifactMetadataRepository(database)
+    )
+    publicObjectRoot = `${new URL(storageEnvironment.SUPABASE_S3_ENDPOINT).origin}/storage/v1/object/public/${bucketName}`
+    await service.initialize()
+  }, 60_000)
+
   afterAll(async () => {
-    if (store !== undefined) await store.delete(key).catch(() => undefined)
+    if (service !== undefined && saved !== undefined) {
+      await service.delete(saved.id).catch(() => undefined)
+    }
+    if (database !== undefined && applicationId !== undefined) {
+      if (objects !== undefined) {
+        await objects.deleteEmptyBucket().catch(() => undefined)
+      }
+      await database.query(
+        "delete from sentinel.applications where id = $1::uuid",
+        [applicationId]
+      )
+      await database.close()
+    }
   })
 
-  it("uploads, signs briefly, downloads, and deletes an isolated object", async () => {
+  it("persists a stable private artifact, signs briefly, and deletes it", async () => {
     const body = new TextEncoder().encode('{"fixture":"sentinel"}')
-    await store.put(key, body, "application/json")
-    await expect(store.get(key)).resolves.toEqual(body)
+    saved = await service.persist({
+      applicationId,
+      applicationStableId: applicationInput.stableKey,
+      runId: null,
+      artifactType: "browser_snapshot",
+      mimeType: "application/json",
+      body,
+      retainUntil: null,
+    })
+    expect(artifactIdSchema.parse(saved.id)).toBe(saved.id)
 
-    const publicResponse = await fetch(publicObjectUrl)
+    const publicResponse = await fetch(`${publicObjectRoot}/${saved.objectKey}`)
     expect(publicResponse.ok).toBe(false)
 
-    const signedUrl = await store.signedDownloadUrl(key, 2)
+    const signedUrl = await service.signedDownloadUrl(saved.id, 2)
     const response = await fetch(signedUrl)
     expect(response.ok).toBe(true)
     expect(await response.text()).toBe('{"fixture":"sentinel"}')
@@ -41,7 +109,10 @@ describeIntegration("Supabase private Storage", () => {
     const expiredResponse = await fetch(signedUrl)
     expect(expiredResponse.ok).toBe(false)
 
-    await store.delete(key)
-    await expect(store.get(key)).rejects.toThrow()
+    await expect(service.delete(saved.id)).resolves.toBe(true)
+    await expect(service.signedDownloadUrl(saved.id, 30)).rejects.toThrow(
+      "Artifact not found"
+    )
+    saved = undefined
   })
 })
