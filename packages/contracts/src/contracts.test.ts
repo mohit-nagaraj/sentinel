@@ -292,6 +292,12 @@ describe("versioned wire contracts", () => {
     expectEventSummaryRejected(
       "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature"
     )
+    expectEventSummaryRejected(
+      "-----BEGIN PRIVATE KEY-----\nMIIEtruncated-secret-material"
+    )
+    expectEventSummaryRejected(
+      "-----BEGIN OPENSSH PRIVATE KEY-----\ntruncated-secret-material"
+    )
 
     expect(() =>
       parseDiscoveryMission({

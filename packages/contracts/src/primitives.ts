@@ -10,10 +10,7 @@ const credentialLabels =
 
 export function redactPersistedText(value: string): string {
   return value
-    .replace(
-      /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/gi,
-      "[REDACTED]"
-    )
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*/gi, "[REDACTED]")
     .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, "[REDACTED]")
     .replace(/\bsk-[A-Za-z0-9_-]{20,}\b/g, "[REDACTED]")
     .replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, "[REDACTED]")
