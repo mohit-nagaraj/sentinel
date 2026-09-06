@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 
 import assessmentFindingFixture from "../../../tests/fixtures/contracts/assessment-finding.json" with { type: "json" }
 import browserTransitionFixture from "../../../tests/fixtures/contracts/browser-transition.json" with { type: "json" }
@@ -30,6 +30,9 @@ import {
   parseRunEvent,
   parseSource,
   parseVerificationResult,
+  type ApiEndpointId,
+  type EvidenceLink,
+  type UiElementId,
 } from "@sentinel/contracts"
 
 const fixtureParsers = [
@@ -365,6 +368,13 @@ describe("versioned wire contracts", () => {
   })
 
   it("enforces typed graph relationship endpoints", () => {
+    type TriggersApiLink = Extract<
+      EvidenceLink,
+      { relationship: "TRIGGERS_API" }
+    >
+    expectTypeOf<TriggersApiLink["fromId"]>().toEqualTypeOf<UiElementId>()
+    expectTypeOf<TriggersApiLink["toId"]>().toEqualTypeOf<ApiEndpointId>()
+
     expect(() =>
       parseEvidenceLink({
         ...evidenceLinkFixture,

@@ -82,7 +82,9 @@ const evidenceLinkFields = {
 
 function evidenceLinkVariant<
   const Relationship extends z.infer<typeof evidenceRelationshipSchema>,
->(relationship: Relationship, fromId: z.ZodType, toId: z.ZodType) {
+  FromId extends z.ZodType,
+  ToId extends z.ZodType,
+>(relationship: Relationship, fromId: FromId, toId: ToId) {
   return z.strictObject({
     ...evidenceLinkFields,
     fromId,
