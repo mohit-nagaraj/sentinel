@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./apps/web/tsconfig.typecheck.json" },
+    { "path": "./apps/worker" },
+    { "path": "./docs" },
+    { "path": "./packages/adapters" },
+    { "path": "./packages/contracts" },
+    { "path": "./packages/orchestration" },
+    { "path": "./packages/storage" },
+    { "path": "./tsconfig.tools.json" }
+  ]
+}

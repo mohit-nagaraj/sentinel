@@ -50,11 +50,11 @@ graph LR
 
 | ID | Issue | Depends on | Status |
 |---|---|---|---|
-| SNT-001 | [Workspace and testing foundation](./.tasks/milestone-01-foundation/SNT-001-workspace-testing-foundation.md) | — | ready |
+| SNT-001 | [Workspace and testing foundation](./.tasks/milestone-01-foundation/SNT-001-workspace-testing-foundation.md) | — | review |
 | SNT-002 | [Core domain contracts and stable identity](./.tasks/milestone-01-foundation/SNT-002-core-contracts-stable-identity.md) | SNT-001 | not-started |
 | SNT-003 | [Supabase operational state, secrets, and artifact storage](./.tasks/milestone-01-foundation/SNT-003-supabase-operational-schema.md) | SNT-001, SNT-002 | not-started |
 | SNT-004 | [Neo4j constraints, repositories, and test isolation](./.tasks/milestone-01-foundation/SNT-004-neo4j-foundation.md) | SNT-001, SNT-002 | not-started |
-| SNT-005 | [Azure OpenAI model gateway compatibility spike](./.tasks/milestone-01-foundation/SNT-005-azure-model-gateway.md) | SNT-001, SNT-002 | blocked |
+| SNT-005 | [Azure OpenAI model gateway compatibility spike](./.tasks/milestone-01-foundation/SNT-005-azure-model-gateway.md) | SNT-001, SNT-002 | not-started |
 | SNT-006 | [LangGraph runtime, checkpointing, events, and interrupts](./.tasks/milestone-01-foundation/SNT-006-langgraph-runtime.md) | SNT-002, SNT-003, SNT-005 | not-started |
 
 ---
@@ -183,7 +183,7 @@ graph LR
 
 | Milestone | Done | Total | Status |
 |---|---:|---:|---|
-| M1 Foundation and durable execution | 0 | 6 | ready |
+| M1 Foundation and durable execution | 0 | 6 | in-progress |
 | M2 Deterministic source evidence | 0 | 7 | not-started |
 | M3 Specialist discovery agents | 0 | 4 | not-started |
 | M4 Graph construction and reconciliation | 0 | 4 | not-started |
@@ -191,11 +191,11 @@ graph LR
 | M6 PR blast-radius loop | 0 | 4 | not-started |
 | M7 Verification and refresh | 0 | 3 | blocked on deployment decision |
 | M8 Evaluation and delivery | 0 | 3 | not-started |
-| **Overall** | **0** | **35** | **ready: SNT-001** |
+| **Overall** | **0** | **35** | **review: SNT-001** |
 
-## Initial ready front
+## Review front
 
-- **SNT-001** — workspace and test foundation.
+- **SNT-001** — workspace and test foundation is awaiting review.
 - External preparation can proceed without implementation ownership conflicts:
   - Azure OpenAI resource/deployment credentials for SNT-005;
   - GitHub App registration inputs for SNT-026;

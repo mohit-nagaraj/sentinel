@@ -3,9 +3,9 @@
 | Field | Value |
 |---|---|
 | Milestone | M1 — Foundation and durable execution |
-| Status | `blocked` |
+| Status | `not-started` |
 | Depends on | SNT-001, SNT-002 |
-| External blocker | Azure resource endpoint, API key/auth, and deployment name |
+| External prerequisite | Azure endpoint, API key, and deployment name are configured; capabilities remain unverified |
 | Blocks | SNT-006, all specialist agents, grounded report wording |
 | PRD references | §10.3–10.4, §15, §18.4, open question 4 |
 
@@ -74,3 +74,5 @@ Agent prompts, LangGraph topology, provider/model selection UI, Langfuse, model 
 ## Implementation notes
 
 Official references: Azure Responses API and Structured Outputs links in PRD §28. Record the tested Azure deployment/version and capability result here without recording endpoint keys or sensitive prompt content.
+
+Configuration readiness was checked on 2026-09-07 without exposing values: endpoint, API key, and deployment variables are populated. This removes the external-input blocker but does not establish compatibility; the issue remains gated on SNT-001 and SNT-002, and its bounded live probe must verify every required capability.

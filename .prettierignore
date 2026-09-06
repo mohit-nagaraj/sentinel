@@ -1,0 +1,13 @@
+node_modules/
+.next/
+.turbo/
+coverage/
+dist/
+out/
+_pagefind/
+output/
+.playwright-cli/
+.tmp-shadcn/
+docs/
+pnpm-lock.yaml
+**/next-env.d.ts

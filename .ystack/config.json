@@ -6,7 +6,7 @@
     "framework": "nextra"
   },
   "monorepo": {
-    "enabled": false
+    "enabled": true
   },
   "modules": {},
   "workflow": {

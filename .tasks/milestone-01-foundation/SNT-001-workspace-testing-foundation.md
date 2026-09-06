@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M1 — Foundation and durable execution |
-| Status | `ready` |
+| Status | `review` |
 | Depends on | None |
 | Blocks | SNT-002, SNT-003, SNT-004, SNT-005 |
 | PRD references | §9.3, §10, §20 |
@@ -45,17 +45,17 @@ playwright.config.ts
 
 ## Implementation tasks
 
-- [ ] Select and pin Node/package-manager versions.
-- [ ] Scaffold web and worker entry points with health/start commands.
-- [ ] Add shared TypeScript base configuration and strict compiler flags.
-- [ ] Configure lint/format rules and generated/vendor exclusions.
-- [ ] Configure Vitest projects or tags so unit tests never touch live providers.
-- [ ] Configure Playwright with an isolated test web server and artifact-on-failure policy.
-- [ ] Add root scripts for `lint`, `typecheck`, `test`, `test:integration`, `test:browser`, and `build`.
-- [ ] Add one unit smoke test, one web route/component smoke test, and one worker startup test.
-- [ ] Add secret-safe environment schema/loading seam; actual typed keys arrive with owning issues.
-- [ ] Add CI and dependency caching based on the lockfile.
-- [ ] Document local prerequisites and test taxonomy in the root README stub.
+- [x] Select and pin Node/package-manager versions.
+- [x] Scaffold web and worker entry points with health/start commands.
+- [x] Add shared TypeScript base configuration and strict compiler flags.
+- [x] Configure lint/format rules and generated/vendor exclusions.
+- [x] Configure Vitest projects or tags so unit tests never touch live providers.
+- [x] Configure Playwright with an isolated test web server and artifact-on-failure policy.
+- [x] Add root scripts for `lint`, `typecheck`, `test`, `test:integration`, `test:browser`, and `build`.
+- [x] Add one unit smoke test, one web route/component smoke test, and one worker startup test.
+- [x] Add secret-safe environment schema/loading seam; actual typed keys arrive with owning issues.
+- [x] Add CI and dependency caching based on the lockfile.
+- [x] Document local prerequisites and test taxonomy in the root README stub.
 
 ## Acceptance criteria
 
@@ -79,4 +79,10 @@ Database migrations, LangGraph workflows, real provider connections, finalized U
 
 ## Implementation notes
 
-Record final workspace paths, package manager, Node version, and command names here after implementation. If scaffold-generated files differ from the representative paths, update dependent issues without changing their behavioral contracts.
+- Workspace paths: `apps/web`, `apps/worker`, `packages/contracts`, `packages/orchestration`, `packages/adapters`, `packages/storage`, `tests/fixtures`, and the existing `docs` app.
+- Toolchain: Node.js `22.17.0` and pnpm `11.15.1`, pinned at the repository root.
+- Web basis: generated with `pnpm dlx shadcn@latest init --preset b7Br7G7Ci --template next`; the preset produced the `base-maia` style with `mist` base color and was integrated at `apps/web`.
+- Default commands: `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build`.
+- Additional suites: `pnpm test:integration`, `pnpm test:graph`, `pnpm test:agent`, `pnpm test:browser`, and opt-in `pnpm test:live`.
+- Worker commands: `pnpm --filter @sentinel/worker start` and `pnpm --filter @sentinel/worker health`.
+- Verification on 2026-09-07: frozen lockfile install, formatting, lint, strict typecheck, 5 deterministic tests, Chromium browser smoke test, worker start/health, and the full workspace build passed without provider credentials.

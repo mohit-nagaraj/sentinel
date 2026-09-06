@@ -1,0 +1,20 @@
+{
+  "name": "@sentinel/worker",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "dev": "node --experimental-strip-types --watch src/cli.ts",
+    "health": "pnpm build && node dist/health.js",
+    "start": "pnpm build && node dist/cli.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sentinel/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.0"
+  }
+}
