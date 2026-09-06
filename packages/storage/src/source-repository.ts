@@ -1,6 +1,7 @@
 import {
   contentHashSchema,
   secretReferenceSchema,
+  stableEntityIdSchema,
   sourceUriSchema,
   sourceKindSchema,
 } from "@sentinel/contracts"
@@ -61,7 +62,7 @@ export class SourceRepository {
     readonly secretReference: string | null
   }): Promise<SourceRecord> {
     const applicationId = z.uuid().parse(input.applicationId)
-    const stableKey = z.string().trim().min(1).max(512).parse(input.stableKey)
+    const stableKey = stableEntityIdSchema.parse(input.stableKey)
     const kind = sourceKindSchema.parse(input.kind)
     const uri = sourceUriSchema.parse(input.uri)
     const status = z

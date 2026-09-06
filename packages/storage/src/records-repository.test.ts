@@ -22,6 +22,8 @@ describe("records repository", () => {
     "SUPABASE_S3_SECRET_ACCESS_KEY",
     "clientSecretValue",
     "password_confirmation",
+    "apiKeyValue",
+    "private_key_pem",
   ])(
     "rejects secret field %s recursively before executing SQL",
     async (field) => {

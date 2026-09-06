@@ -75,5 +75,5 @@ Never run schema tests against the user's production Supabase project by default
 - Runtime package: `@sentinel/storage` using Postgres.js and the Supabase S3-compatible API.
 - Local Supabase CLI version used for verification: `2.116.0`, PostgreSQL 17.
 - The local stack applied the migration from empty state; the integration suite reapplied it twice successfully.
-- Default verification on 2026-09-07: 13 files and 82 tests passed without provider variables.
+- Default verification on 2026-09-07: 13 files and 84 tests passed without provider variables.
 - Opt-in disposable local verification: 3 files and 10 database/Storage/Vault tests passed; `supabase db lint --schema sentinel` reported no errors.

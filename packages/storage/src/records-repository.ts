@@ -55,8 +55,14 @@ function isSensitiveDetailKey(key: string): boolean {
     ].includes(segment)
   )
   const normalized = segments.join("")
+  const hasSensitivePair = segments.some(
+    (segment, index) =>
+      ["access", "api", "private"].includes(segment) &&
+      segments[index + 1] === "key"
+  )
   return (
     sensitiveSegment ||
+    hasSensitivePair ||
     sensitiveDetailKeys.has(normalized) ||
     /(?:accesskey|apikey|privatekey|sessionid)$/.test(normalized)
   )

@@ -21,7 +21,9 @@ $$;
 
 create table if not exists sentinel.applications (
   id uuid primary key default gen_random_uuid(),
-  stable_key text not null unique,
+  stable_key text not null unique check (
+    stable_key ~ '^application:v1:[a-f0-9]{64}$'
+  ),
   name text not null check (length(name) between 1 and 512),
   deployment_url text not null,
   status text not null check (status in (
@@ -39,7 +41,9 @@ create table if not exists sentinel.applications (
 create table if not exists sentinel.sources (
   id uuid primary key default gen_random_uuid(),
   application_id uuid not null references sentinel.applications(id) on delete cascade,
-  stable_key text not null,
+  stable_key text not null check (
+    stable_key ~ '^(application|document-source|document-page|document-section|requirement|capability|workflow|flow-step|screen|ui-element|frontend-route|code-file|code-symbol|api-endpoint|domain-entity|coverage-assessment|pull-request):v1:[a-f0-9]{64}$'
+  ),
   kind text not null check (kind in ('repository', 'documentation', 'application')),
   uri text not null,
   status text not null check (status in ('pending', 'ready', 'warning', 'blocked', 'failed')),
