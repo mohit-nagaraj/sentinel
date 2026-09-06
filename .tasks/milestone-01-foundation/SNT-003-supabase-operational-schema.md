@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M1 — Foundation and durable execution |
-| Status | `not-started` |
+| Status | `review` |
 | Depends on | SNT-001, SNT-002 |
 | Blocks | Run orchestration, onboarding, GitHub, artifacts, UI |
 | PRD references | §11.1, §11.4–11.6, §18.3, FR-017, NFR-004/NFR-005 |
@@ -29,16 +29,16 @@ Supabase is Sentinel's operational and durable-artifact platform. Postgres store
 
 ## Implementation tasks
 
-- [ ] Add migrations, constraints, indexes, timestamps, and foreign keys.
-- [ ] Make webhook delivery ID and assessment `(repository, PR, head SHA)` idempotency explicit.
-- [ ] Implement atomic run creation/claim/lease/heartbeat/finish/cancel functions.
-- [ ] Implement monotonic per-run event sequence allocation.
-- [ ] Add repository methods with transaction injection and typed row mapping.
-- [ ] Define service-role-only writes and safe read views/API responses for the frontend.
-- [ ] Add private bucket bootstrap/check, server upload/download/delete, short-lived signed URL, content hash, MIME/size, reference counting, and retention fields.
-- [ ] Add target-secret create/read/rotate/delete service returning opaque references only; prohibit decrypted secret access in browser APIs.
-- [ ] Add seed factories for isolated tests, never production demo content.
-- [ ] Document direct versus pooler connection expectations for long-lived worker/serverless contexts.
+- [x] Add migrations, constraints, indexes, timestamps, and foreign keys.
+- [x] Make webhook delivery ID and assessment `(repository, PR, head SHA)` idempotency explicit.
+- [x] Implement atomic run creation/claim/lease/heartbeat/finish/cancel functions.
+- [x] Implement monotonic per-run event sequence allocation.
+- [x] Add repository methods with transaction injection and typed row mapping.
+- [x] Define service-role-only writes and safe read views/API responses for the frontend.
+- [x] Add private bucket bootstrap/check, server upload/download/delete, short-lived signed URL, content hash, MIME/size, reference counting, and retention fields.
+- [x] Add target-secret create/read/rotate/delete service returning opaque references only; prohibit decrypted secret access in browser APIs.
+- [x] Add seed factories for isolated tests, never production demo content.
+- [x] Document direct versus pooler connection expectations for long-lived worker/serverless contexts.
 
 ## Acceptance criteria
 
@@ -70,3 +70,10 @@ LangGraph checkpoint tables, final authentication UI, Realtime broadcast trigger
 ## Implementation notes
 
 Never run schema tests against the user's production Supabase project by default. Require an explicitly named disposable test connection/schema and fail closed if it is absent.
+
+- Schema authority: `supabase/migrations/20260907000100_operational_state.sql`.
+- Runtime package: `@sentinel/storage` using Postgres.js and the Supabase S3-compatible API.
+- Local Supabase CLI version used for verification: `2.116.0`, PostgreSQL 17.
+- The local stack applied the migration from empty state; the integration suite reapplied it twice successfully.
+- Default verification on 2026-09-07: 13 files and 85 tests passed without provider variables.
+- Opt-in disposable local verification: 3 files and 10 database/Storage/Vault tests passed; `supabase db lint --schema sentinel` reported no errors.

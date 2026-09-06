@@ -19,12 +19,14 @@
     "test:agent": "vitest run --project agent --passWithNoTests",
     "test:browser": "playwright test",
     "test:graph": "vitest run --project graph --passWithNoTests",
-    "test:integration": "vitest run --project integration --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests --maxWorkers=1",
     "test:live": "cross-env RUN_LIVE_TESTS=1 vitest run --project live --passWithNoTests",
     "typecheck": "tsc --build"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
+    "@sentinel/contracts": "workspace:*",
+    "@sentinel/storage": "workspace:*",
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^22.17.0",
