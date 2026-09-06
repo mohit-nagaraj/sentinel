@@ -184,6 +184,27 @@ describe("canonical identity", () => {
     })
 
     expect(createStableKey(lower)).toBe(createStableKey(mixedCase))
+
+    const versionOne = stableKeyInputSchema.parse({
+      kind: "application",
+      deploymentUrl: "https://demo.example.com?version=1&tenant=alpha",
+      repository,
+    })
+    const reorderedVersionOne = stableKeyInputSchema.parse({
+      kind: "application",
+      deploymentUrl: "https://DEMO.EXAMPLE.COM/?tenant=alpha&version=1",
+      repository,
+    })
+    const versionTwo = stableKeyInputSchema.parse({
+      kind: "application",
+      deploymentUrl: "https://demo.example.com?tenant=alpha&version=2",
+      repository,
+    })
+
+    expect(createStableKey(reorderedVersionOne)).toBe(
+      createStableKey(versionOne)
+    )
+    expect(createStableKey(versionTwo)).not.toBe(createStableKey(versionOne))
   })
 
   it("normalizes GitHub repository casing and distinguishes repeated controls", () => {

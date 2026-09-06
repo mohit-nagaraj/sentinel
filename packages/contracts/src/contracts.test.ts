@@ -266,68 +266,32 @@ describe("versioned wire contracts", () => {
       })
     ).toThrow("sensitive query parameter")
 
-    expect(() =>
-      parseDiscoveryMission({
-        ...discoveryMissionFixture,
-        goal: "Use Cookie: session=plaintext-secret to inspect checkout.",
-      })
-    ).toThrow("secret material")
+    const redactedMission = parseDiscoveryMission({
+      ...discoveryMissionFixture,
+      goal: "Use Cookie: session=plaintext-secret to inspect checkout.",
+    })
+    expect(redactedMission.goal).toContain("[REDACTED]")
+    expect(redactedMission.goal).not.toContain("plaintext-secret")
 
-    expect(() =>
-      parseRunEvent({
-        ...runEventFixture,
-        summary: "Authorization: Bearer plaintext-secret",
-      })
-    ).toThrow("secret material")
+    const expectEventSummaryRedacted = (summary: string) => {
+      const event = parseRunEvent({ ...runEventFixture, summary })
+      expect(event.summary).toContain("[REDACTED]")
+      expect(event.summary).not.toBe(summary)
+    }
 
-    expect(() =>
-      parseRunEvent({
-        ...runEventFixture,
-        summary: "password=must",
-      })
-    ).toThrow("secret material")
-
-    expect(() =>
-      parseRunEvent({
-        ...runEventFixture,
-        summary: "sessionid=token",
-      })
-    ).toThrow("secret material")
-
-    expect(() =>
-      parseRunEvent({
-        ...runEventFixture,
-        summary: "sessionid=plaintext-secret",
-      })
-    ).toThrow("secret material")
-
-    expect(() =>
-      parseRunEvent({
-        ...runEventFixture,
-        summary: "Cookie: sid=abc",
-      })
-    ).toThrow("secret material")
-
-    expect(() =>
-      parseRunEvent({
-        ...runEventFixture,
-        summary: "Authorization: Bearer abc",
-      })
-    ).toThrow("secret material")
-
-    expect(() =>
-      parseRunEvent({
-        ...runEventFixture,
-        summary: "PHPSESSID=abc",
-      })
-    ).toThrow("secret material")
-
-    expect(() =>
-      parseRunEvent({
-        ...runEventFixture,
-        summary: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature",
-      })
-    ).toThrow("secret material")
+    expectEventSummaryRedacted("Authorization: Bearer plaintext-secret")
+    expectEventSummaryRedacted("password=must")
+    expectEventSummaryRedacted("password: hunter2s")
+    expectEventSummaryRedacted("password: princess")
+    expectEventSummaryRedacted("sessionid=token")
+    expectEventSummaryRedacted("sessionid=plaintext-secret")
+    expectEventSummaryRedacted("Cookie: sid=abc")
+    expectEventSummaryRedacted("Authorization: Bearer abc")
+    expectEventSummaryRedacted("Authorization: Bearer compromised")
+    expectEventSummaryRedacted("PHPSESSID=abc")
+    expectEventSummaryRedacted(
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature"
+    )
 
     expect(() =>
       parseDiscoveryMission({
@@ -339,12 +303,13 @@ describe("versioned wire contracts", () => {
       })
     ).toThrow("sensitive query parameter")
 
-    expect(() =>
-      parseMissionResult({
-        ...missionResultFixture,
-        exclusions: ["Authorization: Bearer plaintext-secret"],
-      })
-    ).toThrow("secret material")
+    const redactedResult = parseMissionResult({
+      ...missionResultFixture,
+      exclusions: ["Authorization: Bearer plaintext-secret"],
+    })
+    expect(redactedResult.exclusions).toEqual([
+      "Authorization: Bearer [REDACTED]",
+    ])
 
     expect(
       parseDiscoveryMission({
@@ -367,12 +332,12 @@ describe("versioned wire contracts", () => {
       })
     ).toMatchObject({ agent: "code" })
 
-    expect(() =>
-      parseDiscoveryMission({
-        ...discoveryMissionFixture,
-        goal: "Use password: hunter for login.",
-      })
-    ).toThrow("secret material")
+    const redactedPasswordMission = parseDiscoveryMission({
+      ...discoveryMissionFixture,
+      goal: "Use password: hunter for login.",
+    })
+    expect(redactedPasswordMission.goal).toContain("[REDACTED]")
+    expect(redactedPasswordMission.goal).not.toContain("hunter")
 
     expect(
       parseDiscoveryMission({
@@ -388,12 +353,23 @@ describe("versioned wire contracts", () => {
       })
     ).toMatchObject({ agent: "code" })
 
-    expect(() =>
-      parseRunEvent({
-        ...runEventFixture,
-        summary: "Provider returned access key AKIAABCDEFGHIJKLMNOP.",
+    expect(
+      parseDiscoveryMission({
+        ...discoveryMissionFixture,
+        goal: "Verify password: reset after account recovery.",
       })
-    ).toThrow("secret material")
+    ).toMatchObject({ agent: "code" })
+
+    expect(
+      parseDiscoveryMission({
+        ...discoveryMissionFixture,
+        goal: "Confirm token: format follows the documented standard.",
+      })
+    ).toMatchObject({ agent: "code" })
+
+    expectEventSummaryRedacted(
+      "Provider returned access key AKIAABCDEFGHIJKLMNOP."
+    )
 
     const harmlessQuery = parseDiscoveryMission({
       ...discoveryMissionFixture,
@@ -405,7 +381,9 @@ describe("versioned wire contracts", () => {
       },
     })
     expect(harmlessQuery).toMatchObject({ agent: "code" })
-    expect(harmlessQuery.scope.sourceUris).toEqual(["https://example.com/docs"])
+    expect(harmlessQuery.scope.sourceUris).toEqual([
+      "https://example.com/docs?author=alice&session_type=conference",
+    ])
 
     expect(() =>
       parseDiscoveryMission({

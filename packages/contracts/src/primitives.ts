@@ -5,101 +5,36 @@ export const WIRE_SCHEMA_VERSION = 1 as const
 export const schemaVersionSchema = z.literal(WIRE_SCHEMA_VERSION)
 export const nonEmptyStringSchema = z.string().trim().min(1).max(4_096)
 export const shortTextSchema = z.string().trim().min(1).max(512)
-const sensitiveTextPatterns = [
-  /-----BEGIN [A-Z ]*PRIVATE KEY-----/i,
-  /\bgh[pousr]_[A-Za-z0-9]{20,}\b/,
-  /\bsk-[A-Za-z0-9_-]{20,}\b/,
-  /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/,
-  /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/,
-] as const
+const credentialLabels =
+  "api[_-]?key|auth|client[_-]?secret|connect\\.sid|credential|laravel_session|password|phpsessid|private[_-]?key|secret|session(?:[_-]?id)?|sid|token"
 
-const requirementWords = new Set([
-  "at",
-  "automatically",
-  "can",
-  "cannot",
-  "configurable",
-  "field",
-  "input",
-  "is",
-  "generated",
-  "maximum",
-  "may",
-  "minimum",
-  "must",
-  "optional",
-  "provided",
-  "required",
-  "rotated",
-  "should",
-  "token",
-  "validated",
-])
-
-function looksLikeCredentialValue(candidate: string): boolean {
-  const normalized = candidate.replace(/^["']|["'.]$/g, "").toLowerCase()
-
-  if (
-    requirementWords.has(normalized) ||
-    normalized === "[redacted]" ||
-    normalized === "<redacted>" ||
-    /(?:s|ed|ing|able|ible|ive|al|ly|tion|ment)$/.test(normalized)
-  ) {
-    return false
-  }
-
-  return true
-}
-
-function containsCredentialAssignment(value: string): boolean {
-  const labels =
-    "api[_-]?key|auth|client[_-]?secret|connect\\.sid|credential|laravel_session|password|phpsessid|private[_-]?key|secret|session(?:[_-]?id)?|sid|token"
-  const equalAssignments = value.matchAll(
-    new RegExp(`\\b(?:${labels})\\s*=\\s*([^\\s,;]+)`, "gi")
-  )
-
-  for (const assignment of equalAssignments) {
-    const candidate = assignment[1]?.toLowerCase() ?? ""
-    if (candidate !== "[redacted]" && candidate !== "<redacted>") {
-      return true
-    }
-  }
-
-  const colonAssignments = value.matchAll(
-    new RegExp(`\\b(?:${labels})\\s*:\\s*([^\\s,;]+)`, "gi")
-  )
-  for (const assignment of colonAssignments) {
-    if (looksLikeCredentialValue(assignment[1] ?? "")) {
-      return true
-    }
-  }
-
-  return false
-}
-
-function containsCredentialHeader(value: string): boolean {
-  const authorization =
-    /\b(?:authorization|proxy-authorization)\s*:\s*(?:basic|bearer)\s+([^\s,;]+)/i.exec(
-      value
+export function redactPersistedText(value: string): string {
+  return value
+    .replace(
+      /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/gi,
+      "[REDACTED]"
     )
-  if (
-    authorization !== null &&
-    looksLikeCredentialValue(authorization[1] ?? "")
-  ) {
-    return true
-  }
-
-  const cookie = /\b(?:cookie|set-cookie)\s*:\s*([^\s,;]+)/i.exec(value)
-  return cookie !== null
+    .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, "[REDACTED]")
+    .replace(/\bsk-[A-Za-z0-9_-]{20,}\b/g, "[REDACTED]")
+    .replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, "[REDACTED]")
+    .replace(
+      /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
+      "[REDACTED]"
+    )
+    .replace(
+      /(\b(?:authorization|proxy-authorization)\s*:\s*(?:basic|bearer)\s+)[^\s,;]+/gi,
+      "$1[REDACTED]"
+    )
+    .replace(/(\b(?:cookie|set-cookie)\s*:\s*)[^\s,;]+/gi, "$1[REDACTED]")
+    .replace(
+      new RegExp(`(\\b(?:${credentialLabels})\\s*[:=]\\s*)[^\\s,;]+`, "gi"),
+      "$1[REDACTED]"
+    )
 }
 
-export const persistedTextSchema = nonEmptyStringSchema.refine(
-  (value) =>
-    !sensitiveTextPatterns.some((pattern) => pattern.test(value)) &&
-    !containsCredentialAssignment(value) &&
-    !containsCredentialHeader(value),
-  { message: "Persisted text contains credential or secret material" }
-)
+export const persistedTextSchema = nonEmptyStringSchema
+  .transform(redactPersistedText)
+  .brand<"PersistedText">()
 export const reasonCodeSchema = z
   .string()
   .regex(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/)
@@ -143,7 +78,7 @@ const sensitiveQueryKey =
 function normalizePublicUrl(value: string): string {
   const url = new URL(value)
   url.hash = ""
-  url.search = ""
+  url.searchParams.sort()
   return url.toString()
 }
 
@@ -167,7 +102,7 @@ export const publicHttpUrlSchema = z
       }
     }
 
-    if (!persistedTextSchema.safeParse(value).success) {
+    if (redactPersistedText(value) !== value) {
       context.addIssue({
         code: "custom",
         message: "Public URLs cannot contain credential or secret material",
