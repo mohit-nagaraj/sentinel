@@ -226,11 +226,20 @@ export class ArtifactMetadataRepository {
 }
 
 export interface PrivateObjectStore {
-  assertPrivateBucket(): Promise<void>
-  put(key: string, body: Uint8Array, mimeType: string): Promise<void>
-  get(key: string): Promise<Uint8Array>
-  signedDownloadUrl(key: string, expiresInSeconds: number): Promise<string>
-  delete(key: string): Promise<void>
+  assertPrivateBucket(bucket: string): Promise<void>
+  put(
+    bucket: string,
+    key: string,
+    body: Uint8Array,
+    mimeType: string
+  ): Promise<void>
+  get(bucket: string, key: string): Promise<Uint8Array>
+  signedDownloadUrl(
+    bucket: string,
+    key: string,
+    expiresInSeconds: number
+  ): Promise<string>
+  delete(bucket: string, key: string): Promise<void>
 }
 
 export interface ArtifactMetadataStore {
@@ -253,7 +262,6 @@ export class S3PrivateObjectStore implements PrivateObjectStore {
   private readonly client: S3Client
 
   constructor(
-    private readonly bucket: string,
     environment: Pick<
       StorageEnvironment,
       | "SUPABASE_S3_ENDPOINT"
@@ -273,14 +281,19 @@ export class S3PrivateObjectStore implements PrivateObjectStore {
     })
   }
 
-  async assertPrivateBucket(): Promise<void> {
-    await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }))
+  async assertPrivateBucket(bucket: string): Promise<void> {
+    await this.client.send(new HeadBucketCommand({ Bucket: bucket }))
   }
 
-  async put(key: string, body: Uint8Array, mimeType: string): Promise<void> {
+  async put(
+    bucket: string,
+    key: string,
+    body: Uint8Array,
+    mimeType: string
+  ): Promise<void> {
     await this.client.send(
       new PutObjectCommand({
-        Bucket: this.bucket,
+        Bucket: bucket,
         Key: key,
         Body: body,
         ContentType: mimeType,
@@ -288,9 +301,9 @@ export class S3PrivateObjectStore implements PrivateObjectStore {
     )
   }
 
-  async get(key: string): Promise<Uint8Array> {
+  async get(bucket: string, key: string): Promise<Uint8Array> {
     const response = await this.client.send(
-      new GetObjectCommand({ Bucket: this.bucket, Key: key })
+      new GetObjectCommand({ Bucket: bucket, Key: key })
     )
     if (response.Body === undefined) {
       throw new Error("Artifact download returned no body")
@@ -299,25 +312,26 @@ export class S3PrivateObjectStore implements PrivateObjectStore {
   }
 
   async signedDownloadUrl(
+    bucket: string,
     key: string,
     expiresInSeconds: number
   ): Promise<string> {
     const expires = z.number().int().min(1).max(900).parse(expiresInSeconds)
     return getSignedUrl(
       this.client,
-      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      new GetObjectCommand({ Bucket: bucket, Key: key }),
       { expiresIn: expires }
     )
   }
 
-  async delete(key: string): Promise<void> {
+  async delete(bucket: string, key: string): Promise<void> {
     await this.client.send(
-      new DeleteObjectCommand({ Bucket: this.bucket, Key: key })
+      new DeleteObjectCommand({ Bucket: bucket, Key: key })
     )
   }
 
-  async deleteEmptyBucket(): Promise<void> {
-    await this.client.send(new DeleteBucketCommand({ Bucket: this.bucket }))
+  async deleteEmptyBucket(bucket: string): Promise<void> {
+    await this.client.send(new DeleteBucketCommand({ Bucket: bucket }))
   }
 }
 
@@ -345,7 +359,7 @@ export class ArtifactService {
 
   async initialize(): Promise<void> {
     await this.metadata.ensurePrivateBucket(this.bucket)
-    await this.objects.assertPrivateBucket()
+    await this.objects.assertPrivateBucket(this.bucket)
     await this.metadata.assertPrivateBucket(this.bucket)
   }
 
@@ -379,7 +393,7 @@ export class ArtifactService {
       applicationId,
       applicationStableId
     )
-    await this.objects.put(objectKey, input.body, mimeType)
+    await this.objects.put(this.bucket, objectKey, input.body, mimeType)
 
     try {
       const result = await this.metadata.create({
@@ -397,11 +411,11 @@ export class ArtifactService {
         retainUntil: input.retainUntil,
       })
       if (!result.created) {
-        await this.objects.delete(objectKey)
+        await this.objects.delete(this.bucket, objectKey)
       }
       return result.artifact
     } catch (error) {
-      await this.objects.delete(objectKey).catch(() => undefined)
+      await this.objects.delete(this.bucket, objectKey).catch(() => undefined)
       throw error
     }
   }
@@ -418,7 +432,11 @@ export class ArtifactService {
     )
     if (artifact === null) throw new Error("Artifact not found")
     const expires = z.number().int().min(1).max(900).parse(expiresInSeconds)
-    return this.objects.signedDownloadUrl(artifact.objectKey, expires)
+    return this.objects.signedDownloadUrl(
+      artifact.bucket,
+      artifact.objectKey,
+      expires
+    )
   }
 
   async delete(applicationIdInput: string, id: string): Promise<boolean> {
@@ -430,7 +448,7 @@ export class ArtifactService {
     if (artifact === null || artifact.referenceCount > 0) return false
     if (!(await this.metadata.markDeleted(artifact.databaseId))) return false
     try {
-      await this.objects.delete(artifact.objectKey)
+      await this.objects.delete(artifact.bucket, artifact.objectKey)
       return true
     } catch (error) {
       await this.metadata.restore(artifact.databaseId)

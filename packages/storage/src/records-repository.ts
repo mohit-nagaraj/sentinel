@@ -38,11 +38,27 @@ const sensitiveDetailKeys = new Set([
 ])
 
 function isSensitiveDetailKey(key: string): boolean {
+  const segments = key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+  const sensitiveSegment = segments.some((segment) =>
+    [
+      "authorization",
+      "cookie",
+      "credential",
+      "password",
+      "secret",
+      "signature",
+      "token",
+    ].includes(segment)
+  )
+  const normalized = segments.join("")
   return (
-    sensitiveDetailKeys.has(key) ||
-    /(?:apikey|cookie|credential|password|privatekey|secret|sessionid|signature|token)$/.test(
-      key
-    )
+    sensitiveSegment ||
+    sensitiveDetailKeys.has(normalized) ||
+    /(?:accesskey|apikey|privatekey|sessionid)$/.test(normalized)
   )
 }
 
@@ -63,12 +79,7 @@ function assertSecretSafeDetails(value: unknown, path = "$"): void {
   if (value === null || typeof value !== "object") return
 
   for (const [key, child] of Object.entries(value)) {
-    const normalizedKey = key.replace(/[^a-z0-9]/gi, "").toLowerCase()
-    if (
-      isSensitiveDetailKey(normalizedKey) &&
-      child !== null &&
-      child !== "[REDACTED]"
-    ) {
+    if (isSensitiveDetailKey(key) && child !== null && child !== "[REDACTED]") {
       throw new Error(
         `Eval details contain a sensitive field at ${path}.${key}`
       )

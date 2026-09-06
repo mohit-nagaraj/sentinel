@@ -18,6 +18,10 @@ describe("records repository", () => {
     "set-cookie",
     "proxy-authorization",
     "x-amz-signature",
+    "aws_secret_access_key",
+    "SUPABASE_S3_SECRET_ACCESS_KEY",
+    "clientSecretValue",
+    "password_confirmation",
   ])(
     "rejects secret field %s recursively before executing SQL",
     async (field) => {

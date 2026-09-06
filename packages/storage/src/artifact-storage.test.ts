@@ -17,22 +17,28 @@ const applicationStableId =
 class FakeObjects implements PrivateObjectStore {
   readonly stored = new Map<string, Uint8Array>()
   readonly deleted: string[] = []
+  readonly deletedBuckets: string[] = []
   failDelete = false
 
   async assertPrivateBucket() {}
-  async put(key: string, body: Uint8Array) {
+  async put(_bucket: string, key: string, body: Uint8Array) {
     this.stored.set(key, body)
   }
-  async get(key: string) {
+  async get(_bucket: string, key: string) {
     const body = this.stored.get(key)
     if (body === undefined) throw new Error("missing")
     return body
   }
-  async signedDownloadUrl(key: string, expiresInSeconds: number) {
-    return `https://signed.example/${key}?expires=${expiresInSeconds}`
+  async signedDownloadUrl(
+    bucket: string,
+    key: string,
+    expiresInSeconds: number
+  ) {
+    return `https://signed.example/${bucket}/${key}?expires=${expiresInSeconds}`
   }
-  async delete(key: string) {
+  async delete(bucket: string, key: string) {
     if (this.failDelete) throw new Error("delete failed")
+    this.deletedBuckets.push(bucket)
     this.deleted.push(key)
     this.stored.delete(key)
   }
@@ -113,6 +119,13 @@ describe("artifact service", () => {
     expect(duplicate.id).toBe(saved.id)
     expect(objects.stored.size).toBe(1)
     expect(objects.deleted).toHaveLength(1)
+
+    metadata.record = { ...saved, bucket: "legacy-artifacts" }
+    await expect(
+      service.signedDownloadUrl(applicationId, saved.id, 30)
+    ).resolves.toContain("/legacy-artifacts/")
+    await expect(service.delete(applicationId, saved.id)).resolves.toBe(true)
+    expect(objects.deletedBuckets.at(-1)).toBe("legacy-artifacts")
   })
 
   it("compensates failed metadata writes and restores failed object deletion", async () => {

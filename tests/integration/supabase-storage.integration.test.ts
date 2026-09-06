@@ -58,7 +58,7 @@ describeIntegration("Supabase private Storage", () => {
       await new ApplicationRepository(database).upsert(applicationInput)
     ).id
 
-    objects = new S3PrivateObjectStore(bucketName, storageEnvironment)
+    objects = new S3PrivateObjectStore(storageEnvironment)
     service = new ArtifactService(
       bucketName,
       objects,
@@ -74,7 +74,7 @@ describeIntegration("Supabase private Storage", () => {
     }
     if (database !== undefined && applicationId !== undefined) {
       if (objects !== undefined) {
-        await objects.deleteEmptyBucket().catch(() => undefined)
+        await objects.deleteEmptyBucket(bucketName).catch(() => undefined)
       }
       await database.query(
         "delete from sentinel.applications where id = $1::uuid",
