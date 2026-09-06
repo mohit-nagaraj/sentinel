@@ -7,25 +7,41 @@ const applicationId = "11111111-1111-4111-8111-111111111111"
 const recordId = "22222222-2222-4222-8222-222222222222"
 
 describe("records repository", () => {
-  it("rejects secret fields recursively before executing SQL", async () => {
-    const query = vi.fn().mockResolvedValue([{ id: recordId }])
-    const repository = new RecordsRepository({
-      query: query as DatabaseExecutor["query"],
-    })
-
-    await expect(
-      repository.recordEvalResult({
-        applicationId,
-        runId: null,
-        fixtureKey: "credential-redaction",
-        metricKey: "leak-count",
-        outcome: "failed",
-        value: 1,
-        details: { nested: { password: "plaintext-value" } },
+  it.each([
+    "password",
+    "access_token",
+    "refreshToken",
+    "id_token",
+    "oauth_token",
+    "api_token",
+    "accessKeyId",
+    "set-cookie",
+    "proxy-authorization",
+    "x-amz-signature",
+  ])(
+    "rejects secret field %s recursively before executing SQL",
+    async (field) => {
+      const query = vi.fn().mockResolvedValue([{ id: recordId }])
+      const repository = new RecordsRepository({
+        query: query as DatabaseExecutor["query"],
       })
-    ).rejects.toThrow("sensitive field")
-    expect(query).not.toHaveBeenCalled()
-  })
+
+      await expect(
+        repository.recordEvalResult({
+          applicationId,
+          runId: null,
+          fixtureKey: "credential-redaction",
+          metricKey: "leak-count",
+          outcome: "failed",
+          value: 1,
+          details: {
+            nested: { [field]: "opaque-value" },
+          },
+        })
+      ).rejects.toThrow("sensitive field")
+      expect(query).not.toHaveBeenCalled()
+    }
+  )
 
   it("writes canonical secret-free eval details with bound parameters", async () => {
     const query = vi.fn().mockResolvedValue([{ id: recordId }])

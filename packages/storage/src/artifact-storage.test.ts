@@ -97,7 +97,9 @@ describe("artifact service", () => {
     expect(artifactIdSchema.parse(saved.id)).toBe(saved.id)
     expect(saved.contentHash).toBe(hashArtifact(body))
     expect(saved.contentHash).not.toContain("artifact fixture")
-    await expect(service.signedDownloadUrl(saved.id, 901)).rejects.toThrow()
+    await expect(
+      service.signedDownloadUrl(applicationId, saved.id, 901)
+    ).rejects.toThrow()
 
     const duplicate = await service.persist({
       applicationId,
@@ -146,7 +148,9 @@ describe("artifact service", () => {
       retainUntil: null,
     })
     objects.failDelete = true
-    await expect(service.delete(saved.id)).rejects.toThrow("delete failed")
+    await expect(service.delete(applicationId, saved.id)).rejects.toThrow(
+      "delete failed"
+    )
     expect(metadata.restored).toBe(true)
   })
 })

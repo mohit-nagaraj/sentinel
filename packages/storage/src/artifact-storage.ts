@@ -90,7 +90,18 @@ export class ArtifactMetadataRepository {
          id, stable_key, application_id, run_id, artifact_type, bucket, object_key,
          content_hash, mime_type, size_bytes, reference_count, retain_until
        ) values ($1::uuid, $2, $3::uuid, $4::uuid, $5, $6, $7, $8, $9, $10, $11, $12)
-       on conflict (stable_key) do nothing
+       on conflict (stable_key) do update
+       set run_id = excluded.run_id,
+           artifact_type = excluded.artifact_type,
+           bucket = excluded.bucket,
+           object_key = excluded.object_key,
+           content_hash = excluded.content_hash,
+           mime_type = excluded.mime_type,
+           size_bytes = excluded.size_bytes,
+           reference_count = 0,
+           retain_until = excluded.retain_until,
+           deleted_at = null
+       where sentinel.artifacts.deleted_at is not null
        returning *`,
       [
         input.databaseId,
@@ -111,17 +122,21 @@ export class ArtifactMetadataRepository {
     if (row !== undefined) {
       return { artifact: mapArtifact(row), created: true }
     }
-    const existing = await this.find(input.id)
+    const existing = await this.find(input.applicationId, input.id)
     if (existing === null) {
       throw new Error("Artifact metadata conflict returned no existing row")
     }
     return { artifact: existing, created: false }
   }
 
-  async find(id: ArtifactId): Promise<ArtifactMetadata | null> {
+  async find(
+    applicationId: string,
+    id: ArtifactId
+  ): Promise<ArtifactMetadata | null> {
     const rows = await this.database.query<ArtifactRow>(
-      "select * from sentinel.artifacts where stable_key = $1 and deleted_at is null",
-      [id]
+      `select * from sentinel.artifacts
+       where application_id = $1::uuid and stable_key = $2 and deleted_at is null`,
+      [applicationId, id]
     )
     return rows[0] === undefined ? null : mapArtifact(rows[0])
   }
@@ -223,7 +238,7 @@ export interface ArtifactMetadataStore {
     readonly artifact: ArtifactMetadata
     readonly created: boolean
   }>
-  find(id: ArtifactId): Promise<ArtifactMetadata | null>
+  find(applicationId: string, id: ArtifactId): Promise<ArtifactMetadata | null>
   markDeleted(id: string): Promise<boolean>
   restore(id: string): Promise<void>
   assertPrivateBucket(bucket: string): Promise<void>
@@ -392,17 +407,26 @@ export class ArtifactService {
   }
 
   async signedDownloadUrl(
+    applicationIdInput: string,
     id: string,
     expiresInSeconds: number
   ): Promise<string> {
-    const artifact = await this.metadata.find(artifactIdSchema.parse(id))
+    const applicationId = databaseIdSchema.parse(applicationIdInput)
+    const artifact = await this.metadata.find(
+      applicationId,
+      artifactIdSchema.parse(id)
+    )
     if (artifact === null) throw new Error("Artifact not found")
     const expires = z.number().int().min(1).max(900).parse(expiresInSeconds)
     return this.objects.signedDownloadUrl(artifact.objectKey, expires)
   }
 
-  async delete(id: string): Promise<boolean> {
-    const artifact = await this.metadata.find(artifactIdSchema.parse(id))
+  async delete(applicationIdInput: string, id: string): Promise<boolean> {
+    const applicationId = databaseIdSchema.parse(applicationIdInput)
+    const artifact = await this.metadata.find(
+      applicationId,
+      artifactIdSchema.parse(id)
+    )
     if (artifact === null || artifact.referenceCount > 0) return false
     if (!(await this.metadata.markDeleted(artifact.databaseId))) return false
     try {

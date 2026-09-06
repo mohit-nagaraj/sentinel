@@ -70,7 +70,7 @@ describeIntegration("Supabase private Storage", () => {
 
   afterAll(async () => {
     if (service !== undefined && saved !== undefined) {
-      await service.delete(saved.id).catch(() => undefined)
+      await service.delete(applicationId, saved.id).catch(() => undefined)
     }
     if (database !== undefined && applicationId !== undefined) {
       if (objects !== undefined) {
@@ -100,7 +100,11 @@ describeIntegration("Supabase private Storage", () => {
     const publicResponse = await fetch(`${publicObjectRoot}/${saved.objectKey}`)
     expect(publicResponse.ok).toBe(false)
 
-    const signedUrl = await service.signedDownloadUrl(saved.id, 2)
+    const signedUrl = await service.signedDownloadUrl(
+      applicationId,
+      saved.id,
+      2
+    )
     const response = await fetch(signedUrl)
     expect(response.ok).toBe(true)
     expect(await response.text()).toBe('{"fixture":"sentinel"}')
@@ -109,10 +113,26 @@ describeIntegration("Supabase private Storage", () => {
     const expiredResponse = await fetch(signedUrl)
     expect(expiredResponse.ok).toBe(false)
 
-    await expect(service.delete(saved.id)).resolves.toBe(true)
-    await expect(service.signedDownloadUrl(saved.id, 30)).rejects.toThrow(
-      "Artifact not found"
-    )
+    await expect(service.delete(applicationId, saved.id)).resolves.toBe(true)
+    await expect(
+      service.signedDownloadUrl(applicationId, saved.id, 30)
+    ).rejects.toThrow("Artifact not found")
+
+    const originalStableId = saved.id
+    saved = await service.persist({
+      applicationId,
+      applicationStableId: applicationInput.stableKey,
+      runId: null,
+      artifactType: "browser_snapshot",
+      mimeType: "application/json",
+      body,
+      retainUntil: null,
+    })
+    expect(saved.id).toBe(originalStableId)
+    await expect(
+      service.signedDownloadUrl(applicationId, saved.id, 30)
+    ).resolves.toMatch(/^http/)
+    await expect(service.delete(applicationId, saved.id)).resolves.toBe(true)
     saved = undefined
   })
 })

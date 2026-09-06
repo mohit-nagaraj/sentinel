@@ -228,7 +228,7 @@ create table if not exists sentinel.eval_results (
   unique nulls not distinct (application_id, run_id, fixture_key, metric_key),
   foreign key (application_id, run_id)
     references sentinel.runs(application_id, id)
-    on delete set null (run_id)
+    on delete cascade
 );
 
 create table if not exists sentinel.target_secrets (
@@ -459,13 +459,25 @@ declare
   resulting_status text;
 begin
   update sentinel.runs
-  set status = case when status = 'queued' then 'cancelled' else 'cancelling' end,
+  set status = case
+        when status in ('queued', 'interrupted') then 'cancelled'
+        else 'cancelling'
+      end,
       cancel_requested_at = now(),
-      finished_at = case when status = 'queued' then now() else finished_at end,
-      lease_owner = case when status = 'queued' then null else lease_owner end,
-      lease_expires_at = case when status = 'queued' then null else lease_expires_at end
+      finished_at = case
+        when status in ('queued', 'interrupted') then now()
+        else finished_at
+      end,
+      lease_owner = case
+        when status in ('queued', 'interrupted') then null
+        else lease_owner
+      end,
+      lease_expires_at = case
+        when status in ('queued', 'interrupted') then null
+        else lease_expires_at
+      end
   where id = p_run_id
-    and status in ('queued', 'running')
+    and status in ('queued', 'running', 'interrupted')
   returning status into resulting_status;
 
   if resulting_status is null then

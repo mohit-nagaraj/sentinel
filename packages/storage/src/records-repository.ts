@@ -10,6 +10,9 @@ import { z } from "zod"
 import type { DatabaseExecutor } from "./database.ts"
 
 const sensitiveDetailKeys = new Set([
+  "accesskey",
+  "accesskeyid",
+  "accesstoken",
   "apikey",
   "auth",
   "authorization",
@@ -17,15 +20,31 @@ const sensitiveDetailKeys = new Set([
   "connectsid",
   "cookie",
   "credential",
+  "idtoken",
   "laravelsession",
+  "oauthtoken",
   "password",
   "phpsessid",
   "privatekey",
+  "proxyauthorization",
+  "refreshtoken",
   "secret",
   "sessionid",
+  "setcookie",
   "sid",
   "token",
+  "xamzsignature",
+  "xgoogsignature",
 ])
+
+function isSensitiveDetailKey(key: string): boolean {
+  return (
+    sensitiveDetailKeys.has(key) ||
+    /(?:apikey|cookie|credential|password|privatekey|secret|sessionid|signature|token)$/.test(
+      key
+    )
+  )
+}
 
 function assertSecretSafeDetails(value: unknown, path = "$"): void {
   if (typeof value === "string") {
@@ -46,7 +65,7 @@ function assertSecretSafeDetails(value: unknown, path = "$"): void {
   for (const [key, child] of Object.entries(value)) {
     const normalizedKey = key.replace(/[^a-z0-9]/gi, "").toLowerCase()
     if (
-      sensitiveDetailKeys.has(normalizedKey) &&
+      isSensitiveDetailKey(normalizedKey) &&
       child !== null &&
       child !== "[REDACTED]"
     ) {

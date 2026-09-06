@@ -7,6 +7,7 @@ import {
   AssessmentRepository,
   createPostgresDatabase,
   loadIntegrationEnvironment,
+  RecordsRepository,
   RunRepository,
   type DatabaseClient,
   WebhookDeliveryRepository,
@@ -127,6 +128,21 @@ describeIntegration("Supabase operational database", () => {
         [first.id]
       )
     ).rejects.toThrow("invalid run status transition")
+
+    const interruptible = await runs.enqueue({
+      applicationId,
+      runType: "run_eval",
+      idempotencyKey: `interrupt:${stableKey}`,
+      budget,
+    })
+    await runs.claim("integration-worker-e", 60)
+    await database.query(
+      "update sentinel.runs set status = 'interrupted' where id = $1::uuid",
+      [interruptible.id]
+    )
+    await expect(runs.requestCancellation(interruptible.id)).resolves.toBe(
+      "cancelled"
+    )
   })
 
   it("allocates durable event order under concurrent appends", async () => {
@@ -322,5 +338,77 @@ describeIntegration("Supabase operational database", () => {
         indexedCommitSha: "5555555555555555555555555555555555555555",
       })
     ).resolves.toBeNull()
+  })
+
+  it("isolates run-less eval idempotency and run ownership by application", async () => {
+    const applications = new ApplicationRepository(database)
+    const secondApplication = await applications.upsert(
+      createOperationalTestApplication("sentinel-eval-integration")
+    )
+    const records = new RecordsRepository(database)
+    const shared = {
+      runId: null,
+      fixtureKey: "stable-identities",
+      metricKey: "repeatability",
+      outcome: "passed" as const,
+      value: 1,
+      details: { repeats: 100 },
+    }
+    const firstId = await records.recordEvalResult({
+      ...shared,
+      applicationId,
+    })
+    const secondId = await records.recordEvalResult({
+      ...shared,
+      applicationId: secondApplication.id,
+    })
+    expect(secondId).not.toBe(firstId)
+
+    const run = await new RunRepository(database).enqueue({
+      applicationId,
+      runType: "run_eval",
+      idempotencyKey: `ownership:${stableKey}`,
+      budget,
+    })
+    await expect(
+      records.recordEvalResult({
+        ...shared,
+        applicationId: secondApplication.id,
+        runId: run.id,
+      })
+    ).rejects.toThrow()
+
+    const runA = await new RunRepository(database).enqueue({
+      applicationId,
+      runType: "run_eval",
+      idempotencyKey: `eval-a:${stableKey}`,
+      budget,
+    })
+    const runB = await new RunRepository(database).enqueue({
+      applicationId,
+      runType: "run_eval",
+      idempotencyKey: `eval-b:${stableKey}`,
+      budget,
+    })
+    await records.recordEvalResult({
+      ...shared,
+      applicationId,
+      runId: runA.id,
+    })
+    await records.recordEvalResult({
+      ...shared,
+      applicationId,
+      runId: runB.id,
+    })
+    await expect(
+      database.query("delete from sentinel.runs where id = any($1::uuid[])", [
+        `{${runA.id},${runB.id}}`,
+      ])
+    ).resolves.toBeDefined()
+
+    await database.query(
+      "delete from sentinel.applications where id = $1::uuid",
+      [secondApplication.id]
+    )
   })
 })
