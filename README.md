@@ -81,3 +81,26 @@ with:
 pnpm --filter @sentinel/contracts typecheck
 pnpm exec vitest run --project unit
 ```
+
+## Operational Storage
+
+The `@sentinel/storage` package owns server-only Supabase operational state,
+Vault references, and private artifact access. Apply versioned SQL from
+`supabase/migrations`; the initial migration creates the private `sentinel`
+schema, reserves `langgraph_checkpoint`, enables RLS, revokes browser-role table
+access, and installs lease-safe queue/event/assessment functions.
+
+Long-lived workers should use the direct Postgres connection string. Serverless
+web handlers may use Supabase's transaction pooler; Postgres.js prepared
+statements are disabled so transaction-pooler connections remain compatible.
+`SUPABASE_DB_URL` and all S3/Vault credentials stay server-side.
+
+Artifact operations use the configured private Supabase S3 endpoint. Metadata
+contains hashes, MIME/size, object keys, references, and retention only; signed
+downloads are capped at 15 minutes. Target credentials are encrypted in Vault,
+while application/source rows retain only opaque `secret-ref:v1:*` references.
+
+Database, Storage, and Vault integration tests are skipped unless their explicit
+`RUN_SUPABASE_*_TESTS=1` flags are set. Database tests additionally require
+`SENTINEL_TEST_DATABASE_URL`, and the loader rejects it when it equals the normal
+`SUPABASE_DB_URL`.

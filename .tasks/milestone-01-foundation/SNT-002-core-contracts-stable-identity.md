@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M1 — Foundation and durable execution |
-| Status | `review` |
+| Status | `done` |
 | Depends on | SNT-001 |
 | Blocks | Most source, graph, agent, and run issues |
 | PRD references | §11, §12, §14, §15, NFR-001/NFR-002/NFR-004/NFR-007/NFR-009 |

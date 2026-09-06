@@ -10,5 +10,12 @@
   },
   "devDependencies": {
     "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1127.0",
+    "@aws-sdk/s3-request-presigner": "3.1127.0",
+    "@sentinel/contracts": "workspace:*",
+    "postgres": "3.4.9",
+    "zod": "4.3.6"
   }
 }
