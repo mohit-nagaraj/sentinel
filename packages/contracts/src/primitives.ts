@@ -10,23 +10,30 @@ const sensitiveTextPatterns = [
   /\bgh[pousr]_[A-Za-z0-9]{20,}\b/,
   /\bsk-[A-Za-z0-9_-]{20,}\b/,
   /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/,
+  /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/,
 ] as const
 
 const requirementWords = new Set([
   "at",
+  "automatically",
   "can",
   "cannot",
+  "configurable",
   "field",
   "input",
   "is",
+  "generated",
   "maximum",
   "may",
   "minimum",
   "must",
   "optional",
+  "provided",
   "required",
+  "rotated",
   "should",
   "token",
+  "validated",
 ])
 
 function looksLikeCredentialValue(candidate: string): boolean {
@@ -40,18 +47,12 @@ function looksLikeCredentialValue(candidate: string): boolean {
     return false
   }
 
-  return (
-    normalized.includes("secret") ||
-    candidate.length >= 12 ||
-    (candidate.length >= 6 &&
-      /[a-z]/i.test(candidate) &&
-      /[0-9]/.test(candidate))
-  )
+  return true
 }
 
 function containsCredentialAssignment(value: string): boolean {
   const assignments = value.matchAll(
-    /\b(?:api[_-]?key|auth|client[_-]?secret|credential|password|private[_-]?key|secret|session(?:[_-]?id)?|token)\s*[:=]\s*([^\s,;]+)/gi
+    /\b(?:api[_-]?key|auth|client[_-]?secret|connect\.sid|credential|laravel_session|password|phpsessid|private[_-]?key|secret|session(?:[_-]?id)?|sid|token)\s*[:=]\s*([^\s,;]+)/gi
   )
 
   for (const assignment of assignments) {
@@ -68,15 +69,12 @@ function containsCredentialHeader(value: string): boolean {
     /\b(?:authorization|proxy-authorization)\s*:\s*(?:basic|bearer)\s+([^\s,;]+)/i.exec(
       value
     )
-  if (
-    authorization !== null &&
-    looksLikeCredentialValue(authorization[1] ?? "")
-  ) {
+  if (authorization !== null) {
     return true
   }
 
   const cookie = /\b(?:cookie|set-cookie)\s*:\s*([^\s,;]+)/i.exec(value)
-  return cookie !== null && looksLikeCredentialValue(cookie[1] ?? "")
+  return cookie !== null
 }
 
 export const persistedTextSchema = nonEmptyStringSchema.refine(
@@ -124,7 +122,7 @@ export const repositoryPathSchema = z
     }
   )
 const sensitiveQueryKey =
-  /(?:api[_-]?key|auth|credential|password|private[_-]?key|secret|session|signature|token)/i
+  /^(?:access_token|api[_-]?key|auth|authorization|client[_-]?secret|connect\.sid|credential|id_token|laravel_session|password|phpsessid|private[_-]?key|refresh_token|secret|session(?:[_-]?id)?|sid|signature|token)$/i
 
 function normalizePublicUrl(value: string): string {
   const url = new URL(value)
