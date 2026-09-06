@@ -1,8 +1,8 @@
 # Sentinel
 
-Sentinel is a pnpm TypeScript workspace. SNT-001 establishes the application
-and testing foundation only; provider integrations and product behavior belong
-to later issues.
+Sentinel is a pnpm TypeScript workspace with strict, versioned contracts for its
+application, evidence, agent, graph, and assessment boundaries. Provider
+integrations and product behavior belong to later issues.
 
 ## Prerequisites
 
@@ -57,3 +57,27 @@ The remaining suites are separate by intent and directory:
 
 Place reusable deterministic inputs in `tests/fixtures`. Live tests must stay in
 `tests/live` and must never be imported by a default test project.
+
+## Shared Contracts
+
+`@sentinel/contracts` exports Zod 4 schemas and inferred types for applications,
+sources, runs, missions/results, document/code/browser facts, evidence links,
+coverage, PR changes/findings, verification, and redacted run events. Persisted
+and cross-process payloads carry `schemaVersion: 1` and reject unknown fields.
+
+Stable graph identities are SHA-256 hashes of recursively canonicalized,
+versioned inputs. Use `createStableKey` with one of the entity-specific input
+variants; do not construct graph IDs from ad hoc strings. Evidence and workflow
+identifier builders validate structured application/run scopes before hashing.
+Public URL identities reject credential-bearing parameters, sort benign query
+parameters, and discard fragments before persistence and hashing. Persisted
+mission/event prose rejects ambiguous credential assignment/header syntax with
+an actionable rephrase-or-redact error; raw values are never silently retained.
+
+Sanitized wire fixtures live in `tests/fixtures/contracts`. Focused checks run
+with:
+
+```sh
+pnpm --filter @sentinel/contracts typecheck
+pnpm exec vitest run --project unit
+```

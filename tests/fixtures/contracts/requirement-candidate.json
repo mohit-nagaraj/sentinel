@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "requirement:v1:2222222222222222222222222222222222222222222222222222222222222222",
+  "applicationId": "application:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "statement": "A buyer can select an available ticket and continue to checkout.",
+  "actor": "buyer",
+  "capability": "select ticket",
+  "expectedOutcome": "The selected quantity appears in checkout.",
+  "testable": true,
+  "source": {
+    "sectionId": "document-section:v1:3333333333333333333333333333333333333333333333333333333333333333",
+    "uri": "https://hi.events/docs/tickets",
+    "heading": "Ticket sales",
+    "excerpt": "Buyers select available tickets before continuing to checkout.",
+    "contentHash": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+  }
+}

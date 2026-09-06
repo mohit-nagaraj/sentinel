@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M1 — Foundation and durable execution |
-| Status | `not-started` |
+| Status | `review` |
 | Depends on | SNT-001 |
 | Blocks | Most source, graph, agent, and run issues |
 | PRD references | §11, §12, §14, §15, NFR-001/NFR-002/NFR-004/NFR-007/NFR-009 |
@@ -37,16 +37,16 @@ Define versioned Zod schemas and inferred TypeScript types for:
 
 ## Implementation tasks
 
-- [ ] Define branded ID types and enums for run/mission/claim/evidence statuses.
-- [ ] Define canonical serialization and SHA-256 hashing utilities.
-- [ ] Specify stable keys for every Neo4j entity in PRD §12.
-- [ ] Specify ephemeral/evidence IDs for crawl states, transitions, artifacts, and events.
-- [ ] Add mission scope, success criteria, budgets, and allowed tool/mode contracts.
-- [ ] Add result contracts that force unresolved questions and stop reasons to be explicit.
-- [ ] Add claim schemas that require evidence references and never accept an agent-authored final tier.
-- [ ] Add parser/adapter fact envelopes with extractor version and provenance.
-- [ ] Add backward-compatible parsing helpers and useful validation errors.
-- [ ] Publish contract fixtures used by later issues.
+- [x] Define branded ID types and enums for run/mission/claim/evidence statuses.
+- [x] Define canonical serialization and SHA-256 hashing utilities.
+- [x] Specify stable keys for every Neo4j entity in PRD §12.
+- [x] Specify ephemeral/evidence IDs for crawl states, transitions, artifacts, and events.
+- [x] Add mission scope, success criteria, budgets, and allowed tool/mode contracts.
+- [x] Add result contracts that force unresolved questions and stop reasons to be explicit.
+- [x] Add claim schemas that require evidence references and never accept an agent-authored final tier.
+- [x] Add parser/adapter fact envelopes with extractor version and provenance.
+- [x] Add backward-compatible parsing helpers and useful validation errors.
+- [x] Publish contract fixtures used by later issues.
 
 ## Acceptance criteria
 
@@ -72,3 +72,10 @@ Database tables, graph writes, model calls, extraction logic, and business risk 
 ## Implementation notes
 
 Do not encode Hi.Events-specific expected entities in generic contracts. Hi.Events fixtures may exercise the schemas, but names/paths belong in fixtures rather than production defaults.
+
+- Wire schema version: `1`; parsers reject other versions and extra properties.
+- Identity hash: SHA-256 over recursively key-sorted canonical JSON with an explicit kind/version domain separator.
+- Stable key inputs are defined for all 17 PRD §12 graph entity categories.
+- Provider-independent hashing uses `@noble/hashes`; no Node environment or secret loading occurs on import.
+- Sanitized wire fixtures cover every stage artifact in PRD §14 plus redacted run events.
+- Focused verification on 2026-09-07: 3 files and 50 contract/identity tests passed; the cumulative default suite passed 53 tests.

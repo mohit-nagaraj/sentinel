@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "finding:v1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "applicationId": "application:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "pullRequestId": "pull-request:v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "risk": "high",
+  "evidenceStrength": "B",
+  "title": "Attendee checkout and order creation",
+  "summary": "The changed order handler is connected to the observed buyer checkout workflow.",
+  "changedSymbolIds": [
+    "code-symbol:v1:1111111111111111111111111111111111111111111111111111111111111111"
+  ],
+  "screenIds": [
+    "screen:v1:8888888888888888888888888888888888888888888888888888888888888888"
+  ],
+  "workflowIds": [
+    "workflow:v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  ],
+  "requirementIds": [
+    "requirement:v1:2222222222222222222222222222222222222222222222222222222222222222"
+  ],
+  "evidencePaths": [
+    [
+      "pull-request:v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "code-symbol:v1:1111111111111111111111111111111111111111111111111111111111111111",
+      "api-endpoint:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "workflow:v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "requirement:v1:2222222222222222222222222222222222222222222222222222222222222222"
+    ]
+  ],
+  "recommendedScenarios": [
+    "Complete a free-ticket checkout and verify the resulting order."
+  ],
+  "verificationStatus": "not_run"
+}

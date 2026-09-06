@@ -9,6 +9,11 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "fast-check": "4.9.0",
     "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "@noble/hashes": "2.4.0",
+    "zod": "4.3.6"
   }
 }

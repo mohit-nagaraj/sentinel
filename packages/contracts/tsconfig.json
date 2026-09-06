@@ -3,11 +3,11 @@
   "compilerOptions": {
     "allowImportingTsExtensions": true,
     "composite": true,
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "noEmit": true,
     "types": []
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "../../tests/fixtures/contracts/*.json"]
 }

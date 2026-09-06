@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "missionId": "mission:v1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "status": "complete",
+  "claims": [
+    {
+      "id": "claim:v1:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "status": "proposed",
+      "subjectId": "api-endpoint:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "predicate": "handled_by",
+      "objectId": "code-symbol:v1:1111111111111111111111111111111111111111111111111111111111111111",
+      "evidenceIds": [
+        "evidence:v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      ],
+      "explanation": "The normalized route points to this handler symbol."
+    }
+  ],
+  "unresolved": [],
+  "exclusions": [],
+  "suggestedFollowups": [],
+  "stopReason": {
+    "code": "criteria_met",
+    "summary": "The requested implementation path was established."
+  },
+  "budgetUsed": {
+    "toolCalls": 4,
+    "contentBytes": 12000,
+    "documentBytes": 0,
+    "documentPages": 0,
+    "documentSections": 0,
+    "sourceLines": 180,
+    "repositoryBytes": 80000,
+    "repositoryFiles": 12,
+    "browserActions": 0,
+    "modelCalls": 3,
+    "modelInputTokens": 4200,
+    "modelOutputTokens": 900,
+    "reconciliationRounds": 0,
+    "elapsedMs": 19000
+  }
+}

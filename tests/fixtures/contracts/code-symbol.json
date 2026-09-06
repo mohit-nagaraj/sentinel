@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "code-symbol:v1:1111111111111111111111111111111111111111111111111111111111111111",
+  "applicationId": "application:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "repository": {
+    "host": "github.com",
+    "owner": "mohit-nagaraj",
+    "name": "Hi.Events"
+  },
+  "commitSha": "0497418d5c66d20693751e68be066260eda3f37f",
+  "language": "php",
+  "kind": "handler",
+  "qualifiedName": "HiEvents\\Domain\\Order\\CreateOrderHandler::handle",
+  "filePath": "backend/app/Domain/Order/CreateOrderHandler.php",
+  "range": {
+    "startLine": 31,
+    "endLine": 88
+  }
+}

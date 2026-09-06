@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "evidence:v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "applicationId": "application:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "fromId": "ui-element:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab",
+  "relationship": "TRIGGERS_API",
+  "toId": "api-endpoint:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "extractionMethod": "playwright_network_observation",
+  "evidenceTier": "A",
+  "explanation": "The request began inside the action observation window.",
+  "evidenceIds": [
+    "evidence:v1:5555555555555555555555555555555555555555555555555555555555555555"
+  ],
+  "crawlRunId": "run:11111111-1111-4111-8111-111111111111",
+  "artifactId": "artifact:v1:9999999999999999999999999999999999999999999999999999999999999999",
+  "reviewState": "not_required",
+  "graphRevision": 1,
+  "lastConfirmedAt": "2026-09-07T00:00:00.000Z"
+}
