@@ -1,0 +1,45 @@
+{
+  "name": "sentinel",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.15.1",
+  "engines": {
+    "node": "22.17.0",
+    "pnpm": "11.15.1"
+  },
+  "scripts": {
+    "build": "pnpm --filter @sentinel/* --filter sentinel-docs --recursive --if-present run build",
+    "dev:web": "pnpm --filter @sentinel/web dev",
+    "dev:worker": "pnpm --filter @sentinel/worker dev",
+    "format": "prettier --write apps packages tests .github package.json pnpm-workspace.yaml tsconfig.base.json tsconfig.json vitest.config.ts playwright.config.ts eslint.config.mjs README.md",
+    "format:check": "prettier --check apps packages tests .github package.json pnpm-workspace.yaml tsconfig.base.json tsconfig.json vitest.config.ts playwright.config.ts eslint.config.mjs README.md",
+    "lint": "eslint .",
+    "test": "vitest run --project unit --project web --project worker",
+    "test:agent": "vitest run --project agent --passWithNoTests",
+    "test:browser": "playwright test",
+    "test:graph": "vitest run --project graph --passWithNoTests",
+    "test:integration": "vitest run --project integration --passWithNoTests",
+    "test:live": "cross-env RUN_LIVE_TESTS=1 vitest run --project live --passWithNoTests",
+    "typecheck": "tsc --build"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.17.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "cross-env": "^10.0.0",
+    "eslint": "^9.34.0",
+    "eslint-config-next": "16.2.6",
+    "jsdom": "^26.1.0",
+    "prettier": "^3.8.3",
+    "prettier-plugin-tailwindcss": "^0.8.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.40.0",
+    "vite-tsconfig-paths": "^5.1.0",
+    "vitest": "^3.2.0"
+  }
+}

@@ -1,4 +1,5 @@
 node_modules/
+.pnpm-store/
 .turbo/
 .next/
 dist/
@@ -6,6 +7,12 @@ out/
 _pagefind/
 .playwright-cli/
 output/playwright/
+.tmp-shadcn/
+playwright-report/
+test-results/
+blob-report/
+playwright/.auth/
+.auth/
 .context/
 .claude/hooks/
 # Secrets and local environment files
@@ -18,4 +25,3 @@ github-app*.pem
 
 *.tsbuildinfo
 excalidraw.log
-

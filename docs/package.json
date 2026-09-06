@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build && pagefind --site out --output-path public/_pagefind && node scripts/sync-search-index.mjs"
+    "build": "next build && pagefind --site out --output-path public/_pagefind && node scripts/sync-search-index.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "lucide-react": "^0.542.0",
