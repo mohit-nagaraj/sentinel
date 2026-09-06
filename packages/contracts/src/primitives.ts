@@ -42,7 +42,8 @@ function looksLikeCredentialValue(candidate: string): boolean {
   if (
     requirementWords.has(normalized) ||
     normalized === "[redacted]" ||
-    normalized === "<redacted>"
+    normalized === "<redacted>" ||
+    /(?:s|ed|ing|able|ible|ive|al|ly|tion|ment)$/.test(normalized)
   ) {
     return false
   }
@@ -51,11 +52,23 @@ function looksLikeCredentialValue(candidate: string): boolean {
 }
 
 function containsCredentialAssignment(value: string): boolean {
-  const assignments = value.matchAll(
-    /\b(?:api[_-]?key|auth|client[_-]?secret|connect\.sid|credential|laravel_session|password|phpsessid|private[_-]?key|secret|session(?:[_-]?id)?|sid|token)\s*[:=]\s*([^\s,;]+)/gi
+  const labels =
+    "api[_-]?key|auth|client[_-]?secret|connect\\.sid|credential|laravel_session|password|phpsessid|private[_-]?key|secret|session(?:[_-]?id)?|sid|token"
+  const equalAssignments = value.matchAll(
+    new RegExp(`\\b(?:${labels})\\s*=\\s*([^\\s,;]+)`, "gi")
   )
 
-  for (const assignment of assignments) {
+  for (const assignment of equalAssignments) {
+    const candidate = assignment[1]?.toLowerCase() ?? ""
+    if (candidate !== "[redacted]" && candidate !== "<redacted>") {
+      return true
+    }
+  }
+
+  const colonAssignments = value.matchAll(
+    new RegExp(`\\b(?:${labels})\\s*:\\s*([^\\s,;]+)`, "gi")
+  )
+  for (const assignment of colonAssignments) {
     if (looksLikeCredentialValue(assignment[1] ?? "")) {
       return true
     }
@@ -69,7 +82,10 @@ function containsCredentialHeader(value: string): boolean {
     /\b(?:authorization|proxy-authorization)\s*:\s*(?:basic|bearer)\s+([^\s,;]+)/i.exec(
       value
     )
-  if (authorization !== null) {
+  if (
+    authorization !== null &&
+    looksLikeCredentialValue(authorization[1] ?? "")
+  ) {
     return true
   }
 
@@ -122,12 +138,12 @@ export const repositoryPathSchema = z
     }
   )
 const sensitiveQueryKey =
-  /^(?:access_token|api[_-]?key|auth|authorization|client[_-]?secret|connect\.sid|credential|id_token|laravel_session|password|phpsessid|private[_-]?key|refresh_token|secret|session(?:[_-]?id)?|sid|signature|token)$/i
+  /^(?:access_token|api[_-]?key|auth|authorization|client[_-]?secret|code|connect\.sid|credential|id_token|key|laravel_session|oauth_token|password|phpsessid|private[_-]?key|refresh_token|secret|session(?:[_-]?id)?|sid|sig|signature|token|x-amz-.+|x-goog-.+)$/i
 
 function normalizePublicUrl(value: string): string {
   const url = new URL(value)
   url.hash = ""
-  url.searchParams.sort()
+  url.search = ""
   return url.toString()
 }
 

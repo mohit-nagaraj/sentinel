@@ -69,6 +69,8 @@ Stable graph identities are SHA-256 hashes of recursively canonicalized,
 versioned inputs. Use `createStableKey` with one of the entity-specific input
 variants; do not construct graph IDs from ad hoc strings. Evidence and workflow
 identifier builders validate structured application/run scopes before hashing.
+Public URL identities reject credential-bearing parameters and discard query
+values/fragments before persistence and hashing.
 
 Sanitized wire fixtures live in `tests/fixtures/contracts`. Focused checks run
 with:
