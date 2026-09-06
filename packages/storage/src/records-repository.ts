@@ -1,6 +1,8 @@
 import {
   canonicalSerialize,
   contentHashSchema,
+  evidenceIdSchema,
+  findingIdSchema,
   persistedTextSchema,
   redactPersistedText,
 } from "@sentinel/contracts"
@@ -113,7 +115,7 @@ export class RecordsRepository {
     readonly evidencePathCount: number
   }): Promise<string> {
     const assessmentId = z.uuid().parse(input.assessmentId)
-    const stableKey = z.string().trim().min(1).max(512).parse(input.stableKey)
+    const stableKey = findingIdSchema.parse(input.stableKey)
     const title = persistedTextSchema
       .refine(
         (value) => value.length <= 512,
@@ -164,6 +166,7 @@ export class RecordsRepository {
     readonly decidedBy: string
   }): Promise<string> {
     const applicationId = z.uuid().parse(input.applicationId)
+    const linkStableKey = evidenceIdSchema.parse(input.linkStableKey)
     const sourceIdentityHash = contentHashSchema.parse(input.sourceIdentityHash)
     const reason = persistedTextSchema.parse(input.reason)
     const decidedBy = z.uuid().parse(input.decidedBy)
@@ -180,7 +183,7 @@ export class RecordsRepository {
        returning id`,
       [
         applicationId,
-        input.linkStableKey,
+        linkStableKey,
         sourceIdentityHash,
         input.decision,
         reason,

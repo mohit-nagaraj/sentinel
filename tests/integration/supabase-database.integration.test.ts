@@ -187,7 +187,9 @@ describeIntegration("Supabase operational database", () => {
   })
 
   it("rolls transactions back and denies direct anon/authenticated table access", async () => {
-    const rollbackKey = `rollback:${randomUUID()}`
+    const rollbackKey = createOperationalTestApplication(
+      `rollback-${randomUUID()}`
+    ).stableKey
     await expect(
       database.transaction(async (transaction) => {
         await transaction.query(

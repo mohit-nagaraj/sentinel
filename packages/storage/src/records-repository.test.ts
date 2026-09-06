@@ -78,7 +78,8 @@ describe("records repository", () => {
     await expect(
       repository.addAssessmentFinding({
         assessmentId: applicationId,
-        stableKey: "finding:v1:fixture",
+        stableKey:
+          "finding:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         risk: "high",
         evidenceStrength: "A",
         title: "Authorization: Bearer synthetic-secret-value",

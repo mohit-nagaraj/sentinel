@@ -159,7 +159,7 @@ create unique index if not exists pr_assessment_current_idx
 create table if not exists sentinel.assessment_findings (
   id uuid primary key default gen_random_uuid(),
   assessment_id uuid not null references sentinel.pr_assessments(id) on delete cascade,
-  stable_key text not null,
+  stable_key text not null check (stable_key ~ '^finding:v1:[a-f0-9]{64}$'),
   risk text not null check (risk in ('high', 'medium', 'low', 'unknown')),
   evidence_strength text not null check (evidence_strength in ('A', 'B', 'C', 'D')),
   title text not null check (length(title) between 1 and 512),
@@ -210,7 +210,7 @@ alter table sentinel.artifacts
 create table if not exists sentinel.link_reviews (
   id uuid primary key default gen_random_uuid(),
   application_id uuid not null references sentinel.applications(id) on delete cascade,
-  link_stable_key text not null,
+  link_stable_key text not null check (link_stable_key ~ '^evidence:v1:[a-f0-9]{64}$'),
   source_identity_hash text not null check (source_identity_hash ~ '^sha256:[a-f0-9]{64}$'),
   decision text not null check (decision in ('accepted', 'rejected')),
   reason text not null check (length(reason) between 1 and 4096),
