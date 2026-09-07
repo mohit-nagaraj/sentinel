@@ -9,6 +9,7 @@ import {
 } from "@sentinel/contracts"
 import { describe, expect, it } from "vitest"
 
+import { PhpIndexerError } from "../../php-laravel/errors.ts"
 import {
   DefaultAffectedSymbolIndexer,
   type AffectedSymbol,
@@ -274,4 +275,51 @@ describe("PR diff symbol mapper", () => {
     ).toBe(true)
     expect(reads).not.toContain("src/not-selected.ts")
   })
+
+  it.each(["aborted", "content_mismatch"] as const)(
+    "does not downgrade PHP %s failures to unresolved mappings",
+    async (code) => {
+      const snapshot = {
+        path: "C:/fixture",
+        metadata: {
+          label: "base",
+          commitSha: baseSha,
+          treeObjectId: "3".repeat(40),
+          treeFingerprint: `sha256:${"4".repeat(64)}`,
+          configFingerprint: `sha256:${"5".repeat(64)}`,
+          fileCount: 1,
+          totalBytes: 6,
+        },
+        enumerate: () => [
+          {
+            path: "app/Action.php",
+            kind: "file" as const,
+            mode: "100644",
+            objectId: "6".repeat(40),
+            sizeBytes: 6,
+          },
+        ],
+        readText: async () => "<?php\n",
+      }
+      const error = new PhpIndexerError(code, `fixture ${code}`)
+      const indexer = new DefaultAffectedSymbolIndexer({
+        phpIndexer: {
+          indexCheckout: async () => {
+            throw error
+          },
+        },
+      })
+
+      await expect(
+        indexer.index({
+          snapshot,
+          applicationId,
+          runId,
+          repository,
+          commitSha: baseSha,
+          paths: ["app/Action.php"],
+        })
+      ).rejects.toBe(error)
+    }
+  )
 })

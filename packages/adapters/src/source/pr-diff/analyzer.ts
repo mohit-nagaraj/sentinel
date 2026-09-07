@@ -332,6 +332,7 @@ export class PrDiffAnalyzer {
           "--src-prefix=a/",
           "--dst-prefix=b/",
           "--find-renames=50%",
+          "--diff-algorithm=histogram",
           "--unified=0",
           "--no-indent-heuristic",
           "--ignore-submodules=none",

@@ -12,8 +12,10 @@ import {
   type PhpIndexerResponse,
   type PhpSymbol,
 } from "../../php-laravel/index.ts"
+import { PhpIndexerError } from "../../php-laravel/errors.ts"
 import type { CheckoutSnapshot } from "../github/checkout.ts"
 import type { GitHubRepositoryIdentity } from "../github/normalization.ts"
+import { TypeScriptIndexerError } from "../typescript/errors.ts"
 import {
   indexTypeScriptSource,
   type CodeSymbolRecord,
@@ -64,6 +66,40 @@ export interface AffectedSymbolIndexer {
 export interface DefaultAffectedSymbolIndexerOptions {
   readonly phpIndexer?: Pick<PhpLaravelIndexer, "indexCheckout">
   readonly typeScriptLimits?: Partial<TypeScriptIndexLimits>
+}
+
+function recoverableFailure(
+  error: unknown,
+  signal: AbortSignal | undefined
+): AffectedIndexFailure["reason"] {
+  if (signal?.aborted === true) throw error
+  if (error instanceof TypeScriptIndexerError) {
+    if (
+      error.code === "aborted" ||
+      error.code === "invalid_input" ||
+      error.code === "read_failed" ||
+      error.code === "unsafe_path"
+    ) {
+      throw error
+    }
+    return error.code === "project_not_found"
+      ? "indexer_unavailable"
+      : "indexer_failed"
+  }
+  if (error instanceof PhpIndexerError) {
+    if (
+      error.code === "aborted" ||
+      error.code === "content_mismatch" ||
+      error.code === "invalid_input" ||
+      error.code === "unsafe_path"
+    ) {
+      throw error
+    }
+    return error.code === "executable_missing"
+      ? "indexer_unavailable"
+      : "indexer_failed"
+  }
+  throw error
 }
 
 function compareStrings(left: string, right: string): number {
@@ -295,11 +331,12 @@ export class DefaultAffectedSymbolIndexer implements AffectedSymbolIndexer {
               index.symbols
             ))
           )
-        } catch {
+        } catch (error) {
+          const reason = recoverableFailure(error, request.signal)
           failures.push(
             ...group.map((path) => ({
               path,
-              reason: "indexer_failed" as const,
+              reason,
             }))
           )
         }
@@ -319,11 +356,12 @@ export class DefaultAffectedSymbolIndexer implements AffectedSymbolIndexer {
           request.signal
         )
         symbols.push(...(await convertPhpSymbols(request.snapshot, response)))
-      } catch {
+      } catch (error) {
+        const reason = recoverableFailure(error, request.signal)
         failures.push(
           ...phpPaths.map((path) => ({
             path,
-            reason: "indexer_failed" as const,
+            reason,
           }))
         )
       }

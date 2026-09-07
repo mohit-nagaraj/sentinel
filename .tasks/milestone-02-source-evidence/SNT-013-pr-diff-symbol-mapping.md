@@ -68,7 +68,7 @@ Semantic interpretation, caller/callee impact, GitHub webhook/check behavior, Ne
 
 ### Decisions
 
-- Git execution compares the two immutable trees with explicit `--no-ext-diff`, `--no-textconv`, fixed prefixes, zero context, no indent heuristic, and 50% rename detection. Patch text exists only in process memory; the validated result contains SHAs, the normalized content-sensitive hash, ranges, symbol summaries, baseline status, and unresolved reasons.
+- Git execution compares the two immutable trees with explicit `--no-ext-diff`, `--no-textconv`, fixed prefixes, histogram diffing, zero context, no indent heuristic, and 50% rename detection. Patch text exists only in process memory; the validated result contains SHAs, the normalized content-sensitive hash, ranges, symbol summaries, baseline status, and unresolved reasons.
 - Affected indexing masks checkout enumeration to the selected source files and their nearest ancestor `tsconfig.json`; the PHP process receives the exact affected `.php` list. Generated, lockfile, binary, and unsupported files never enter an AST adapter.
 - Changed lines are mapped individually before contiguous per-symbol ranges are rebuilt. This preserves the smallest nested declaration when a Git hunk spans several symbols. Rename metadata maps every structural symbol in a renamed file, including 100% metadata-only renames.
 - Same-file structural identities classify as modified, Git-renamed-file structural identities as renamed, and cross-file symbols as moved only when the structural key and normalized source-content hash form a unique pair. Ambiguous matches remain added/deleted with `symbol_match_ambiguous` evidence.
@@ -78,7 +78,7 @@ Semantic interpretation, caller/callee impact, GitHub webhook/check behavior, Ne
 ### Verification (2026-09-07)
 
 - `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, and `pnpm build` passed.
-- `pnpm test` passed 537 tests across 59 files, including 11 new PR-diff unit tests and the extended contract suite.
+- `pnpm test` passed 539 tests across 59 files, including 13 new PR-diff unit tests and the extended contract suite.
 - Focused local Git integration passed 3 tests covering TypeScript/PHP edits, nested symbols, added/deleted files, rename plus edit, a cross-file move, binary/generated/lockfile/config/schema changes, mode-only and no-newline diffs, deterministic reruns, all baseline classes, no patch retention, and large-diff/ancestry rejection.
 - The full local `pnpm test:integration` run passed the SNT-013 suite and 21 other integration tests; two pre-existing PHP process-limit tests could not run to their intended assertions because this workstation has no PHP executable. Repository CI installs PHP 8.3 and Composer before running the same integration command and is required to pass before merge.
 - No SNT-013 acceptance item is deferred. Semantic impact, graph persistence/traversal, GitHub delivery, and application verification remain the task's declared out-of-scope work.

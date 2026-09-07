@@ -634,31 +634,41 @@ describe("versioned wire contracts", () => {
       provenance,
     })
 
-    expect(
-      parsePrDiffAnalysis({
-        schemaVersion: 1,
-        pullRequestId: provenance.pullRequestId,
-        repository: codeSymbolFixture.repository,
-        baseSha: sha,
-        headSha,
-        diffHash,
-        ancestry: "base_is_ancestor",
-        baseline,
-        files: [changedFile],
-        symbols: [changedSymbol],
-        summary: {
-          fileCount: 1,
-          symbolCount: 1,
-          mappedFileCount: 1,
-          unmappedFileCount: 0,
-        },
-      }).summary
-    ).toStrictEqual({
+    const analysis = {
+      schemaVersion: 1,
+      pullRequestId: provenance.pullRequestId,
+      repository: codeSymbolFixture.repository,
+      baseSha: sha,
+      headSha,
+      diffHash,
+      ancestry: "base_is_ancestor",
+      baseline,
+      files: [changedFile],
+      symbols: [changedSymbol],
+      summary: {
+        fileCount: 1,
+        symbolCount: 1,
+        mappedFileCount: 1,
+        unmappedFileCount: 0,
+      },
+    }
+    expect(parsePrDiffAnalysis(analysis).summary).toStrictEqual({
       fileCount: 1,
       symbolCount: 1,
       mappedFileCount: 1,
       unmappedFileCount: 0,
     })
+    expect(() =>
+      parsePrDiffAnalysis({
+        ...analysis,
+        files: [
+          {
+            ...changedFile,
+            baseSymbolIds: [`code-symbol:v1:${"9".repeat(64)}`],
+          },
+        ],
+      })
+    ).toThrow("unknown base symbol")
   })
 
   it("rejects contradictory baseline and changed-symbol states", () => {

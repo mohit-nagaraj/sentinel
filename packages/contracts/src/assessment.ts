@@ -499,6 +499,28 @@ export const changedFileSchema = z
         path: ["unresolvedReasons"],
       })
     }
+    if (
+      value.mappingStatus === "mapped" &&
+      value.baseSymbolIds.length + value.headSymbolIds.length === 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Mapped files require symbol evidence",
+        path: ["mappingStatus"],
+      })
+    }
+    if (
+      value.mappingStatus === "partially_mapped" &&
+      (value.baseSymbolIds.length + value.headSymbolIds.length === 0 ||
+        value.unresolvedReasons.length === 0)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Partially mapped files require symbol evidence and an unresolved reason",
+        path: ["mappingStatus"],
+      })
+    }
   })
 
 export const changedSymbolSideSchema = z.strictObject({
@@ -637,6 +659,28 @@ export const prDiffAnalysisSchema = z
       baseSha: value.baseSha,
       headSha: value.headSha,
       diffHash: value.diffHash,
+    }
+    const baseSymbolIds = new Set(
+      value.symbols.flatMap(({ base }) => (base === undefined ? [] : [base.id]))
+    )
+    const headSymbolIds = new Set(
+      value.symbols.flatMap(({ head }) => (head === undefined ? [] : [head.id]))
+    )
+    for (const [fileIndex, file] of value.files.entries()) {
+      for (const [side, ids, available] of [
+        ["base", file.baseSymbolIds, baseSymbolIds],
+        ["head", file.headSymbolIds, headSymbolIds],
+      ] as const) {
+        for (const id of ids) {
+          if (!available.has(id)) {
+            context.addIssue({
+              code: "custom",
+              message: `Changed file references an unknown ${side} symbol`,
+              path: ["files", fileIndex, `${side}SymbolIds`],
+            })
+          }
+        }
+      }
     }
     for (const [collectionName, records] of [
       ["files", value.files],
