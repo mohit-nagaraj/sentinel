@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M2 — Deterministic source evidence |
-| Status | `review` |
+| Status | `done` |
 | Depends on | SNT-002, SNT-003 |
 | Blocks | Documentation repository sources, code indexers, PR mapping, GitHub App |
 | PRD references | §6.4, §11.2–11.3, §13.3, §18.1 |
@@ -73,4 +73,5 @@ Webhook verification, check runs, source AST parsing, executing repository scrip
 - Local integration fixture: `tests/fixtures/git-repository.ts` creates a bare repository with base/head branches, rename/deletion, forced checkout EOL attributes, binary content, an escaping symlink object, and a gitlink without executing repository code. Tests also cover hostile inherited Git templates/configuration, equal-length worktree and enumeration mutation, forged/truncated preflight data, oversized forks, cleanup retry/error priority, active lease heartbeats, and incomplete lease recovery.
 - Verification on 2026-09-07: `pnpm test` passed 200 tests; `pnpm test:integration` passed 11 Git tests with 10 credential-gated Supabase tests skipped; `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, and `pnpm build` passed.
 - Live verification on 2026-09-07: the opt-in test checked out Hi.Events commit `2064f88ff7590e93c738efb8becaa7d732063619` anonymously and read `README.md` through the guarded API. Run with `RUN_LIVE_TESTS=1 RUN_GITHUB_CHECKOUT_SMOKE=1 pnpm vitest run --project live tests/live/github-source-connector.live.test.ts` (PowerShell environment syntax may differ).
+- Review verification on 2026-09-07: PR #6 passed the ystack `/review` confidence gate after all security, evidence-binding, fetch-boundary, cleanup, and lease-liveness findings were fixed; CI and GitGuardian passed on the reviewed implementation.
 - No acceptance item is deferred. GitHub App installation authentication remains SNT-026 scope; this connector accepts the resulting token through the same read-only boundary.
