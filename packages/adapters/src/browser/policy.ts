@@ -50,13 +50,13 @@ export interface BrowserPolicyInput {
 
 export interface ActionClassificationInput {
   readonly kind: BrowserActionKind
-  readonly role?: string
-  readonly name?: string
-  readonly inputSlot?: string
-  readonly targetUrl?: string
-  readonly submit?: boolean
-  readonly download?: boolean
-  readonly opensNewTab?: boolean
+  readonly role?: string | undefined
+  readonly name?: string | undefined
+  readonly inputSlot?: string | undefined
+  readonly targetUrl?: string | undefined
+  readonly submit?: boolean | undefined
+  readonly download?: boolean | undefined
+  readonly opensNewTab?: boolean | undefined
 }
 
 function isLoopback(hostname: string): boolean {

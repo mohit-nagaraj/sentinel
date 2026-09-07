@@ -35,6 +35,14 @@ describe("browser evidence redaction", () => {
     expect(redactor.redactText("x".repeat(100), 20)).toHaveLength(20)
   })
 
+  it("removes Playwright locator details from public errors", () => {
+    expect(
+      redactor.errorMessage(
+        new Error("locator('form > button:nth-child(2)') timed out")
+      )
+    ).toBe("[INTERNAL_TARGET] timed out")
+  })
+
   it("masks every editable control in screenshots", () => {
     expect(SCREENSHOT_MASK_SELECTOR).toContain("input")
     expect(SCREENSHOT_MASK_SELECTOR).toContain("textarea")

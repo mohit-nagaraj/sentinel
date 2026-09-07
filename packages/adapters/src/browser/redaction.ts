@@ -29,6 +29,10 @@ export class BrowserEvidenceRedactor {
     let value = input
     for (const secret of this.secrets) value = replaceExact(value, secret)
     value = redactPersistedText(value)
+      .replace(
+        /\b(?:locator|getByRole|getByLabel|getByText)\([^\r\n]*\)(?=\s+(?:failed|resolved|timed out|waiting)|$)/gi,
+        "[INTERNAL_TARGET]"
+      )
       .replace(emailPattern, "[EMAIL_REDACTED]")
       .replace(paymentCardPattern, "[PAYMENT_REDACTED]")
       .replace(phonePattern, "[PHONE_REDACTED]")
