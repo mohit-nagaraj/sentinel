@@ -1,5 +1,5 @@
 import { codeSymbolKindSchema } from "@sentinel/contracts"
-import { Node, ts, type SourceFile } from "ts-morph"
+import { Node, ts } from "ts-morph"
 import type { z } from "zod"
 
 import type { IndexWarning } from "./errors.ts"
