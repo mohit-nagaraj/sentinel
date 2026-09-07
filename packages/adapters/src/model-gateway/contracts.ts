@@ -55,6 +55,7 @@ export interface ModelToolCall<Arguments = unknown> {
   readonly callId: string
   readonly name: string
   readonly arguments: Arguments
+  readonly argumentsHash: string
 }
 
 export type ModelContinuationItem =

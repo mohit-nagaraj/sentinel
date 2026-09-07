@@ -1,4 +1,4 @@
-import { canonicalSerialize } from "@sentinel/contracts"
+import { contentHashSchema, hashCanonical } from "@sentinel/contracts"
 import OpenAI, {
   APIConnectionError,
   APIConnectionTimeoutError,
@@ -446,6 +446,7 @@ export class AzureOpenAIModelGateway implements ModelGateway {
           callId: call.data.call_id,
           name: call.data.name,
           arguments: argumentsResult.data,
+          argumentsHash: hashCanonical(rawArguments),
         })
         items.push({
           type: "function_call",
@@ -548,7 +549,10 @@ export class AzureOpenAIModelGateway implements ModelGateway {
       }
       parseModelOperation(name.data)
       assertModelSafeValue(call.arguments)
-      if (continuationCalls.has(callId.data)) {
+      if (
+        !contentHashSchema.safeParse(call.argumentsHash).success ||
+        continuationCalls.has(callId.data)
+      ) {
         throw new ModelGatewayError("tool_protocol_invalid", false)
       }
       continuationCalls.set(callId.data, call)
@@ -577,15 +581,19 @@ export class AzureOpenAIModelGateway implements ModelGateway {
         }
         assertModelSafeValue(parsedArguments)
         if (
-          canonicalSerialize(parsedArguments) !==
-          canonicalSerialize(continuationCalls.get(item.callId)?.arguments)
+          hashCanonical(parsedArguments) !==
+          continuationCalls.get(item.callId)?.argumentsHash
         ) {
+          throw new ModelGatewayError("tool_protocol_invalid", false)
+        }
+        if (itemCallIds.has(item.callId)) {
           throw new ModelGatewayError("tool_protocol_invalid", false)
         }
         itemCallIds.add(item.callId)
       } else if (
         item.id.length < 1 ||
         item.id.length > 256 ||
+        item.encryptedContent === undefined ||
         (item.encryptedContent?.length ?? 0) > 65_536
       ) {
         throw new ModelGatewayError("tool_protocol_invalid", false)

@@ -1,3 +1,4 @@
+import { hashCanonical } from "@sentinel/contracts"
 import { describe, expect, it } from "vitest"
 import { z } from "zod"
 
@@ -173,6 +174,7 @@ describe("Azure OpenAI model gateway", () => {
         callId: "call-1",
         name: "lookup_count",
         arguments: { scope: "orders" },
+        argumentsHash: hashCanonical({ scope: "orders" }),
       },
     ])
     await expect(
@@ -193,6 +195,31 @@ describe("Azure OpenAI model gateway", () => {
         }),
       ])
     )
+    const functionItem = decision.continuation.items.find(
+      (item) => item.type === "function_call"
+    )
+    if (functionItem === undefined) throw new Error("missing function item")
+    await expect(
+      gateway.continueTools(
+        {
+          ...decision.continuation,
+          items: [...decision.continuation.items, functionItem],
+        },
+        [{ callId: "call-1", output: 42 }]
+      )
+    ).rejects.toMatchObject({ code: "tool_protocol_invalid" })
+    await expect(
+      gateway.continueTools(
+        {
+          ...decision.continuation,
+          items: [
+            ...decision.continuation.items,
+            { type: "reasoning", id: "reason-without-content" },
+          ],
+        },
+        [{ callId: "call-1", output: 42 }]
+      )
+    ).rejects.toMatchObject({ code: "tool_protocol_invalid" })
     await expect(
       gateway.continueTools(decision.continuation, [
         { callId: "other", output: 42 },
@@ -323,6 +350,44 @@ describe("Azure OpenAI model gateway", () => {
         ],
       })
     ).rejects.toMatchObject({ code: "tool_arguments_invalid" })
+  })
+
+  it("correlates raw arguments when Zod normalizes the executed value", async () => {
+    const transport = new QueueTransport([
+      completed("", [
+        {
+          type: "function_call",
+          call_id: "call-normalized",
+          name: "search",
+          arguments: '{"query":" VALUE "}',
+        },
+      ]),
+      completed("done"),
+    ])
+    const gateway = new AzureOpenAIModelGateway(transport, "deployment")
+    const decision = await gateway.decideTools({
+      input: "Search for the value.",
+      toolChoice: "required",
+      tools: [
+        {
+          name: "search",
+          description: "Search for one value.",
+          parameters: z.strictObject({
+            query: z.string().trim().toLowerCase(),
+          }),
+        },
+      ],
+    })
+    if (decision.kind !== "tool_calls") throw new Error("expected tool calls")
+    expect(decision.output[0]).toMatchObject({
+      arguments: { query: "value" },
+      argumentsHash: hashCanonical({ query: " VALUE " }),
+    })
+    await expect(
+      gateway.continueTools(decision.continuation, [
+        { callId: "call-normalized", output: { found: true } },
+      ])
+    ).resolves.toMatchObject({ output: "done" })
   })
 
   it("adapts text deltas without exposing reasoning events", async () => {

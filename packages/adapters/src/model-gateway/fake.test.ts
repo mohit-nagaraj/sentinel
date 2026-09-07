@@ -1,8 +1,10 @@
+import { hashCanonical } from "@sentinel/contracts"
 import { describe, expect, it } from "vitest"
 import { z } from "zod"
 
 import { ModelGatewayError, type ModelUsage } from "./contracts.ts"
 import { ScriptedModelGateway } from "./fake.ts"
+import { createStrictModelJsonSchema } from "./schema.ts"
 
 const usage: ModelUsage = { inputTokens: 4, outputTokens: 2, totalTokens: 6 }
 
@@ -18,16 +20,22 @@ describe("scripted model gateway", () => {
           argumentsJson: "{}",
         },
       ],
-      calls: [{ callId: "call-1", name: "lookup_count", arguments: {} }],
+      calls: [
+        {
+          callId: "call-1",
+          name: "lookup_count",
+          arguments: {},
+          argumentsHash: hashCanonical({}),
+        },
+      ],
       tools: [
         {
           name: "lookup_count",
           description: "Look up a count.",
-          parameters: {
-            type: "object",
-            properties: {},
-            additionalProperties: false,
-          },
+          parameters: createStrictModelJsonSchema(
+            z.strictObject({}),
+            "lookup_count"
+          ),
         },
       ],
     }
@@ -95,6 +103,61 @@ describe("scripted model gateway", () => {
     gateway.assertComplete()
   })
 
+  it("rejects invalid schema names before consuming a structured step", async () => {
+    const gateway = new ScriptedModelGateway([
+      {
+        kind: "structured",
+        result: {
+          output: { ok: true },
+          model: "fake",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        },
+      },
+    ])
+    const schema = z.strictObject({ ok: z.boolean() })
+    await expect(
+      gateway.generateStructured({
+        input: "return ok",
+        schemaName: "not valid!",
+        schema,
+      })
+    ).rejects.toMatchObject({ code: "invalid_request" })
+    await expect(
+      gateway.generateStructured({
+        input: "return ok",
+        schemaName: "valid_result",
+        schema,
+      })
+    ).resolves.toMatchObject({ output: { ok: true } })
+    gateway.assertComplete()
+  })
+
+  it("rejects duplicate tool definitions before consuming a step", async () => {
+    const gateway = new ScriptedModelGateway([
+      {
+        kind: "tools",
+        result: {
+          kind: "final_text",
+          output: "done",
+          model: "fake",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        },
+      },
+    ])
+    const tool = {
+      name: "lookup",
+      description: "Look up a value.",
+      parameters: z.strictObject({}),
+    }
+    await expect(
+      gateway.decideTools({ input: "answer", tools: [tool, tool] })
+    ).rejects.toMatchObject({ code: "invalid_request" })
+    await expect(
+      gateway.decideTools({ input: "answer", tools: [tool] })
+    ).resolves.toMatchObject({ kind: "final_text", output: "done" })
+    gateway.assertComplete()
+  })
+
   it("rejects mismatched tool results before consuming a scripted step", async () => {
     const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
     const continuation = {
@@ -107,16 +170,19 @@ describe("scripted model gateway", () => {
           argumentsJson: "{}",
         },
       ],
-      calls: [{ callId: "call-1", name: "lookup", arguments: {} }],
+      calls: [
+        {
+          callId: "call-1",
+          name: "lookup",
+          arguments: {},
+          argumentsHash: hashCanonical({}),
+        },
+      ],
       tools: [
         {
           name: "lookup",
           description: "Look up a value.",
-          parameters: {
-            type: "object",
-            properties: {},
-            additionalProperties: false,
-          },
+          parameters: createStrictModelJsonSchema(z.strictObject({}), "lookup"),
         },
       ],
     }
@@ -126,6 +192,20 @@ describe("scripted model gateway", () => {
         result: { output: "done", model: "fake", usage },
       },
     ])
+    await expect(
+      gateway.continueTools(
+        {
+          ...continuation,
+          items: continuation.items.map((item) =>
+            item.type === "user_text"
+              ? { ...item, text: "x".repeat(15_990) }
+              : item
+          ),
+        },
+        [{ callId: "call-1", output: {} }],
+        { instructions: "y".repeat(20) }
+      )
+    ).rejects.toMatchObject({ code: "tool_protocol_invalid" })
     await expect(
       gateway.continueTools(
         {
