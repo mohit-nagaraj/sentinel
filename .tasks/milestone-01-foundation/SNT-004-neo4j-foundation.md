@@ -1,12 +1,12 @@
 # SNT-004 — Neo4j constraints, repositories, and test isolation
 
-| Field | Value |
-|---|---|
-| Milestone | M1 — Foundation and durable execution |
-| Status | `not-started` |
-| Depends on | SNT-001, SNT-002 |
-| Blocks | Evidence linking, publication, blast-radius queries |
-| PRD references | §9, §11.1, §12, §13.12 |
+| Field          | Value                                               |
+| -------------- | --------------------------------------------------- |
+| Milestone      | M1 — Foundation and durable execution               |
+| Status         | `review`                                            |
+| Depends on     | SNT-001, SNT-002                                    |
+| Blocks         | Evidence linking, publication, blast-radius queries |
+| PRD references | §9, §11.1, §12, §13.12                              |
 
 ## Background
 
@@ -25,15 +25,15 @@ Neo4j Aura stores the active product-knowledge graph, not run orchestration. Thi
 
 ## Implementation tasks
 
-- [ ] Define environment schema without logging credentials.
-- [ ] Implement singleton/pool lifecycle and graceful shutdown.
-- [ ] Add idempotent schema bootstrap for required labels/stable-key constraints.
-- [ ] Implement parameter-bound read/write transaction helpers.
-- [ ] Reject dynamic labels/relationship types unless selected from internal allowlists.
-- [ ] Add application/test namespace factories.
-- [ ] Add health diagnostics safe for UI/operator output.
-- [ ] Add cleanup by explicit test application ID only.
-- [ ] Add representative node/relationship round-trip fixture.
+- [x] Define environment schema without logging credentials.
+- [x] Implement singleton/pool lifecycle and graceful shutdown.
+- [x] Add idempotent schema bootstrap for required labels/stable-key constraints.
+- [x] Implement parameter-bound read/write transaction helpers.
+- [x] Reject dynamic labels/relationship types unless selected from internal allowlists.
+- [x] Add application/test namespace factories.
+- [x] Add health diagnostics safe for UI/operator output.
+- [x] Add cleanup by explicit test application ID only.
+- [x] Add representative node/relationship round-trip fixture.
 
 ## Acceptance criteria
 
@@ -59,3 +59,10 @@ Full schema publication, Curator output, blast-radius traversal, production data
 ## Implementation notes
 
 The configured Aura instance is shared infrastructure. Integration tests must require an explicit opt-in and generated test application prefix; never use unrestricted `MATCH (n) DETACH DELETE n`.
+
+- Runtime package: `@sentinel/storage` using `neo4j-driver` 6.2.0.
+- Graph facts are scoped by validated application IDs and monotonic graph revisions; SNT-021 owns full pending-revision staging and atomic activation.
+- Schema bootstrap installs composite application/stable-key uniqueness constraints for all 17 node labels and 22 relationship types.
+- All caller-controlled identifiers, revisions, and properties are Cypher parameters; labels and relationship types resolve only through contract-backed allowlists.
+- Shared Aura verification on 2026-09-07 passed bootstrap idempotency, duplicate merge, relationship round-trip, failed-transaction rollback, and two-namespace cleanup isolation.
+- Default verification: formatting, lint, TypeScript build, 109 repository tests, 24 focused Neo4j tests, and the skipped-by-default graph project all passed.
