@@ -104,9 +104,12 @@ const configurationBasenames = new Set([
   ".gitattributes",
   ".gitignore",
   "dockerfile",
+  "composer.json",
   "eslint.config.js",
   "eslint.config.mjs",
   "package.json",
+  "phpstan.neon",
+  "phpstan.neon.dist",
   "phpunit.xml",
   "playwright.config.ts",
   "prettier.config.js",
@@ -321,7 +324,7 @@ function classifyFile(file: MutableFile): {
     /(?:^|\/)(?:dist|build|coverage|generated|node_modules|vendor)(?:\/|$)/.test(
       lower
     ) ||
-    /(?:\.generated\.|\.min\.(?:css|js)$)/.test(lower)
+    /(?:\.d\.tsx?$|\.generated\.|\.min\.(?:css|js|ts)$)/.test(lower)
   ) {
     classifications.push("generated")
     reasons.push("generated_file")

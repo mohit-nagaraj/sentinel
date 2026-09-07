@@ -79,6 +79,14 @@ describe("PR diff parser", () => {
         "@@ -1 +1 @@",
         "-old",
         "+new",
+        "diff --git a/composer.json b/composer.json",
+        "@@ -1 +1 @@",
+        "-{}",
+        '+{"require":{}}',
+        "diff --git a/src/types.d.ts b/src/types.d.ts",
+        "@@ -1 +1 @@",
+        "-declare const old: string",
+        "+declare const next: string",
         "diff --git a/database/migrations/001.sql b/database/migrations/001.sql",
         "@@ -1 +1 @@",
         "-old",
@@ -86,12 +94,14 @@ describe("PR diff parser", () => {
       ].join("\n")
     )
 
-    expect(parsed.files[0]?.classifications).toContain("schema")
-    expect(parsed.files[1]?.classifications).toContain("source")
-    expect(parsed.files[1]?.classifications).toContain("generated")
-    expect(parsed.files[2]?.classifications).toContain("binary")
-    expect(parsed.files[3]?.classifications).toContain("lockfile")
-    expect(parsed.files[3]?.classifications).toContain("configuration")
+    expect(parsed.files[0]?.classifications).toContain("configuration")
+    expect(parsed.files[1]?.classifications).toContain("schema")
+    expect(parsed.files[2]?.classifications).toContain("source")
+    expect(parsed.files[2]?.classifications).toContain("generated")
+    expect(parsed.files[3]?.classifications).toContain("binary")
+    expect(parsed.files[4]?.classifications).toContain("lockfile")
+    expect(parsed.files[4]?.classifications).toContain("configuration")
+    expect(parsed.files[5]?.classifications).toContain("generated")
   })
 
   it("normalizes GitHub patch records and preserves unavailable patches", () => {

@@ -217,7 +217,7 @@ describe("PR diff symbol mapper", () => {
     const files = new Map([
       ["tsconfig.json", "{}\n"],
       [
-        "src/selected.ts",
+        "src/selected.test.ts",
         "export function outer() {\n  function inner() {\n    return 1\n  }\n  return inner()\n}\n",
       ],
       ["src/not-selected.ts", "export function hidden() { return 0 }\n"],
@@ -261,7 +261,7 @@ describe("PR diff symbol mapper", () => {
       runId,
       repository,
       commitSha: baseSha,
-      paths: ["src/selected.ts"],
+      paths: ["src/selected.test.ts"],
     })
 
     expect(indexed.failures).toStrictEqual([])
@@ -271,7 +271,9 @@ describe("PR diff symbol mapper", () => {
       )
     ).toBe(true)
     expect(
-      indexed.symbols.every(({ filePath }) => filePath === "src/selected.ts")
+      indexed.symbols.every(
+        ({ filePath }) => filePath === "src/selected.test.ts"
+      )
     ).toBe(true)
     expect(reads).not.toContain("src/not-selected.ts")
   })

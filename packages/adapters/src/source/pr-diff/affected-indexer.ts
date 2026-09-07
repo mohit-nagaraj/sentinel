@@ -21,6 +21,7 @@ import {
   type CodeSymbolRecord,
 } from "../typescript/indexer.ts"
 import type { TypeScriptIndexLimits } from "../typescript/limits.ts"
+import { defaultIndexPolicy } from "../typescript/policy.ts"
 import type {
   TypeScriptSourceEntry,
   TypeScriptSourceReader,
@@ -321,6 +322,11 @@ export class DefaultAffectedSymbolIndexer implements AffectedSymbolIndexer {
             commitSha: request.commitSha,
             roots: [directoryOf(config)],
             tsconfigPath: config,
+            policy: {
+              ...defaultIndexPolicy,
+              includeTests: true,
+              testPathPrefixes: [...group],
+            },
             limits: this.typeScriptLimits,
             ...(request.signal === undefined ? {} : { signal: request.signal }),
           })
