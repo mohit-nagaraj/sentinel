@@ -205,3 +205,32 @@ The public smoke test is skipped unless both `RUN_LIVE_TESTS=1` and
 RUN_LIVE_TESTS=1 RUN_TYPESCRIPT_INDEX_SMOKE=1 \
   pnpm vitest run --project live tests/live/typescript-source-index.live.test.ts
 ```
+
+## Endpoint Evidence Normalization
+
+`@sentinel/adapters` provides a versioned endpoint identity and a constrained
+OpenAPI 3.0/3.1 importer. HTTP method plus normalized path shape form the shared
+identity; origins, query strings, fragments, redundant slashes, and parameter
+names do not. Base paths and optional deployment/version prefixes are applied
+only when explicitly supplied by the caller.
+
+The importer accepts caller-supplied JSON, YAML, or plain objects under byte,
+node, operation, string, YAML-alias, and local-reference limits. It rejects
+every non-fragment `$ref` before resolving bounded local JSON Pointers and never
+uses filesystem or network resolvers. Imported operations retain operation ID,
+tags, request/response schema references, source hash, source URI, optional
+commit, and extractor version in contract-validated endpoint facts.
+
+Adapters turn existing TypeScript API candidates and Laravel route facts into
+the same evidence model. Runtime matching prefers static segments, reports tied
+patterns as candidates, and preserves method/path disagreement as conflicts.
+Browser request query/header/body values and unmatched concrete paths are not
+returned; results carry only canonical matched paths, hashes/provenance, and
+value-free redaction counts.
+
+Run focused endpoint checks with:
+
+```sh
+pnpm exec vitest run --project unit packages/adapters/src/source/endpoint
+pnpm exec vitest run --project integration tests/integration/endpoint-normalization.integration.test.ts
+```
