@@ -1,12 +1,12 @@
 # SNT-013 — PR diff to base/head symbol mapping
 
-| Field | Value |
-|---|---|
-| Milestone | M2 — Deterministic source evidence |
-| Status | `not-started` |
-| Depends on | SNT-007, SNT-009, SNT-010 |
-| Blocks | Agentic PR investigation |
-| PRD references | §6.4, §13.13, FR-012 |
+| Field          | Value                              |
+| -------------- | ---------------------------------- |
+| Milestone      | M2 — Deterministic source evidence |
+| Status         | `done`                             |
+| Depends on     | SNT-007, SNT-009, SNT-010          |
+| Blocks         | Agentic PR investigation           |
+| PRD references | §6.4, §13.13, FR-012               |
 
 ## Background
 
@@ -24,15 +24,15 @@ PR impact begins with exact change identity. Sentinel must map changed hunks to 
 
 ## Implementation tasks
 
-- [ ] Implement parser for GitHub/Git diff file/hunk/rename/binary states.
-- [ ] Canonicalize normalized diff for hashing.
-- [ ] Retrieve base/head AST facts only for affected TypeScript/PHP files.
-- [ ] Select smallest enclosing symbol and preserve nested parent context.
-- [ ] Classify added/modified/deleted/renamed/moved.
-- [ ] Handle file deletion using base index and addition using head index.
-- [ ] Mark changes outside supported adapters as unmapped, never discard them.
-- [ ] Add baseline compatibility classifier: exact, safe ancestor warning, stale-relevant, unrelated/unknown.
-- [ ] Add limits for very large/binary/generated diffs.
+- [x] Implement parser for GitHub/Git diff file/hunk/rename/binary states.
+- [x] Canonicalize normalized diff for hashing.
+- [x] Retrieve base/head AST facts only for affected TypeScript/PHP files.
+- [x] Select smallest enclosing symbol and preserve nested parent context.
+- [x] Classify added/modified/deleted/renamed/moved.
+- [x] Handle file deletion using base index and addition using head index.
+- [x] Mark changes outside supported adapters as unmapped, never discard them.
+- [x] Add baseline compatibility classifier: exact, safe ancestor warning, stale-relevant, unrelated/unknown.
+- [x] Add limits for very large/binary/generated diffs.
 
 ## Acceptance criteria
 
@@ -57,4 +57,28 @@ Semantic interpretation, caller/callee impact, GitHub webhook/check behavior, Ne
 
 ## Implementation notes
 
-_Populate during implementation with final paths, commands, decisions, test evidence, and any explicitly deferred acceptance item._
+### Paths
+
+- Shared contracts and parsers: `packages/contracts/src/assessment.ts` and `packages/contracts/src/parsers.ts`.
+- Diff parser, hashing, classification, limits, and errors: `packages/adapters/src/source/pr-diff/diff-parser.ts`, `limits.ts`, and `errors.ts`.
+- Affected-only TypeScript/PHP indexing: `packages/adapters/src/source/pr-diff/affected-indexer.ts`.
+- Smallest-enclosing selection and conservative pairing: `packages/adapters/src/source/pr-diff/symbol-mapper.ts`.
+- Git/ancestry/baseline orchestration: `packages/adapters/src/source/pr-diff/analyzer.ts`, exported through the adapter barrels.
+- Local repository matrix: `tests/fixtures/pr-diff-repository.ts` and `tests/integration/pr-diff-analyzer.integration.test.ts`.
+
+### Decisions
+
+- Git execution compares the two immutable trees with explicit `--no-ext-diff`, `--no-textconv`, fixed prefixes, histogram diffing, zero context, no indent heuristic, and 50% rename detection. Patch text exists only in process memory; the validated result contains SHAs, the normalized content-sensitive hash, ranges, symbol summaries, baseline status, and unresolved reasons.
+- Affected indexing masks checkout enumeration to the selected source files and their nearest ancestor `tsconfig.json`; changed TypeScript tests are admitted through the indexer's focused-test policy for only those exact paths, and the PHP process receives the exact affected `.php` list. Generated, lockfile, binary, and unsupported files never enter an AST adapter.
+- Changed lines are mapped with a per-file sweep-line/min-heap index before contiguous per-symbol ranges are rebuilt. This preserves the smallest nested declaration when a Git hunk spans several symbols without quadratic line-by-symbol scans. Rename metadata maps every structural symbol in a renamed file, including 100% metadata-only renames.
+- Same-file structural identities classify as modified, Git-renamed-file structural identities as renamed, and cross-file symbols as moved only when the structural key and normalized source-content hash form a unique pair. Ambiguous matches remain added/deleted with `symbol_match_ambiguous` evidence.
+- Baseline assessment proceeds only for an exact graph/base match or an ancestor whose intervening changes do not touch the supplied indexed paths. Relevant staleness, a baseline containing the PR, unrelated history, and unavailable ancestry are explicit blocking states.
+- Parser/analyzer limits cover patch bytes, files, hunks per file, changed lines, indexed symbols, intervening paths, and Git time/output.
+
+### Verification (2026-09-07)
+
+- `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, and `pnpm build` passed.
+- `pnpm test` passed 539 tests across 59 files, including 13 new PR-diff unit tests and the extended contract suite.
+- Focused local Git integration passed 3 tests covering TypeScript/PHP edits, nested symbols, added/deleted files, rename plus edit, a cross-file move, binary/generated/lockfile/config/schema changes, mode-only and no-newline diffs, deterministic reruns, all baseline classes, no patch retention, and large-diff/ancestry rejection.
+- The full local `pnpm test:integration` run passed the SNT-013 suite and 21 other integration tests; two pre-existing PHP process-limit tests could not run to their intended assertions because this workstation has no PHP executable. Repository CI installs PHP 8.3 and Composer before running the same integration command and is required to pass before merge.
+- No SNT-013 acceptance item is deferred. Semantic impact, graph persistence/traversal, GitHub delivery, and application verification remain the task's declared out-of-scope work.
