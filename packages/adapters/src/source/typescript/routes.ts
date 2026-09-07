@@ -303,8 +303,11 @@ export function extractRoutes(
     const hasComponent = componentProperties.some(
       (name) => objectLiteral.getProperty(name) !== undefined
     )
-    const lazyProperty =
-      objectLiteral.getProperty("lazy") ?? objectLiteral.getProperty("loader")
+    // Only `lazy` is a code-splitting hook. `loader` is React Router's data
+    // fetcher, and resolving it as a component source would either invent a
+    // dynamic_component reason on an already-resolved route or attribute a
+    // module the loader happens to import as the route's component.
+    const lazyProperty = objectLiteral.getProperty("lazy")
     const isRouteShape =
       pathProperty !== undefined ||
       indexProperty !== undefined ||

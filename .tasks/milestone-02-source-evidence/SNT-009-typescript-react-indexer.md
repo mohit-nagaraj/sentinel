@@ -109,6 +109,10 @@ Whole-program soundness, runtime JavaScript evaluation, requirement matching, ba
   handler binding in the target would be unresolved.
 - Wall-clock duration lives in `index.elapsedMs`, outside `statistics`, so `statistics` is entirely
   deterministic.
+- Only the `lazy` route property is a component source. React Router's `loader` is a data fetcher, and an
+  earlier revision fell back to it — which produced a spurious `dynamic_component` reason on routes that
+  had already resolved an `element`. The target uses `loader` on its public event routes, so this was a
+  real false positive; covered by a regression test.
 
 ### Verification (2026-09-07)
 

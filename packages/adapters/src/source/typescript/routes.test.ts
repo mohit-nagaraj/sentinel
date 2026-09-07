@@ -309,6 +309,46 @@ describe("route extraction", () => {
     })
   })
 
+  it("does not treat a data loader as a component source", async () => {
+    const routes = await routesOf(
+      {
+        "tsconfig.json": tsconfig,
+        "src/routeLoaders/publicEventRouteLoader.ts": [
+          'import { helpers } from "../helpers.ts"',
+          "export const publicEventRouteLoader = async () => {",
+          '  const mod = await import("../helpers.ts")',
+          "  return mod.helpers ?? helpers",
+          "}",
+        ].join("\n"),
+        "src/helpers.ts": "export const helpers = { run: () => 1 }\n",
+        "src/Event.tsx": [
+          "const Event = () => <div />",
+          "export default Event",
+        ].join("\n"),
+        "src/router.tsx": [
+          'import Event from "./Event.tsx"',
+          'import { publicEventRouteLoader } from "./routeLoaders/publicEventRouteLoader.ts"',
+          "export const router = [",
+          "  {",
+          '    path: "event/:eventId",',
+          "    element: <Event />,",
+          "    loader: publicEventRouteLoader,",
+          "  },",
+          "]",
+        ].join("\n"),
+      },
+      "src/router.tsx"
+    )
+
+    expect(routes).toHaveLength(1)
+    expect(routes[0]).toMatchObject({
+      pathPattern: "/event/:eventId",
+      componentQualifiedNames: ["src/Event.tsx#Event"],
+      unresolvedReasons: [],
+      unresolvedComponents: [],
+    })
+  })
+
   it("marks an unresolvable lazy import as a dynamic component", async () => {
     const routes = await routesOf(
       {
