@@ -153,3 +153,30 @@ Do not deploy incompatible node names, routing, or checkpoint-state schemas whil
 threads are interrupted or failed. Drain/resume those threads on the prior graph,
 or publish a versioned graph/checkpoint namespace and run an explicit validated
 state migration. Never reinterpret an in-flight checkpoint implicitly.
+
+## TypeScript and React Source Index
+
+`@sentinel/adapters` turns a TypeScript/React source tree into deterministic
+structural facts: files, symbols, imports, call and reference edges, React Router
+routes with their rendered component ancestry, JSX accessible hints, event
+handler bindings, React Query hooks, and normalized frontend API call templates.
+`createTypeScriptIndexQuery` exposes the bounded read-only surface the Code
+Explorer navigates, and `indexTypeScriptSource` returns
+`parseCodeFactEnvelope`-valid envelopes for the fact kinds `@sentinel/contracts`
+models today.
+
+Source is read only through a narrow reader port that a read-only GitHub
+checkout snapshot already satisfies, and admitted files are loaded into an
+in-memory compiler host. Excluded, vendored, generated, locale, and out-of-root
+files are therefore absent from the compiler host rather than filtered after the
+fact, and no repository code, build plugin, or bundler config is ever evaluated.
+Computed route paths, dynamic components, computed handlers, substituted labels,
+and computed request paths record a reason code instead of a guess.
+
+The public smoke test is skipped unless both `RUN_LIVE_TESTS=1` and
+`RUN_TYPESCRIPT_INDEX_SMOKE=1` are set:
+
+```bash
+RUN_LIVE_TESTS=1 RUN_TYPESCRIPT_INDEX_SMOKE=1 \
+  pnpm vitest run --project live tests/live/typescript-source-index.live.test.ts
+```
