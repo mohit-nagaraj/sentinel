@@ -254,10 +254,10 @@ function decodeGitText(value: Buffer, kind: string): string {
   }
 }
 
-function parseTreeEntries(output: Buffer): CheckoutEntry[] {
+function parseTreeEntries(output: Buffer): readonly CheckoutEntry[] {
   const records = decodeGitText(output, "tree metadata").split("\0")
   if (records.at(-1) === "") records.pop()
-  return records.map((record) => {
+  const entries = records.map((record) => {
     const separator = record.indexOf("\t")
     if (separator < 0) {
       throw new SourceConnectorError(
@@ -295,14 +295,15 @@ function parseTreeEntries(output: Buffer): CheckoutEntry[] {
         "Repository tree contained an invalid object size"
       )
     }
-    return {
+    return Object.freeze({
       path: validateTreePath(record.slice(separator + 1)),
       kind: mode === "120000" ? "symlink" : "file",
       mode,
       objectId: header[3] ?? "",
       sizeBytes,
-    }
+    })
   })
+  return Object.freeze(entries)
 }
 
 function assertSafeSymlink(path: string, targetBuffer: Buffer): void {
@@ -757,12 +758,14 @@ export class EphemeralCheckoutManager {
           metadata,
           path: checkoutPath,
           enumerate: (prefix = "") => {
-            if (prefix.length === 0) return [...tree.entries]
+            if (prefix.length === 0) return Object.freeze([...tree.entries])
             const normalizedPrefix = normalizeRepositoryPath(prefix)
-            return tree.entries.filter(
-              (entry) =>
-                entry.path === normalizedPrefix ||
-                entry.path.startsWith(`${normalizedPrefix}/`)
+            return Object.freeze(
+              tree.entries.filter(
+                (entry) =>
+                  entry.path === normalizedPrefix ||
+                  entry.path.startsWith(`${normalizedPrefix}/`)
+              )
             )
           },
           readText: async (path, maxBytes = this.limits.maxFileBytes) =>

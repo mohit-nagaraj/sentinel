@@ -7,6 +7,7 @@ import {
   readdir,
   realpath,
   rm,
+  utimes,
   writeFile,
 } from "node:fs/promises"
 import { tmpdir, userInfo } from "node:os"
@@ -30,7 +31,7 @@ export interface CheckoutLease {
 export interface CheckoutLeaseRegistryOptions {
   readonly rootDirectory?: string
   readonly now?: () => Date
-  readonly isProcessAlive?: (pid: number) => boolean
+  readonly heartbeatIntervalMs?: number
   readonly removeDirectory?: (path: string) => Promise<void>
 }
 
@@ -64,20 +65,6 @@ async function ensureDirectoryIsSafe(path: string): Promise<string> {
   return await realpath(path)
 }
 
-function defaultProcessIsAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    return !(
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "ESRCH"
-    )
-  }
-}
-
 function defaultRootDirectory(): string {
   const owner =
     typeof process.getuid === "function"
@@ -90,9 +77,9 @@ function defaultRootDirectory(): string {
 
 export class CheckoutLeaseRegistry {
   private readonly configuredRoot: string
-  private readonly active = new Set<string>()
+  private readonly active = new Map<string, NodeJS.Timeout | undefined>()
   private readonly now: () => Date
-  private readonly isProcessAlive: (pid: number) => boolean
+  private readonly heartbeatIntervalMs: number
   private readonly removeDirectory: (path: string) => Promise<void>
   private resolvedRoot: string | undefined
 
@@ -101,7 +88,12 @@ export class CheckoutLeaseRegistry {
       options.rootDirectory ?? defaultRootDirectory()
     )
     this.now = options.now ?? (() => new Date())
-    this.isProcessAlive = options.isProcessAlive ?? defaultProcessIsAlive
+    this.heartbeatIntervalMs = z
+      .number()
+      .int()
+      .positive()
+      .max(60 * 60_000)
+      .parse(options.heartbeatIntervalMs ?? 60_000)
     this.removeDirectory =
       options.removeDirectory ??
       (async (path) => {
@@ -133,16 +125,19 @@ export class CheckoutLeaseRegistry {
   async create(): Promise<CheckoutLease> {
     const root = await this.root()
     const leasePath = await mkdtemp(join(root, "checkout-"))
+    const leaseFilePath = join(leasePath, LEASE_FILE)
     try {
+      const createdAt = this.now()
       await writeFile(
-        join(leasePath, LEASE_FILE),
+        leaseFilePath,
         JSON.stringify({
           version: 1,
-          createdAt: this.now().toISOString(),
+          createdAt: createdAt.toISOString(),
           ownerPid: process.pid,
         }),
         { encoding: "utf8", flag: "wx", mode: 0o600 }
       )
+      await utimes(leaseFilePath, createdAt, createdAt)
     } catch {
       try {
         await rm(leasePath, { recursive: true, force: true, maxRetries: 3 })
@@ -155,13 +150,23 @@ export class CheckoutLeaseRegistry {
         { retryable: true }
       )
     }
-    this.active.add(leasePath)
+    const heartbeat = setInterval(() => {
+      const heartbeatAt = this.now()
+      void utimes(leaseFilePath, heartbeatAt, heartbeatAt).catch(
+        () => undefined
+      )
+    }, this.heartbeatIntervalMs)
+    heartbeat.unref()
+    this.active.set(leasePath, heartbeat)
     let cleaned = false
     let cleanupPromise: Promise<void> | undefined
     return {
       path: leasePath,
       cleanup: async () => {
         if (cleaned) return
+        const activeHeartbeat = this.active.get(leasePath)
+        if (activeHeartbeat !== undefined) clearInterval(activeHeartbeat)
+        this.active.set(leasePath, undefined)
         cleanupPromise ??= this.removeOwned(leasePath)
           .then(() => {
             cleaned = true
@@ -190,9 +195,12 @@ export class CheckoutLeaseRegistry {
   }
 
   async cleanupAll(): Promise<void> {
-    const paths = [...this.active]
+    const paths = [...this.active.keys()]
     await Promise.all(
       paths.map(async (path) => {
+        const heartbeat = this.active.get(path)
+        if (heartbeat !== undefined) clearInterval(heartbeat)
+        this.active.set(path, undefined)
         await this.removeOwned(path)
         this.active.delete(path)
       })
@@ -220,10 +228,12 @@ export class CheckoutLeaseRegistry {
       const candidate = join(root, entry.name)
       if (this.active.has(candidate)) continue
       let lease: z.infer<typeof leaseSchema>
+      let heartbeatStatus
       try {
         lease = leaseSchema.parse(
           JSON.parse(await readFile(join(candidate, LEASE_FILE), "utf8"))
         )
+        heartbeatStatus = await lstat(join(candidate, LEASE_FILE))
       } catch {
         let status
         try {
@@ -249,9 +259,11 @@ export class CheckoutLeaseRegistry {
         }
         continue
       }
-      if (this.now().getTime() - Date.parse(lease.createdAt) < olderThanMs)
-        continue
-      if (this.isProcessAlive(lease.ownerPid)) continue
+      const lastHeartbeat = Math.max(
+        Date.parse(lease.createdAt),
+        heartbeatStatus.mtimeMs
+      )
+      if (this.now().getTime() - lastHeartbeat < olderThanMs) continue
       await this.removeOwned(candidate)
       reclaimed += 1
     }

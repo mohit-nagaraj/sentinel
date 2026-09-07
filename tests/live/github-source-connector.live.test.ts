@@ -20,7 +20,6 @@ describe.runIf(runSmoke)("public Hi.Events source checkout", () => {
           maxFileBytes: 16 * 1024 * 1024,
           timeoutMs: 5 * 60_000,
         },
-        staleLeaseAgeMs: 0,
       })
       let resolved: ResolvedGitHubCommit | undefined
       try {

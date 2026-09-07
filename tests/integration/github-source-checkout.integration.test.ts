@@ -77,6 +77,18 @@ describe("ephemeral GitHub source checkout", () => {
     expect(base).toBeDefined()
     expect(head).toBeDefined()
     await expect(base?.readText("old-name.txt")).resolves.toBe("base content\n")
+    const oldEntry = base
+      ?.enumerate()
+      .find((entry) => entry.path === "old-name.txt")
+    const packageEntry = base
+      ?.enumerate()
+      .find((entry) => entry.path === "package.json")
+    expect(() =>
+      Object.assign(oldEntry ?? {}, {
+        objectId: packageEntry?.objectId,
+        sizeBytes: packageEntry?.sizeBytes,
+      })
+    ).toThrow(TypeError)
     await writeFile(join(base?.path ?? "", "old-name.txt"), "fake content\n")
     await expect(base?.readText("old-name.txt")).resolves.toBe("base content\n")
     await expect(head?.readText("new-name.txt")).resolves.toBe("head content\n")

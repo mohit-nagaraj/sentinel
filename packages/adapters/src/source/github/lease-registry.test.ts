@@ -31,10 +31,10 @@ describe("CheckoutLeaseRegistry", () => {
     const currentRegistry = new CheckoutLeaseRegistry({
       rootDirectory,
       now: () => new Date("2026-01-02T00:00:00.000Z"),
-      isProcessAlive: () => false,
     })
     await expect(currentRegistry.reclaimStale(60_000)).resolves.toBe(1)
     await expect(access(stale.path)).rejects.toThrow()
+    await stale.cleanup()
     await rm(parent, { recursive: true, force: true })
   })
 
@@ -49,27 +49,33 @@ describe("CheckoutLeaseRegistry", () => {
     const startupRegistry = new CheckoutLeaseRegistry({
       rootDirectory,
       now: () => new Date("2026-01-02T00:00:00.000Z"),
-      isProcessAlive: () => false,
     })
     await startGitHubSourceConnector({
       checkouts: new EphemeralCheckoutManager({ registry: startupRegistry }),
       staleLeaseAgeMs: 60_000,
     })
     await expect(access(stale.path)).rejects.toThrow()
+    await stale.cleanup()
     await rm(parent, { recursive: true, force: true })
   })
 
-  it("does not reclaim an old lease while its owner process is alive", async () => {
+  it("does not reclaim an old lease with a fresh heartbeat", async () => {
     const parent = await mkdtemp(join(tmpdir(), "sentinel-live-lease-test-"))
     const rootDirectory = join(parent, "leases")
     const ownerRegistry = new CheckoutLeaseRegistry({
       rootDirectory,
       now: () => new Date("2026-01-01T00:00:00.000Z"),
+      heartbeatIntervalMs: 60 * 60_000,
     })
     const lease = await ownerRegistry.create()
+    await utimes(
+      join(lease.path, ".sentinel-checkout-lease.json"),
+      new Date("2026-01-02T00:00:00.000Z"),
+      new Date("2026-01-02T00:00:00.000Z")
+    )
     const reclaimer = new CheckoutLeaseRegistry({
       rootDirectory,
-      now: () => new Date("2026-01-02T00:00:00.000Z"),
+      now: () => new Date("2026-01-02T00:00:30.000Z"),
     })
     await expect(reclaimer.reclaimStale(60_000)).resolves.toBe(0)
     await expect(access(lease.path)).resolves.toBeUndefined()
