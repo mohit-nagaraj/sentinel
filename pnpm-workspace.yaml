@@ -8,5 +8,8 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
 
+minimumReleaseAgeExclude:
+  - dompurify@3.4.15
+
 overrides:
   zod: 4.3.6
