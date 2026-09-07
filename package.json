@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
+    "@sentinel/adapters": "workspace:*",
     "@sentinel/contracts": "workspace:*",
     "@sentinel/storage": "workspace:*",
     "@testing-library/jest-dom": "6.9.1",
@@ -42,6 +43,7 @@
     "typescript": "^5.9.0",
     "typescript-eslint": "^8.40.0",
     "vite-tsconfig-paths": "^5.1.0",
-    "vitest": "^3.2.0"
+    "vitest": "^3.2.0",
+    "zod": "4.3.6"
   }
 }

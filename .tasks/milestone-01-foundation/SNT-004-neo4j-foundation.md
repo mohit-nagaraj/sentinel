@@ -3,7 +3,7 @@
 | Field          | Value                                               |
 | -------------- | --------------------------------------------------- |
 | Milestone      | M1 — Foundation and durable execution               |
-| Status         | `review`                                            |
+| Status         | `done`                                              |
 | Depends on     | SNT-001, SNT-002                                    |
 | Blocks         | Evidence linking, publication, blast-radius queries |
 | PRD references | §9, §11.1, §12, §13.12                              |

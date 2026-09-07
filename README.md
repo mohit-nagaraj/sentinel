@@ -117,3 +117,17 @@ Graph integration tests are skipped unless `RUN_NEO4J_INTEGRATION_TESTS=1` and
 `SENTINEL_NEO4J_TEST_PREFIX=sentinel-test-<8-32 lowercase hex characters>` are
 set. Cleanup requires both the generated application ID and matching test marker,
 so it cannot delete another application namespace in the shared Aura database.
+
+## Model Gateway
+
+`@sentinel/adapters` exposes a provider-neutral model gateway backed by the
+official OpenAI TypeScript client and Azure's `/openai/v1/` Responses endpoint.
+Calls use the configured deployment name as `model`, set `store: false`, enforce
+strict schemas/tools and per-call limits, and return redacted typed failures.
+The scripted gateway supplies deterministic multi-turn trajectories for normal
+tests without provider credentials.
+
+The paid compatibility probe is skipped unless
+`RUN_AZURE_OPENAI_COMPATIBILITY=1` is set. Its output-token cap is controlled by
+`AZURE_OPENAI_COMPATIBILITY_MAX_TOKENS` and validation never permits more than
+1,024 tokens per call.
