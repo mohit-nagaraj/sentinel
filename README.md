@@ -153,3 +153,28 @@ Do not deploy incompatible node names, routing, or checkpoint-state schemas whil
 threads are interrupted or failed. Drain/resume those threads on the prior graph,
 or publish a versioned graph/checkpoint namespace and run an explicit validated
 state migration. Never reinterpret an in-flight checkpoint implicitly.
+
+## Documentation Evidence Maps
+
+`@sentinel/adapters` prepares deterministic documentation maps from approved web
+roots or Markdown in an immutable GitHub checkout snapshot. Web crawls use a
+disposable Crawlee request queue, robots and sitemap discovery, bounded retries,
+and page/byte/time caps. Production roots require HTTPS; links, canonical hints,
+redirects, and configured Playwright rendering remain inside the approved
+origin/path set. Literal and DNS-resolved private or reserved addresses are
+rejected at the transport boundary. The HTTP/private-network options exist only
+for isolated fixtures.
+
+HTML extraction prefers explicit `main`/`article` content, uses Readability as a
+fallback, and sanitizes the retained markup with DOMPurify. Markdown is parsed to
+mdast from repository files tied to the checkout commit. Both paths yield the
+same contract-backed document source/page/section facts, exact excerpts with
+offsets into sanitized canonical text, stable hashes, and `LINKS_TO` edges. Raw
+responses, DOMs, ASTs, and checkouts are disposable.
+
+`DocumentationMapIndex` provides bounded tree, list, lexical search,
+read-section, and linked-page operations over prepared IDs only. The second
+Supabase migration adds private map/page/section/link tables;
+`DocumentMapRepository.replace` transactionally stores sanitized facts and
+coverage metadata. Raw pages are not uploaded as artifacts by default; callers
+must make a separate evidence-retention decision before using private Storage.

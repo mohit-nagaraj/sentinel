@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M1 — Foundation and durable execution |
-| Status | `review` |
+| Status | `done` |
 | Depends on | SNT-002, SNT-003, SNT-005 |
 | Blocks | Specialist kernel, run API, all compiled workflows |
 | PRD references | §7.4, §9.3, §10.4, §11.6, §13.2, §15 |
