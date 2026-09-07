@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M2 — Deterministic source evidence |
-| Status | `review` |
+| Status | `done` |
 | Depends on | SNT-002, SNT-007 |
 | Blocks | Endpoint normalization, Code Explorer, PR mapping |
 | PRD references | §10.2, §13.8, FR-007 |
@@ -75,6 +75,7 @@ Executing `artisan`, runtime container resolution, whole-program data flow, Code
 - Default limits: 2,000 files, 2 MiB per file, 64 MiB total source, path depth 40, 100,000 facts, 1,024-character strings, 1 MiB request, 32 MiB stdout, 64 KiB stderr, and 120 seconds.
 - Fixture coverage: `tests/fixtures/php-laravel` traces grouped route → Action → Handler → Service → Repository → model and covers aliases, attributes, traits, interfaces, promoted constructor properties, repeated namespace/import blocks, closure/arrow shadowing, FormRequest, JsonResource, UTF-8 BOM normalization, malformed source, inert top-level code, unrelated Route classes, mixed/computed route components, and dynamic negatives. Golden expectations are consumed through the TypeScript schema.
 - Verification on 2026-09-07 against the merged SNT-009 baseline: Composer strict validation and PHP syntax checks passed; `pnpm test` passed 510 tests; `pnpm test:integration` passed 29 tests with 11 environment-gated Supabase/LangGraph tests skipped; `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, and `pnpm build` passed.
+- Formal review on 2026-09-07 completed with all five required reviewer roles passing at commit `86a96950cf97b38e6f0877a62f42d0c1e3ab527f`; the corresponding GitHub Actions verification and GitGuardian checks passed.
 - Live verification on 2026-09-07: the opt-in test checked out Hi.Events commit `2064f88ff7590e93c738efb8becaa7d732063619`, parsed five selected backend files, and resolved `/public/events/{event_id}/order` to `CreateOrderActionPublic` without booting Laravel. A first Git pack transfer was reset by the network; the clean retry passed in about 12 seconds.
 - Run the live smoke with `RUN_LIVE_TESTS=1 RUN_PHP_INDEXER_SMOKE=1 pnpm vitest run --project live tests/live/php-laravel-indexer.live.test.ts` after Composer install (PowerShell environment syntax differs).
 - A trusted baseline may later provide `route:list --json` as SNT-011 corroboration, but no SNT-010 acceptance item is deferred and this extractor remains source-only for untrusted PR trees.
