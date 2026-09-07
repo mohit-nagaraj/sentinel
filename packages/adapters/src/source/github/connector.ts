@@ -12,7 +12,7 @@ import {
   type GitHubPullRequestMetadata,
   type GitHubRepositoryMetadata,
 } from "./metadata.ts"
-import { githubCloneUrl, parseGitHubRepository } from "./normalization.ts"
+import { parseGitHubRepository, sameRepository } from "./normalization.ts"
 
 export interface ResolvedGitHubCommit {
   readonly repository: GitHubRepositoryMetadata
@@ -92,6 +92,11 @@ export class GitHubSourceConnector implements SourceConnector {
     const repository = await this.metadata.getRepository(identity, signal)
     this.assertRepositoryCompatible(repository)
     const commit = await this.metadata.getCommit(identity, ref, signal)
+    const tree = await this.metadata.getTreeSummary(
+      identity,
+      commit.treeObjectId,
+      signal
+    )
     const checkout = await this.checkouts.materialize({
       repository: identity,
       targets: [
@@ -99,6 +104,7 @@ export class GitHubSourceConnector implements SourceConnector {
           label: "source",
           sha: commit.sha,
           remoteUrl: repository.cloneUrl,
+          preflight: tree,
         },
       ],
       ...(this.token === undefined ? {} : { githubToken: this.token }),
@@ -115,29 +121,65 @@ export class GitHubSourceConnector implements SourceConnector {
       pullRequestInput,
       signal
     )
-    const repository = await this.metadata.getRepository(
+    const repositoryPromise = this.metadata.getRepository(
       pullRequest.repository,
       signal
     )
+    const headRepositoryPromise = sameRepository(
+      pullRequest.repository,
+      pullRequest.head.repository
+    )
+      ? repositoryPromise
+      : this.metadata.getRepository(pullRequest.head.repository, signal)
+    const [repository, headRepository, baseCommit, headCommit, ancestry] =
+      await Promise.all([
+        repositoryPromise,
+        headRepositoryPromise,
+        this.metadata.getCommit(
+          pullRequest.base.repository,
+          pullRequest.base.sha,
+          signal
+        ),
+        this.metadata.getCommit(
+          pullRequest.head.repository,
+          pullRequest.head.sha,
+          signal
+        ),
+        this.metadata.compareCommits(
+          pullRequest.repository,
+          pullRequest.base.sha,
+          pullRequest.head.sha,
+          signal
+        ),
+      ])
     this.assertRepositoryCompatible(repository)
-    const ancestry = await this.metadata.compareCommits(
-      pullRequest.repository,
-      pullRequest.base.sha,
-      pullRequest.head.sha,
-      signal
-    )
+    this.assertRepositoryCompatible(headRepository)
+    const [baseTree, headTree] = await Promise.all([
+      this.metadata.getTreeSummary(
+        pullRequest.base.repository,
+        baseCommit.treeObjectId,
+        signal
+      ),
+      this.metadata.getTreeSummary(
+        pullRequest.head.repository,
+        headCommit.treeObjectId,
+        signal
+      ),
+    ])
     const checkout = await this.checkouts.materialize({
       repository: pullRequest.repository,
       targets: [
         {
           label: "base",
           sha: pullRequest.base.sha,
-          remoteUrl: githubCloneUrl(pullRequest.base.repository),
+          remoteUrl: repository.cloneUrl,
+          preflight: baseTree,
         },
         {
           label: "head",
           sha: pullRequest.head.sha,
-          remoteUrl: githubCloneUrl(pullRequest.head.repository),
+          remoteUrl: headRepository.cloneUrl,
+          preflight: headTree,
         },
       ],
       ...(this.token === undefined ? {} : { githubToken: this.token }),

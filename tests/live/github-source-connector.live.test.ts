@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
-  GitHubSourceConnector,
+  startGitHubSourceConnector,
   type ResolvedGitHubCommit,
 } from "@sentinel/adapters"
 
@@ -11,7 +11,7 @@ describe.runIf(runSmoke)("public Hi.Events source checkout", () => {
   it(
     "checks out the PRD-pinned base commit reproducibly",
     async () => {
-      const connector = new GitHubSourceConnector({
+      const connector = await startGitHubSourceConnector({
         ...(process.env["GITHUB_TOKEN"] === undefined
           ? {}
           : { token: process.env["GITHUB_TOKEN"] }),
@@ -20,6 +20,7 @@ describe.runIf(runSmoke)("public Hi.Events source checkout", () => {
           maxFileBytes: 16 * 1024 * 1024,
           timeoutMs: 5 * 60_000,
         },
+        staleLeaseAgeMs: 0,
       })
       let resolved: ResolvedGitHubCommit | undefined
       try {

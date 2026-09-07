@@ -4,6 +4,7 @@ import { SourceConnectorError } from "./errors.ts"
 import {
   githubCloneUrl,
   normalizeCommitSha,
+  normalizeGitObjectId,
   normalizeGitRef,
   normalizeRepositoryPath,
   parseGitHubPullRequest,
@@ -82,6 +83,7 @@ describe("GitHub source normalization", () => {
     "main^{commit}",
     "main~1",
     "main@{1}",
+    "@",
     "main\\other",
   ])("rejects unsafe Git ref %s", (ref) => {
     expect(() => normalizeGitRef(ref)).toThrow(SourceConnectorError)
@@ -90,6 +92,13 @@ describe("GitHub source normalization", () => {
   it("requires a full commit SHA", () => {
     expect(normalizeCommitSha(sha.toUpperCase())).toBe(sha)
     expect(() => normalizeCommitSha("abc123")).toThrow(SourceConnectorError)
+  })
+
+  it("normalizes Git object identities", () => {
+    expect(normalizeGitObjectId(sha.toUpperCase())).toBe(sha)
+    expect(() => normalizeGitObjectId("tree-object")).toThrow(
+      SourceConnectorError
+    )
   })
 
   it.each([

@@ -1,5 +1,5 @@
-import { constants } from "node:fs"
-import { lstat, open, realpath } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { lstat, mkdir } from "node:fs/promises"
 import {
   isAbsolute,
   join,
@@ -23,10 +23,15 @@ import { CheckoutLeaseRegistry, type CheckoutLease } from "./lease-registry.ts"
 import {
   githubCloneUrl,
   normalizeCommitSha,
+  normalizeGitObjectId,
   normalizeRepositoryPath,
   parseGitHubRepository,
   type GitHubRepositoryIdentity,
 } from "./normalization.ts"
+import {
+  isVerifiedTreePreflight,
+  type TreePreflightShape,
+} from "./tree-preflight.ts"
 
 const checkoutLimitsSchema = z.strictObject({
   maxFiles: z.number().int().positive().max(1_000_000),
@@ -62,7 +67,10 @@ export interface CheckoutTarget {
   readonly label: string
   readonly sha: string
   readonly remoteUrl?: string
+  readonly preflight?: CheckoutTreePreflight
 }
+
+export type CheckoutTreePreflight = TreePreflightShape
 
 export interface CheckoutRequest {
   readonly repository: GitHubRepositoryIdentity
@@ -139,6 +147,64 @@ function limitError(message: string): SourceConnectorError {
   return new SourceConnectorError("limit_exceeded", message, {
     compatibility: true,
   })
+}
+
+function validatePreflight(
+  input: CheckoutTreePreflight,
+  limits: CheckoutLimits
+): CheckoutTreePreflight {
+  const result = z
+    .strictObject({
+      treeObjectId: z.string(),
+      fileCount: z.number().int().nonnegative(),
+      totalBytes: z.number().int().nonnegative(),
+      maxFileBytes: z.number().int().nonnegative(),
+      maxDepth: z.number().int().nonnegative(),
+      hasSubmodules: z.boolean(),
+      truncated: z.boolean(),
+    })
+    .safeParse(input)
+  if (!result.success) {
+    throw new SourceConnectorError(
+      "invalid_input",
+      "Checkout tree preflight metadata is invalid"
+    )
+  }
+  const preflight = result.data
+  const treeObjectId = normalizeGitObjectId(preflight.treeObjectId)
+  if (preflight.truncated) {
+    throw limitError(
+      "GitHub tree metadata was truncated before repository limits could be proven"
+    )
+  }
+  if (preflight.hasSubmodules) {
+    throw new SourceConnectorError(
+      "unsupported_repository",
+      "Repository contains submodules; the configured submodule limit is zero",
+      { compatibility: true }
+    )
+  }
+  if (preflight.fileCount > limits.maxFiles) {
+    throw limitError(
+      `Repository contains ${preflight.fileCount} entries; limit is ${limits.maxFiles}`
+    )
+  }
+  if (preflight.totalBytes > limits.maxTotalBytes) {
+    throw limitError(
+      `Repository content exceeds the configured limit of ${limits.maxTotalBytes} bytes`
+    )
+  }
+  if (preflight.maxFileBytes > limits.maxFileBytes) {
+    throw limitError(
+      `Repository file exceeds the configured limit of ${limits.maxFileBytes} bytes`
+    )
+  }
+  if (preflight.maxDepth > limits.maxDepth) {
+    throw limitError(
+      `Repository path depth exceeds the configured limit of ${limits.maxDepth}`
+    )
+  }
+  return { ...preflight, treeObjectId }
 }
 
 function assertContained(root: string, candidate: string): void {
@@ -281,7 +347,8 @@ async function readSafeText(
   rootPath: string,
   entries: ReadonlyMap<string, CheckoutEntry>,
   pathInput: string,
-  maxBytes: number
+  maxBytes: number,
+  readBlob: (objectId: string, maxOutputBytes: number) => Promise<Buffer>
 ): Promise<string> {
   const path = normalizeRepositoryPath(pathInput)
   const entry = entries.get(path)
@@ -300,12 +367,12 @@ async function readSafeText(
       "Requested repository file exceeds the configured byte limit"
     )
   }
-  const rootRealPath = await realpath(rootPath)
-  let candidate = rootRealPath
+  const root = resolve(rootPath)
+  let candidate = root
   const components = path.split("/")
   for (const [index, component] of components.entries()) {
     candidate = join(candidate, component)
-    assertContained(rootRealPath, candidate)
+    assertContained(root, candidate)
     let status
     try {
       status = await lstat(candidate)
@@ -327,43 +394,47 @@ async function readSafeText(
         "Repository path component is not a directory"
       )
     }
+    if (index === components.length - 1 && !status.isFile()) {
+      throw new SourceConnectorError(
+        "unsafe_path",
+        "Requested repository path is not a regular file"
+      )
+    }
   }
-  const candidateRealPath = await realpath(candidate)
-  assertContained(rootRealPath, candidateRealPath)
-  const handle = await open(
-    candidateRealPath,
-    constants.O_RDONLY | constants.O_NOFOLLOW
+  const bytes = await readBlob(
+    entry.objectId,
+    Math.min(entry.sizeBytes + 8_192, maxBytes + 8_192)
   )
+  if (bytes.length !== entry.sizeBytes) {
+    throw new SourceConnectorError(
+      "unsafe_repository",
+      "Git blob size did not match validated tree metadata"
+    )
+  }
+  const algorithm = entry.objectId.length === 40 ? "sha1" : "sha256"
+  const digest = createHash(algorithm)
+    .update(`blob ${bytes.length}\0`)
+    .update(bytes)
+    .digest("hex")
+  if (digest !== entry.objectId) {
+    throw new SourceConnectorError(
+      "unsafe_repository",
+      "Git blob content did not match its immutable object identity"
+    )
+  }
+  if (bytes.includes(0)) {
+    throw new SourceConnectorError(
+      "binary_file",
+      "Binary repository files are not exposed as text"
+    )
+  }
   try {
-    const status = await handle.stat()
-    if (
-      !status.isFile() ||
-      status.size > maxBytes ||
-      status.size !== entry.sizeBytes
-    ) {
-      throw new SourceConnectorError(
-        status.size > maxBytes ? "limit_exceeded" : "unsafe_path",
-        "Repository file changed or exceeded its configured byte limit",
-        { compatibility: status.size > maxBytes }
-      )
-    }
-    const bytes = await handle.readFile()
-    if (bytes.includes(0)) {
-      throw new SourceConnectorError(
-        "binary_file",
-        "Binary repository files are not exposed as text"
-      )
-    }
-    try {
-      return new TextDecoder("utf-8", { fatal: true }).decode(bytes)
-    } catch {
-      throw new SourceConnectorError(
-        "binary_file",
-        "Repository file is not valid UTF-8 text"
-      )
-    }
-  } finally {
-    await handle.close()
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+  } catch {
+    throw new SourceConnectorError(
+      "binary_file",
+      "Repository file is not valid UTF-8 text"
+    )
   }
 }
 
@@ -434,6 +505,11 @@ export class EphemeralCheckoutManager {
     }
     let totalBytes = 0
     for (const entry of entries) {
+      if (entry.sizeBytes > this.limits.maxTotalBytes - totalBytes) {
+        throw limitError(
+          `Repository content exceeds the configured limit of ${this.limits.maxTotalBytes} bytes`
+        )
+      }
       totalBytes += entry.sizeBytes
       if (entry.path.split("/").length > this.limits.maxDepth) {
         throw limitError(
@@ -445,16 +521,11 @@ export class EphemeralCheckoutManager {
           `Repository file exceeds the configured limit of ${this.limits.maxFileBytes} bytes`
         )
       }
-      if (totalBytes > this.limits.maxTotalBytes) {
-        throw limitError(
-          `Repository content exceeds the configured limit of ${this.limits.maxTotalBytes} bytes`
-        )
-      }
       if (entry.kind === "symlink") {
         assertSafeSymlink(
           entry.path,
           await this.git(
-            ["cat-file", "blob", `${ref}:${entry.path}`],
+            ["cat-file", "blob", entry.objectId],
             objectsPath,
             request,
             local,
@@ -510,6 +581,21 @@ export class EphemeralCheckoutManager {
         `Checkout target count must be between 1 and ${this.limits.maxTargets}`
       )
     }
+    if (
+      request.githubToken !== undefined &&
+      (request.githubToken.length < 1 || request.githubToken.length > 2_048)
+    ) {
+      throw new SourceConnectorError("invalid_input", "GitHub token is invalid")
+    }
+    if (request.repository.host !== "github.com") {
+      throw new SourceConnectorError(
+        "invalid_input",
+        "Checkout repository must be hosted on github.com"
+      )
+    }
+    const repository = parseGitHubRepository(
+      `${request.repository.owner}/${request.repository.name}`
+    )
     const labels = new Set<string>()
     const targets = request.targets.map((target) => {
       if (!labelPattern.test(target.label) || labels.has(target.label)) {
@@ -520,13 +606,26 @@ export class EphemeralCheckoutManager {
       }
       labels.add(target.label)
       const remote = normalizedRemote(
-        target.remoteUrl ?? githubCloneUrl(request.repository),
+        target.remoteUrl ?? githubCloneUrl(repository),
         this.allowLocalRepositoriesForTests
       )
+      if (
+        !remote.local &&
+        (target.preflight === undefined ||
+          !isVerifiedTreePreflight(target.preflight))
+      ) {
+        throw new SourceConnectorError(
+          "invalid_input",
+          "GitHub checkout requires bounded recursive tree metadata before fetch"
+        )
+      }
       return {
         label: target.label,
         sha: normalizeCommitSha(target.sha),
         remote,
+        ...(target.preflight === undefined
+          ? {}
+          : { preflight: validatePreflight(target.preflight, this.limits) }),
       }
     })
     if (request.signal?.aborted === true) {
@@ -537,8 +636,10 @@ export class EphemeralCheckoutManager {
     try {
       lease = await this.registry.create()
       const objectsPath = join(lease.path, "objects.git")
+      const templatePath = join(lease.path, "empty-git-template")
+      await mkdir(templatePath, { mode: 0o700 })
       await this.git(
-        ["init", "--bare", objectsPath],
+        ["init", "--bare", `--template=${templatePath}`, objectsPath],
         lease.path,
         request,
         false,
@@ -556,12 +657,17 @@ export class EphemeralCheckoutManager {
           1_024 * 1_024
         )
         const ref = `refs/sentinel/${target.label}`
+        const objectFilter =
+          target.preflight === undefined
+            ? "blob:none"
+            : `blob:limit=${target.preflight.maxFileBytes + 1}`
         await this.git(
           [
             "fetch",
             "--no-tags",
             "--no-recurse-submodules",
             "--depth=1",
+            `--filter=${objectFilter}`,
             remoteName,
             `${target.sha}:${ref}`,
           ],
@@ -587,17 +693,24 @@ export class EphemeralCheckoutManager {
             "Fetched commit did not match the requested immutable SHA"
           )
         }
-        validated.set(
-          target.label,
-          await this.validateTree(
-            objectsPath,
-            ref,
-            request.repository,
-            target.sha,
-            request,
-            target.remote.local
-          )
+        const tree = await this.validateTree(
+          objectsPath,
+          ref,
+          repository,
+          target.sha,
+          request,
+          target.remote.local
         )
+        if (
+          target.preflight !== undefined &&
+          target.preflight.treeObjectId !== tree.treeObjectId
+        ) {
+          throw new SourceConnectorError(
+            "unsafe_repository",
+            "Fetched tree did not match the bounded GitHub metadata preflight"
+          )
+        }
+        validated.set(target.label, tree)
       }
 
       const snapshots = new Map<string, CheckoutSnapshot>()
@@ -651,24 +764,47 @@ export class EphemeralCheckoutManager {
               checkoutPath,
               entriesByPath,
               path,
-              Math.min(maxBytes, this.limits.maxFileBytes)
+              Math.min(maxBytes, this.limits.maxFileBytes),
+              async (objectId, maxOutputBytes) =>
+                await this.git(
+                  ["cat-file", "blob", objectId],
+                  objectsPath,
+                  request,
+                  target.remote.local,
+                  maxOutputBytes
+                )
             ),
         })
       }
 
       let disposed = false
+      let disposePromise: Promise<void> | undefined
       const completedLease = lease
       return {
         leasePath: lease.path,
         snapshots,
         dispose: async () => {
           if (disposed) return
-          disposed = true
-          await completedLease.cleanup()
+          disposePromise ??= completedLease
+            .cleanup()
+            .then(() => {
+              disposed = true
+            })
+            .catch((error: unknown) => {
+              disposePromise = undefined
+              throw error
+            })
+          await disposePromise
         },
       }
     } catch (error) {
-      if (lease !== undefined) await lease.cleanup()
+      if (lease !== undefined) {
+        try {
+          await lease.cleanup()
+        } catch {
+          // Preserve the source failure; the registry retains failed cleanup for retry.
+        }
+      }
       throw connectorError(
         error,
         "git_failed",
@@ -682,10 +818,18 @@ export class EphemeralCheckoutManager {
     callback: (checkout: EphemeralCheckout) => Promise<Result>
   ): Promise<Result> {
     const checkout = await this.materialize(request)
+    let result: Result
     try {
-      return await callback(checkout)
-    } finally {
-      await checkout.dispose()
+      result = await callback(checkout)
+    } catch (error) {
+      try {
+        await checkout.dispose()
+      } catch {
+        // Preserve the adapter failure; the registry retains cleanup for retry.
+      }
+      throw error
     }
+    await checkout.dispose()
+    return result
   }
 }

@@ -67,8 +67,33 @@ export function connectorError(
   }
   const candidate =
     typeof error === "object" && error !== null
-      ? (error as { readonly status?: unknown; readonly name?: unknown })
+      ? (error as {
+          readonly status?: unknown
+          readonly name?: unknown
+          readonly message?: unknown
+          readonly response?: {
+            readonly headers?: Record<string, unknown>
+          }
+        })
       : undefined
+  const headers = candidate?.response?.headers
+  const retryAfter = headers?.["retry-after"]
+  const rateLimitRemaining = headers?.["x-ratelimit-remaining"]
+  const providerMessage =
+    typeof candidate?.message === "string" ? candidate.message : ""
+  const rateLimited =
+    candidate?.status === 429 ||
+    (candidate?.status === 403 &&
+      (retryAfter !== undefined ||
+        String(rateLimitRemaining) === "0" ||
+        /(?:rate limit|secondary rate|abuse detection)/i.test(providerMessage)))
+  if (rateLimited) {
+    return new SourceConnectorError(
+      "rate_limited",
+      "GitHub rate limit reached",
+      { retryable: true }
+    )
+  }
   if (candidate?.status === 401 || candidate?.status === 403) {
     return new SourceConnectorError(
       "authentication_failed",
@@ -79,15 +104,6 @@ export function connectorError(
     return new SourceConnectorError(
       "not_found",
       "The requested GitHub source was not found or is not readable"
-    )
-  }
-  if (candidate?.status === 429) {
-    return new SourceConnectorError(
-      "rate_limited",
-      "GitHub rate limit reached",
-      {
-        retryable: true,
-      }
     )
   }
   if (candidate?.name === "TimeoutError") {

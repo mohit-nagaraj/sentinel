@@ -47,6 +47,7 @@ export async function createGitRepositoryFixture(): Promise<GitRepositoryFixture
   await mkdir(join(workPath, "safe"))
   await writeFile(join(workPath, "old-name.txt"), "base content\n")
   await writeFile(join(workPath, "deleted.txt"), "delete me\n")
+  await writeFile(join(workPath, ".gitattributes"), "*.txt text eol=crlf\n")
   await writeFile(join(workPath, "safe", "nested.txt"), "nested source\n")
   await writeFile(join(workPath, "binary.dat"), Buffer.from([0, 1, 2, 3]))
   await writeFile(

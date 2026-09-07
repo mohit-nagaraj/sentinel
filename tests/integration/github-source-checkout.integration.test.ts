@@ -1,5 +1,6 @@
 import {
   access,
+  chmod,
   mkdir,
   readdir,
   rm,
@@ -75,6 +76,8 @@ describe("ephemeral GitHub source checkout", () => {
     const head = checkout.snapshots.get("head")
     expect(base).toBeDefined()
     expect(head).toBeDefined()
+    await expect(base?.readText("old-name.txt")).resolves.toBe("base content\n")
+    await writeFile(join(base?.path ?? "", "old-name.txt"), "fake content\n")
     await expect(base?.readText("old-name.txt")).resolves.toBe("base content\n")
     await expect(head?.readText("new-name.txt")).resolves.toBe("head content\n")
     expect(base?.enumerate().map((entry) => entry.path)).toContain(
@@ -188,6 +191,53 @@ describe("ephemeral GitHub source checkout", () => {
     ).resolves.toEqual([])
   })
 
+  it("ignores inherited Git templates that could install checkout hooks", async () => {
+    const templatePath = join(fixture.rootPath, "hostile-template")
+    const hooksPath = join(templatePath, "hooks")
+    const markerPath = join(fixture.rootPath, "hook-executed")
+    await mkdir(hooksPath, { recursive: true })
+    const hookPath = join(hooksPath, "post-checkout")
+    await writeFile(
+      hookPath,
+      `#!/bin/sh\nprintf executed > "${markerPath.replaceAll("\\", "/")}"\n`
+    )
+    await chmod(hookPath, 0o755)
+    const previousTemplate = process.env["GIT_TEMPLATE_DIR"]
+    process.env["GIT_TEMPLATE_DIR"] = templatePath
+    try {
+      const checkout = await manager("git-template").materialize(
+        request([{ label: "source", sha: fixture.baseSha }])
+      )
+      await checkout.dispose()
+      await expect(access(markerPath)).rejects.toThrow()
+    } finally {
+      if (previousTemplate === undefined) delete process.env["GIT_TEMPLATE_DIR"]
+      else process.env["GIT_TEMPLATE_DIR"] = previousTemplate
+    }
+  })
+
+  it("retries disposal after a transient cleanup failure", async () => {
+    let attempts = 0
+    const registry = new CheckoutLeaseRegistry({
+      rootDirectory: join(fixture.rootPath, "leases-dispose-retry"),
+      removeDirectory: async (path) => {
+        attempts += 1
+        if (attempts === 1) throw new Error("locked")
+        await rm(path, { recursive: true, force: true })
+      },
+    })
+    const checkout = await manager("dispose-retry", { registry }).materialize(
+      request([{ label: "source", sha: fixture.baseSha }])
+    )
+    await expect(checkout.dispose()).rejects.toMatchObject({
+      code: "provider_unavailable",
+      retryable: true,
+    })
+    await expect(access(checkout.leasePath)).resolves.toBeUndefined()
+    await expect(checkout.dispose()).resolves.toBeUndefined()
+    await expect(access(checkout.leasePath)).rejects.toThrow()
+  })
+
   it("cleans checkout content when an adapter callback fails", async () => {
     const checkouts = manager("exception")
     await expect(
@@ -201,5 +251,29 @@ describe("ephemeral GitHub source checkout", () => {
     await expect(
       readdir(join(fixture.rootPath, "leases-exception"))
     ).resolves.toEqual([])
+  })
+
+  it("preserves an adapter failure when cleanup also fails", async () => {
+    let attempts = 0
+    const rootDirectory = join(fixture.rootPath, "leases-error-priority")
+    const registry = new CheckoutLeaseRegistry({
+      rootDirectory,
+      removeDirectory: async (path) => {
+        attempts += 1
+        if (attempts === 1) throw new Error("locked")
+        await rm(path, { recursive: true, force: true })
+      },
+    })
+    const checkouts = manager("error-priority", { registry })
+    await expect(
+      checkouts.withCheckout(
+        request([{ label: "source", sha: fixture.baseSha }]),
+        async () => {
+          throw new Error("adapter failed")
+        }
+      )
+    ).rejects.toThrow("adapter failed")
+    await expect(registry.cleanupAll()).resolves.toBeUndefined()
+    await expect(readdir(rootDirectory)).resolves.toEqual([])
   })
 })

@@ -24,6 +24,36 @@ describe("GitHubMetadataClient", () => {
       if (route === "GET /repos/{owner}/{repo}/commits/{ref}") {
         return { data: { sha: baseSha, commit: { tree: { sha: treeSha } } } }
       }
+      if (route === "GET /repos/{owner}/{repo}/git/trees/{tree_sha}") {
+        return {
+          data: {
+            sha: treeSha,
+            truncated: false,
+            tree: [
+              {
+                path: "package.json",
+                mode: "100644",
+                type: "blob",
+                sha: "4".repeat(40),
+                size: 120,
+              },
+              {
+                path: "src",
+                mode: "040000",
+                type: "tree",
+                sha: "5".repeat(40),
+              },
+              {
+                path: "src/index.ts",
+                mode: "100644",
+                type: "blob",
+                sha: "6".repeat(40),
+                size: 80,
+              },
+            ],
+          },
+        }
+      }
       if (route === "GET /repos/{owner}/{repo}/pulls/{pull_number}") {
         return {
           data: {
@@ -70,6 +100,17 @@ describe("GitHubMetadataClient", () => {
       sha: baseSha,
       treeObjectId: treeSha,
     })
+    await expect(client.getTreeSummary("Owner/Repo", treeSha)).resolves.toEqual(
+      {
+        treeObjectId: treeSha,
+        fileCount: 2,
+        totalBytes: 200,
+        maxFileBytes: 120,
+        maxDepth: 2,
+        hasSubmodules: false,
+        truncated: false,
+      }
+    )
     await expect(client.getPullRequest("Owner/Repo#7")).resolves.toMatchObject({
       number: 7,
       base: { sha: baseSha, repository: { owner: "owner", name: "repo" } },
@@ -137,6 +178,23 @@ describe("GitHubMetadataClient", () => {
     await expect(client.getPullRequest("owner/repo#7")).rejects.toMatchObject({
       code: "unsupported_repository",
       compatibility: true,
+    })
+  })
+
+  it("classifies GitHub rate-limit 403 responses as retryable", async () => {
+    const client = new GitHubMetadataClient({
+      requester: {
+        request: vi.fn(async () => {
+          throw Object.assign(new Error("API rate limit exceeded"), {
+            status: 403,
+            response: { headers: { "x-ratelimit-remaining": "0" } },
+          })
+        }),
+      },
+    })
+    await expect(client.getRepository("owner/repo")).rejects.toMatchObject({
+      code: "rate_limited",
+      retryable: true,
     })
   })
 })

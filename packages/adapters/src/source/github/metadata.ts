@@ -6,11 +6,14 @@ import {
   githubCloneUrl,
   normalizeCommitSha,
   normalizeGitRef,
+  normalizeGitObjectId,
+  normalizeRepositoryPath,
   parseGitHubPullRequest,
   parseGitHubRepository,
   sameRepository,
   type GitHubRepositoryIdentity,
 } from "./normalization.ts"
+import { markTreePreflight, type TreePreflightShape } from "./tree-preflight.ts"
 
 interface GitHubRequester {
   request(
@@ -61,6 +64,20 @@ const comparisonResponseSchema = z.looseObject({
   merge_base_commit: z.looseObject({ sha: z.string() }),
 })
 
+const treeResponseSchema = z.looseObject({
+  sha: z.string(),
+  truncated: z.boolean(),
+  tree: z.array(
+    z.looseObject({
+      path: z.string().min(1),
+      mode: z.string().min(1),
+      type: z.enum(["blob", "tree", "commit"]),
+      sha: z.string(),
+      size: z.number().int().nonnegative().optional(),
+    })
+  ),
+})
+
 export interface GitHubRepositoryMetadata {
   readonly repository: GitHubRepositoryIdentity
   readonly defaultBranch: string
@@ -105,6 +122,8 @@ export interface GitHubComparisonMetadata {
   readonly baseIsAncestor: boolean
 }
 
+export type GitHubTreeSummary = TreePreflightShape
+
 export interface GitHubMetadataClientOptions {
   readonly token?: string
   readonly timeoutMs?: number
@@ -122,6 +141,14 @@ function malformedResponse(): SourceConnectorError {
 
 function parseFullName(value: string): GitHubRepositoryIdentity {
   return parseGitHubRepository(value)
+}
+
+function parseProviderObjectId(value: string): string {
+  try {
+    return normalizeGitObjectId(value)
+  } catch {
+    throw malformedResponse()
+  }
 }
 
 export class GitHubMetadataClient {
@@ -221,8 +248,79 @@ export class GitHubMetadataClient {
       repository,
       requestedRef,
       sha: normalizeCommitSha(response.data.sha),
-      treeObjectId: response.data.commit.tree.sha.toLowerCase(),
+      treeObjectId: parseProviderObjectId(response.data.commit.tree.sha),
     }
+  }
+
+  async getTreeSummary(
+    repositoryInput: string | GitHubRepositoryIdentity,
+    treeInput: string,
+    signal?: AbortSignal
+  ): Promise<GitHubTreeSummary> {
+    const repository =
+      typeof repositoryInput === "string"
+        ? parseGitHubRepository(repositoryInput)
+        : parseGitHubRepository(
+            `${repositoryInput.owner}/${repositoryInput.name}`
+          )
+    const treeObjectId = normalizeGitObjectId(treeInput)
+    const response = treeResponseSchema.safeParse(
+      await this.request(
+        "GET /repos/{owner}/{repo}/git/trees/{tree_sha}",
+        {
+          owner: repository.owner,
+          repo: repository.name,
+          tree_sha: treeObjectId,
+          recursive: "1",
+        },
+        signal
+      )
+    )
+    if (!response.success) throw malformedResponse()
+    if (parseProviderObjectId(response.data.sha) !== treeObjectId) {
+      throw malformedResponse()
+    }
+    let fileCount = 0
+    let totalBytes = 0
+    let maxFileBytes = 0
+    let maxDepth = 0
+    let hasSubmodules = false
+    for (const entry of response.data.tree) {
+      let path: string
+      try {
+        path = normalizeRepositoryPath(entry.path)
+      } catch {
+        throw new SourceConnectorError(
+          "unsupported_repository",
+          "GitHub tree contains a non-portable repository path",
+          { compatibility: true }
+        )
+      }
+      maxDepth = Math.max(maxDepth, path.split("/").length)
+      if (entry.type === "tree") continue
+      fileCount += 1
+      if (entry.type === "commit" || entry.mode === "160000") {
+        hasSubmodules = true
+        continue
+      }
+      if (entry.size === undefined || entry.type !== "blob") {
+        throw malformedResponse()
+      }
+      if (entry.size > Number.MAX_SAFE_INTEGER - totalBytes) {
+        throw malformedResponse()
+      }
+      totalBytes += entry.size
+      maxFileBytes = Math.max(maxFileBytes, entry.size)
+    }
+    return markTreePreflight({
+      treeObjectId,
+      fileCount,
+      totalBytes,
+      maxFileBytes,
+      maxDepth,
+      hasSubmodules,
+      truncated: response.data.truncated,
+    })
   }
 
   async getPullRequest(

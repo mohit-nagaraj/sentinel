@@ -21,28 +21,24 @@ export interface GitRunner {
 }
 
 function gitEnvironment(credentials: GitCredentials = {}): NodeJS.ProcessEnv {
-  const environment: NodeJS.ProcessEnv = { ...process.env }
-  for (const key of [
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    "GIT_CONFIG_COUNT",
-    "GIT_CONFIG_GLOBAL",
-    "GIT_CONFIG_KEY_0",
-    "GIT_CONFIG_NOSYSTEM",
-    "GIT_CONFIG_SYSTEM",
-    "GIT_CONFIG_VALUE_0",
-    "GIT_DIR",
-    "GIT_INDEX_FILE",
-    "GIT_OBJECT_DIRECTORY",
-    "GIT_WORK_TREE",
-  ]) {
-    delete environment[key]
-  }
+  const environment: NodeJS.ProcessEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => {
+      const normalized = key.toUpperCase()
+      return (
+        !normalized.startsWith("GIT_") &&
+        normalized !== "GCM_INTERACTIVE" &&
+        normalized !== "GITHUB_TOKEN" &&
+        normalized !== "GH_TOKEN"
+      )
+    })
+  )
   environment["GIT_TERMINAL_PROMPT"] = "0"
   environment["GCM_INTERACTIVE"] = "Never"
   environment["GIT_ASKPASS"] = ""
   environment["GIT_CONFIG_NOSYSTEM"] = "1"
   environment["GIT_CONFIG_GLOBAL"] =
     process.platform === "win32" ? "NUL" : devNull
+  environment["GIT_ATTR_NOSYSTEM"] = "1"
 
   const configuration: Array<readonly [string, string]> = [
     ["core.autocrlf", "false"],

@@ -144,6 +144,7 @@ export function normalizeGitRef(input: string): string {
     value.length < 1 ||
     value.length > 255 ||
     value !== input ||
+    value === "@" ||
     value.startsWith("-") ||
     value.startsWith("/") ||
     value.endsWith("/") ||
@@ -169,6 +170,14 @@ export function normalizeCommitSha(input: string): string {
   if (!result.success)
     return invalidInput("Commit SHA must be a full hexadecimal object ID")
   return result.data
+}
+
+export function normalizeGitObjectId(input: string): string {
+  const value = input.toLowerCase()
+  if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value)) {
+    return invalidInput("Git object ID must be a full hexadecimal identity")
+  }
+  return value
 }
 
 export function normalizeRepositoryPath(input: string): string {
