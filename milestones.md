@@ -53,8 +53,8 @@ graph LR
 | SNT-001 | [Workspace and testing foundation](./.tasks/milestone-01-foundation/SNT-001-workspace-testing-foundation.md) | — | done |
 | SNT-002 | [Core domain contracts and stable identity](./.tasks/milestone-01-foundation/SNT-002-core-contracts-stable-identity.md) | SNT-001 | done |
 | SNT-003 | [Supabase operational state, secrets, and artifact storage](./.tasks/milestone-01-foundation/SNT-003-supabase-operational-schema.md) | SNT-001, SNT-002 | done |
-| SNT-004 | [Neo4j constraints, repositories, and test isolation](./.tasks/milestone-01-foundation/SNT-004-neo4j-foundation.md) | SNT-001, SNT-002 | review |
-| SNT-005 | [Azure OpenAI model gateway compatibility spike](./.tasks/milestone-01-foundation/SNT-005-azure-model-gateway.md) | SNT-001, SNT-002 | not-started |
+| SNT-004 | [Neo4j constraints, repositories, and test isolation](./.tasks/milestone-01-foundation/SNT-004-neo4j-foundation.md) | SNT-001, SNT-002 | done |
+| SNT-005 | [Azure OpenAI model gateway compatibility spike](./.tasks/milestone-01-foundation/SNT-005-azure-model-gateway.md) | SNT-001, SNT-002 | review |
 | SNT-006 | [LangGraph runtime, checkpointing, events, and interrupts](./.tasks/milestone-01-foundation/SNT-006-langgraph-runtime.md) | SNT-002, SNT-003, SNT-005 | not-started |
 
 ---
@@ -183,7 +183,7 @@ graph LR
 
 | Milestone | Done | Total | Status |
 |---|---:|---:|---|
-| M1 Foundation and durable execution | 3 | 6 | in-progress |
+| M1 Foundation and durable execution | 4 | 6 | in-progress |
 | M2 Deterministic source evidence | 0 | 7 | not-started |
 | M3 Specialist discovery agents | 0 | 4 | not-started |
 | M4 Graph construction and reconciliation | 0 | 4 | not-started |
@@ -191,11 +191,11 @@ graph LR
 | M6 PR blast-radius loop | 0 | 4 | not-started |
 | M7 Verification and refresh | 0 | 3 | blocked on deployment decision |
 | M8 Evaluation and delivery | 0 | 3 | not-started |
-| **Overall** | **3** | **35** | **review: SNT-004** |
+| **Overall** | **4** | **35** | **review: SNT-005** |
 
 ## Active front
 
-- **SNT-004** — Neo4j constraints, repositories, and test isolation is in review.
+- **SNT-005** — Azure OpenAI model gateway compatibility spike is in review.
 - External preparation can proceed without implementation ownership conflicts:
   - Azure OpenAI resource/deployment credentials for SNT-005;
   - GitHub App registration inputs for SNT-026;
