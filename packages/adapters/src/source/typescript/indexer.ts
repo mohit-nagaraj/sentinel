@@ -150,6 +150,11 @@ export interface ModuleRecord {
   readonly childDirectories: readonly string[]
 }
 
+/**
+ * Deterministic counts derived from the indexed tree. Wall-clock timing is
+ * deliberately kept out of here — see {@link TypeScriptSourceIndex.elapsedMs} —
+ * so a consumer can treat this whole object as reproducible.
+ */
 export interface IndexStatistics {
   readonly fileCount: number
   readonly symbolCount: number
@@ -157,7 +162,6 @@ export interface IndexStatistics {
   readonly routeCount: number
   readonly nodeCount: number
   readonly totalBytes: number
-  readonly elapsedMs: number
 }
 
 export interface TypeScriptSourceIndex {
@@ -188,6 +192,11 @@ export interface TypeScriptSourceIndex {
    */
   readonly facts: readonly CodeFactEnvelope[]
   readonly statistics: IndexStatistics
+  /**
+   * Measured wall-clock duration of the index. This is the only part of the
+   * result that varies between runs over identical inputs.
+   */
+  readonly elapsedMs: number
 }
 
 function buildModules(
@@ -738,8 +747,8 @@ export async function indexTypeScriptSource(
         routeCount: sortedRoutes.length,
         nodeCount,
         totalBytes: budget.bytes,
-        elapsedMs: budget.elapsedMs,
       },
+      elapsedMs: budget.elapsedMs,
     }
   } catch (error) {
     if (error instanceof TypeScriptIndexerError) throw error

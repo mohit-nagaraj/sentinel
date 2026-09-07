@@ -71,7 +71,7 @@ graph LR
 |---|---|---|---|
 | SNT-007 | [Read-only GitHub source connector and ephemeral checkout](./.tasks/milestone-02-source-evidence/SNT-007-github-source-connector.md) | SNT-002, SNT-003 | done |
 | SNT-008 | [Documentation discovery, parsing, and provenance map](./.tasks/milestone-02-source-evidence/SNT-008-documentation-source-map.md) | SNT-002, SNT-003, SNT-007 | not-started |
-| SNT-009 | [TypeScript and React structural indexer](./.tasks/milestone-02-source-evidence/SNT-009-typescript-react-indexer.md) | SNT-002, SNT-007 | not-started |
+| SNT-009 | [TypeScript and React structural indexer](./.tasks/milestone-02-source-evidence/SNT-009-typescript-react-indexer.md) | SNT-002, SNT-007 | review |
 | SNT-010 | [PHP and Laravel structural indexer](./.tasks/milestone-02-source-evidence/SNT-010-php-laravel-indexer.md) | SNT-002, SNT-007 | not-started |
 | SNT-011 | [OpenAPI and cross-stack endpoint normalization](./.tasks/milestone-02-source-evidence/SNT-011-openapi-endpoint-normalization.md) | SNT-009, SNT-010 | not-started |
 | SNT-012 | [Playwright observation, safe actions, and evidence capture](./.tasks/milestone-02-source-evidence/SNT-012-playwright-evidence-runtime.md) | SNT-002, SNT-003 | not-started |
