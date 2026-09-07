@@ -281,6 +281,18 @@ describe("Application Explorer contracts", () => {
           dialogs: [],
         },
       },
+      progress: {
+        schemaVersion: 1,
+        visitedStateActionPairs: 0,
+        pendingFrontierActions: 1,
+        exploredBranchCount: 1,
+        currentBranchDepth: 0,
+        observedTransitionCount: 0,
+        observedStateCount: 1,
+        consecutiveNoProgress: 0,
+        recentEvidenceIds: [ids.beforeEvidence],
+        budgetUsed: budget,
+      },
       candidates: [
         {
           schemaVersion: 1,

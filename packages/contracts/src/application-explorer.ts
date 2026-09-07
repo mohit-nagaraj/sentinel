@@ -168,6 +168,19 @@ export const applicationExplorerPlannerObservationSchema = z.strictObject({
   }),
 })
 
+export const applicationExplorerPlannerProgressSchema = z.strictObject({
+  schemaVersion: schemaVersionSchema,
+  visitedStateActionPairs: z.number().int().nonnegative().max(500),
+  pendingFrontierActions: z.number().int().nonnegative().max(500),
+  exploredBranchCount: z.number().int().nonnegative().max(100),
+  currentBranchDepth: z.number().int().nonnegative().max(100),
+  observedTransitionCount: z.number().int().nonnegative().max(100),
+  observedStateCount: z.number().int().nonnegative().max(201),
+  consecutiveNoProgress: z.number().int().nonnegative().max(100),
+  recentEvidenceIds: z.array(evidenceIdSchema).max(20),
+  budgetUsed: missionBudgetSchema,
+})
+
 export const applicationExplorerPlannerContextSchema = z
   .strictObject({
     schemaVersion: schemaVersionSchema,
@@ -175,6 +188,7 @@ export const applicationExplorerPlannerContextSchema = z
     capabilityHintLabels: z.array(shortTextSchema).max(50),
     requirementHintLabels: z.array(shortTextSchema).max(50),
     observation: applicationExplorerPlannerObservationSchema,
+    progress: applicationExplorerPlannerProgressSchema,
     candidates: z.array(applicationExplorerContextCandidateSchema).max(250),
   })
   .superRefine((plannerContext, context) => {
@@ -787,6 +801,9 @@ export type ApplicationExplorerContextCandidate = z.infer<
 >
 export type ApplicationExplorerPlannerObservation = z.infer<
   typeof applicationExplorerPlannerObservationSchema
+>
+export type ApplicationExplorerPlannerProgress = z.infer<
+  typeof applicationExplorerPlannerProgressSchema
 >
 export type ApplicationExplorerPlannerContext = z.infer<
   typeof applicationExplorerPlannerContextSchema

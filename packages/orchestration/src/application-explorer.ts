@@ -542,6 +542,23 @@ export function buildApplicationExplorerPlannerContext(input: {
     0,
     50
   )
+  const path = input.checkpoint?.path ?? []
+  const stateFingerprints = new Set<string>([
+    input.observation.stateFingerprint,
+    ...path.flatMap((step) => [
+      step.beforeStateFingerprint,
+      step.afterStateFingerprint,
+    ]),
+  ])
+  const recentEvidenceIds = uniqueEvidenceIds([
+    ...path
+      .slice(-6)
+      .flatMap((step) => [
+        step.transitionEvidenceId,
+        step.afterObservationEvidenceId,
+      ]),
+    input.observation.evidenceId,
+  ]).slice(-20)
   return applicationExplorerPlannerContextSchema.parse({
     schemaVersion: 1,
     mission,
@@ -561,6 +578,24 @@ export function buildApplicationExplorerPlannerContext(input: {
         selectedText: input.observation.selectedText,
         dialogs: input.observation.dialogs,
       },
+    },
+    progress: {
+      schemaVersion: 1,
+      visitedStateActionPairs: input.checkpoint?.visits.length ?? 0,
+      pendingFrontierActions:
+        input.checkpoint?.frontier.filter((entry) => entry.status === "pending")
+          .length ?? input.observation.candidates.length,
+      exploredBranchCount:
+        input.checkpoint === undefined
+          ? 1
+          : new Set(input.checkpoint.frontier.map((entry) => entry.branchDepth))
+              .size,
+      currentBranchDepth: path.length,
+      observedTransitionCount: path.length,
+      observedStateCount: stateFingerprints.size,
+      consecutiveNoProgress: input.checkpoint?.consecutiveNoProgress ?? 0,
+      recentEvidenceIds,
+      budgetUsed: input.checkpoint?.budgetUsed ?? ZERO_BUDGET,
     },
     candidates: rankCandidates({
       mission,
