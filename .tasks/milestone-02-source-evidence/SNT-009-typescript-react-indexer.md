@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M2 — Deterministic source evidence |
-| Status | `review` |
+| Status | `done` |
 | Depends on | SNT-002, SNT-007 |
 | Blocks | Endpoint normalization, Code Explorer, PR mapping |
 | PRD references | §13.7, FR-006 |

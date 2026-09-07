@@ -381,6 +381,24 @@ describe("PHP and Laravel structural indexer", () => {
     })
     expect(slice.text).toContain("function __invoke")
     expect(slice.endLine - slice.startLine + 1).toBeLessThanOrEqual(20)
+    const repeatedMatch = index.findSmallestEnclosingDeclaration(
+      "app/Repeated/Namespaces.php",
+      27
+    )
+    expect(repeatedMatch?.symbol.qualifiedName).toBe("Fixture\\Repeated")
+    if (repeatedMatch === undefined) {
+      throw new Error("Repeated namespace declaration was not indexed")
+    }
+    const repeatedSlice = await index.sourceSlice(snapshot, repeatedMatch, {
+      contextLines: 0,
+      maxLines: 20,
+    })
+    expect(repeatedSlice.startLine).toBe(27)
+    expect(repeatedSlice.text).toContain("namespace Fixture\\Repeated")
+    expect(repeatedSlice.text).not.toContain("namespace Fixture\\Other")
+    await expect(
+      index.sourceSlice(snapshot, repeatedMatch.symbol.id)
+    ).rejects.toMatchObject({ code: "invalid_input" })
     const neighborhood = index.neighborhood(enclosing?.id ?? "", {
       maxDepth: 3,
       maxSymbols: 20,

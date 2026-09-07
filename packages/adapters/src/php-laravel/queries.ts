@@ -26,22 +26,13 @@ export interface PhpRelationshipNeighborhood {
   readonly truncated: boolean
 }
 
-function rangeSize(range: PhpSourceRange): number {
-  return range.endFilePos - range.startFilePos
+export interface PhpSymbolDeclarationMatch {
+  readonly symbol: PhpSymbol
+  readonly declarationRange: PhpSourceRange
 }
 
-function smallestContainingRange(
-  symbol: PhpSymbol,
-  startLine: number,
-  endLine: number
-): number {
-  return Math.min(
-    ...symbol.declarationRanges
-      .filter(
-        (range) => range.startLine <= startLine && range.endLine >= endLine
-      )
-      .map(rangeSize)
-  )
+function rangeSize(range: PhpSourceRange): number {
+  return range.endFilePos - range.startFilePos
 }
 
 export class PhpCodeIndex {
@@ -62,6 +53,15 @@ export class PhpCodeIndex {
     startLine: number,
     endLine = startLine
   ): PhpSymbol | undefined {
+    return this.findSmallestEnclosingDeclaration(path, startLine, endLine)
+      ?.symbol
+  }
+
+  findSmallestEnclosingDeclaration(
+    path: string,
+    startLine: number,
+    endLine = startLine
+  ): PhpSymbolDeclarationMatch | undefined {
     if (
       !Number.isSafeInteger(startLine) ||
       !Number.isSafeInteger(endLine) ||
@@ -75,16 +75,21 @@ export class PhpCodeIndex {
     }
     return this.response.files
       .find((file) => file.path === path)
-      ?.symbols.filter((symbol) =>
-        symbol.declarationRanges.some(
-          (range) => range.startLine <= startLine && range.endLine >= endLine
-        )
+      ?.symbols.flatMap((symbol) =>
+        symbol.declarationRanges
+          .filter(
+            (range) => range.startLine <= startLine && range.endLine >= endLine
+          )
+          .map((declarationRange) => ({ symbol, declarationRange }))
       )
       .sort(
         (left, right) =>
-          smallestContainingRange(left, startLine, endLine) -
-            smallestContainingRange(right, startLine, endLine) ||
-          left.qualifiedName.localeCompare(right.qualifiedName, "en")
+          rangeSize(left.declarationRange) -
+            rangeSize(right.declarationRange) ||
+          left.symbol.qualifiedName.localeCompare(
+            right.symbol.qualifiedName,
+            "en"
+          )
       )[0]
   }
 
@@ -179,13 +184,15 @@ export class PhpCodeIndex {
 
   async sourceSlice(
     snapshot: CheckoutSnapshot,
-    symbolId: string,
+    symbolInput: string | PhpSymbolDeclarationMatch,
     options: {
       readonly contextLines?: number
       readonly maxLines?: number
       readonly maxCharacters?: number
     } = {}
   ): Promise<PhpSourceSlice> {
+    const symbolId =
+      typeof symbolInput === "string" ? symbolInput : symbolInput.symbol.id
     const symbol = this.symbolsById.get(symbolId)
     const contextLines = options.contextLines ?? 2
     const maxLines = options.maxLines ?? 120
@@ -207,6 +214,33 @@ export class PhpCodeIndex {
         "PHP source slice request is invalid"
       )
     }
+    let selectedRange: PhpSourceRange
+    if (typeof symbolInput === "string") {
+      if (symbol.declarationRanges.length !== 1) {
+        throw new PhpIndexerError(
+          "invalid_input",
+          "PHP symbol has multiple declarations; supply a declaration match"
+        )
+      }
+      selectedRange = symbol.declarationRanges[0]!
+    } else {
+      const matchedRange = symbol.declarationRanges.find(
+        (range) =>
+          range.startLine === symbolInput.declarationRange.startLine &&
+          range.endLine === symbolInput.declarationRange.endLine &&
+          range.startFilePos === symbolInput.declarationRange.startFilePos &&
+          range.endFilePos === symbolInput.declarationRange.endFilePos &&
+          range.startTokenPos === symbolInput.declarationRange.startTokenPos &&
+          range.endTokenPos === symbolInput.declarationRange.endTokenPos
+      )
+      if (matchedRange === undefined) {
+        throw new PhpIndexerError(
+          "invalid_input",
+          "PHP declaration match is not part of the indexed symbol"
+        )
+      }
+      selectedRange = matchedRange
+    }
     const file = symbolFile(this.response, symbolId)
     if (snapshot.metadata.commitSha !== this.response.source.commitSha) {
       throw new PhpIndexerError(
@@ -225,10 +259,10 @@ export class PhpCodeIndex {
       )
     }
     const lines = source.split(/\r?\n/)
-    const startLine = Math.max(1, symbol.range.startLine - contextLines)
+    const startLine = Math.max(1, selectedRange.startLine - contextLines)
     const desiredEnd = Math.min(
       lines.length,
-      symbol.range.endLine + contextLines
+      selectedRange.endLine + contextLines
     )
     const endLine = Math.min(desiredEnd, startLine + maxLines - 1)
     const text = lines.slice(startLine - 1, endLine).join("\n")

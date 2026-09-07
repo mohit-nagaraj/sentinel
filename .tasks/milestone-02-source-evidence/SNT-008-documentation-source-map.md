@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M2 — Deterministic source evidence |
-| Status | `review` |
+| Status | `done` |
 | Depends on | SNT-002, SNT-003, SNT-007 |
 | Blocks | Documentation Explorer |
 | PRD references | §12 document nodes, §13.5, FR-004 |
