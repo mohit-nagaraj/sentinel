@@ -56,6 +56,8 @@ describeCompatibility("Azure OpenAI deployment compatibility", () => {
       ],
       maxOutputTokens,
     })
+    expect(decision.kind).toBe("tool_calls")
+    if (decision.kind !== "tool_calls") throw new Error("expected tool calls")
     expect(decision.output).toHaveLength(1)
     expect(decision.output[0]).toMatchObject({
       name: "lookup_fact",

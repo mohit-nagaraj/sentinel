@@ -115,6 +115,19 @@ describe("Azure OpenAI model gateway", () => {
         schema,
       })
     ).rejects.toMatchObject({ code: "malformed_output" })
+
+    const unsupportedTransport = new QueueTransport([completed("unused")])
+    await expect(
+      new AzureOpenAIModelGateway(
+        unsupportedTransport,
+        "deployment"
+      ).generateStructured({
+        input: "Return a date",
+        schemaName: "date_result",
+        schema: z.date(),
+      })
+    ).rejects.toMatchObject({ code: "invalid_request", retryable: false })
+    expect(unsupportedTransport.requests).toHaveLength(0)
   })
 
   it("validates strict tool calls and correlates continuation outputs", async () => {
@@ -141,6 +154,8 @@ describe("Azure OpenAI model gateway", () => {
         },
       ],
     })
+    expect(decision.kind).toBe("tool_calls")
+    if (decision.kind !== "tool_calls") throw new Error("expected tool calls")
     expect(decision.output).toEqual([
       {
         callId: "call-1",
@@ -183,6 +198,29 @@ describe("Azure OpenAI model gateway", () => {
         [{ callId: "call-1", output: 42 }]
       )
     ).rejects.toMatchObject({ code: "invalid_request" })
+  })
+
+  it("returns a direct terminal answer when auto tool choice uses no tool", async () => {
+    const gateway = new AzureOpenAIModelGateway(
+      new QueueTransport([completed("No lookup is needed.")]),
+      "deployment"
+    )
+    await expect(
+      gateway.decideTools({
+        input: "Answer without a lookup when possible.",
+        toolChoice: "auto",
+        tools: [
+          {
+            name: "lookup_count",
+            description: "Return a count.",
+            parameters: z.strictObject({}),
+          },
+        ],
+      })
+    ).resolves.toMatchObject({
+      kind: "final_text",
+      output: "No lookup is needed.",
+    })
   })
 
   it("rejects malformed tool arguments before returning a decision", async () => {
@@ -239,6 +277,54 @@ describe("Azure OpenAI model gateway", () => {
       { type: "text_delta", delta: "lo" },
       { type: "completed", usage },
     ])
+  })
+
+  it("classifies incomplete/error streams and preserves callback failures", async () => {
+    const incomplete = new AzureOpenAIModelGateway(
+      new QueueTransport(
+        [],
+        [
+          { type: "response.output_text.delta", delta: "partial" },
+          {
+            type: "response.incomplete",
+            response: {
+              ...completed("partial"),
+              status: "incomplete",
+              incomplete_details: { reason: "max_output_tokens" },
+            },
+          },
+        ]
+      ),
+      "deployment"
+    )
+    await expect(
+      incomplete.streamText({ input: "hello" }, () => undefined)
+    ).rejects.toMatchObject({ code: "limit_exceeded" })
+
+    const filtered = new AzureOpenAIModelGateway(
+      new QueueTransport([], [{ type: "error", code: "content_filter" }]),
+      "deployment"
+    )
+    await expect(
+      filtered.streamText({ input: "hello" }, () => undefined)
+    ).rejects.toMatchObject({ code: "content_filtered" })
+
+    const callbackError = new Error("event persistence failed")
+    const callbackGateway = new AzureOpenAIModelGateway(
+      new QueueTransport(
+        [],
+        [
+          { type: "response.output_text.delta", delta: "hello" },
+          { type: "response.completed", response: completed("hello") },
+        ]
+      ),
+      "deployment"
+    )
+    await expect(
+      callbackGateway.streamText({ input: "hello" }, () => {
+        throw callbackError
+      })
+    ).rejects.toBe(callbackError)
   })
 
   it("normalizes refusals, filters, limits, timeouts, and rate limits", async () => {

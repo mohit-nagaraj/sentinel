@@ -94,11 +94,19 @@ export interface ModelResult<Output> {
   readonly usage: ModelUsage
 }
 
-export interface ModelToolDecisionResult extends ModelResult<
+export interface ModelToolCallsResult extends ModelResult<
   readonly ModelToolCall[]
 > {
+  readonly kind: "tool_calls"
   readonly continuation: ModelContinuation
 }
+
+export interface ModelToolFinalResult extends ModelResult<string> {
+  readonly kind: "final_text"
+}
+
+export type ModelToolDecisionResult =
+  ModelToolCallsResult | ModelToolFinalResult
 
 export type ModelStreamEvent =
   | { readonly type: "text_delta"; readonly delta: string }
@@ -162,13 +170,16 @@ export function parseModelOperation(value: string): string {
 }
 
 const sensitiveKeySegments = new Set([
+  "auth",
   "authorization",
   "cookie",
   "credential",
   "password",
   "secret",
   "session",
+  "sid",
   "signature",
+  "token",
 ])
 const sensitiveKeys = new Set([
   "accesskey",
@@ -230,6 +241,8 @@ export function assertModelSafeValue(
   if (entries.length > 128) throw new ModelGatewayError("limit_exceeded", false)
   for (const [key, child] of entries) {
     const segments = key
+      .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
       .toLowerCase()
       .split(/[^a-z0-9]+/)
       .filter(Boolean)

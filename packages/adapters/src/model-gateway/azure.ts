@@ -5,13 +5,17 @@ import OpenAI, {
   APIError,
   RateLimitError,
 } from "openai"
+import { zodTextFormat } from "openai/helpers/zod"
 import type {
   ResponseCreateParamsNonStreaming,
   ResponseCreateParamsStreaming,
 } from "openai/resources/responses/responses"
 import { z } from "zod"
 
-import type { AzureOpenAIEnvironment } from "./environment.ts"
+import {
+  loadAzureOpenAIEnvironment,
+  type AzureOpenAIEnvironment,
+} from "./environment.ts"
 import {
   assertModelSafeValue,
   defaultModelCallLimits,
@@ -102,7 +106,7 @@ const functionCallSchema = z.looseObject({
 const reasoningItemSchema = z.looseObject({
   type: z.literal("reasoning"),
   id: z.string().min(1).max(256),
-  encrypted_content: z.string().max(1_000_000).nullable().optional(),
+  encrypted_content: z.string().max(65_536).nullable().optional(),
 })
 const streamEventSchema = z.looseObject({ type: z.string() })
 
@@ -118,16 +122,28 @@ function usageFromProvider(input: unknown): ModelUsage {
   }
 }
 
-function jsonSchemaFor(schema: z.ZodType): Record<string, unknown> {
-  const jsonSchema = {
-    ...(z.toJSONSchema(schema) as Record<string, unknown>),
+function jsonSchemaFor(
+  schema: z.ZodType,
+  schemaName: string
+): Record<string, unknown> {
+  try {
+    const format = z
+      .looseObject({
+        type: z.literal("json_schema"),
+        name: z.string(),
+        strict: z.literal(true),
+        schema: z.record(z.string(), z.unknown()),
+      })
+      .parse(zodTextFormat(schema, schemaName))
+    assertModelSafeValue(format.schema)
+    if (JSON.stringify(format.schema).length > 32_768) {
+      throw new ModelGatewayError("limit_exceeded", false)
+    }
+    return format.schema
+  } catch (error) {
+    if (error instanceof ModelGatewayError) throw error
+    throw new ModelGatewayError("invalid_request", false)
   }
-  delete jsonSchema["$schema"]
-  assertModelSafeValue(jsonSchema)
-  if (JSON.stringify(jsonSchema).length > 32_768) {
-    throw new ModelGatewayError("limit_exceeded", false)
-  }
-  return jsonSchema
 }
 
 function parseResponse(input: unknown) {
@@ -331,7 +347,7 @@ export class AzureOpenAIModelGateway implements ModelGateway {
         format: {
           type: "json_schema",
           name: schemaName,
-          schema: jsonSchemaFor(request.schema),
+          schema: jsonSchemaFor(request.schema, schemaName),
           strict: true,
         },
       },
@@ -377,7 +393,7 @@ export class AzureOpenAIModelGateway implements ModelGateway {
     const tools = request.tools.map((tool) => ({
       name: tool.name,
       description: parseModelSafeText(tool.description, 1_024),
-      parameters: jsonSchemaFor(tool.parameters),
+      parameters: jsonSchemaFor(tool.parameters, tool.name),
     }))
     const response = parseResponse(
       await this.create({
@@ -397,6 +413,7 @@ export class AzureOpenAIModelGateway implements ModelGateway {
     const calls: ModelToolCall[] = []
     const callIds = new Set<string>()
     const items: ModelContinuationItem[] = [{ type: "user_text", text: input }]
+    const assistantText: string[] = []
     for (const rawItem of response.output) {
       const item = outputItemSchema.safeParse(rawItem)
       if (!item.success) throw new ModelGatewayError("malformed_output", false)
@@ -419,6 +436,7 @@ export class AzureOpenAIModelGateway implements ModelGateway {
         if (!argumentsResult.success) {
           throw new ModelGatewayError("tool_arguments_invalid", false)
         }
+        assertModelSafeValue(argumentsResult.data)
         if (callIds.has(call.data.call_id)) {
           throw new ModelGatewayError("tool_protocol_invalid", false)
         }
@@ -450,17 +468,39 @@ export class AzureOpenAIModelGateway implements ModelGateway {
       } else if (item.data.type === "message") {
         const extracted = extractText({ ...response, output: [item.data] })
         if (extracted.text.length > 0) {
-          items.push({ type: "assistant_text", text: extracted.text })
+          const text = parseModelSafeText(
+            extracted.text,
+            this.limits.maxInputCharacters
+          )
+          assistantText.push(text)
+          items.push({ type: "assistant_text", text })
         }
       }
     }
-    if (calls.length > this.limits.maxToolCalls) {
+    if (
+      calls.length > this.limits.maxToolCalls ||
+      items.length > this.limits.maxToolCalls * 3 + 2
+    ) {
       throw new ModelGatewayError("limit_exceeded", false)
     }
     if ((request.toolChoice ?? "auto") === "required" && calls.length === 0) {
       throw new ModelGatewayError("tool_protocol_invalid", false)
     }
+    const usage = usageFromProvider(response.usage)
+    if (calls.length === 0) {
+      const output = assistantText.join("")
+      if (output.length === 0) {
+        throw new ModelGatewayError("tool_protocol_invalid", false)
+      }
+      return {
+        kind: "final_text",
+        output,
+        model: response.model,
+        usage,
+      }
+    }
     return {
+      kind: "tool_calls",
       output: calls,
       continuation: {
         ...(instructions === undefined ? {} : { instructions }),
@@ -469,7 +509,7 @@ export class AzureOpenAIModelGateway implements ModelGateway {
         tools,
       },
       model: response.model,
-      usage: usageFromProvider(response.usage),
+      usage,
     }
   }
 
@@ -550,10 +590,23 @@ export class AzureOpenAIModelGateway implements ModelGateway {
     ) {
       throw new ModelGatewayError("tool_protocol_invalid", false)
     }
+    const continuationToolNames = new Set<string>()
     for (const tool of continuation.tools) {
       parseModelOperation(tool.name)
       parseModelSafeText(tool.description, 1_024)
       assertModelSafeValue(tool.parameters)
+      if (
+        continuationToolNames.has(tool.name) ||
+        JSON.stringify(tool.parameters).length > 32_768
+      ) {
+        throw new ModelGatewayError("tool_protocol_invalid", false)
+      }
+      continuationToolNames.add(tool.name)
+    }
+    if (
+      continuation.calls.some((call) => !continuationToolNames.has(call.name))
+    ) {
+      throw new ModelGatewayError("tool_protocol_invalid", false)
     }
     const expected = continuation.calls.map((call) => call.callId).sort()
     const supplied = outputs.map((output) => output.callId).sort()
@@ -564,6 +617,7 @@ export class AzureOpenAIModelGateway implements ModelGateway {
     ) {
       throw new ModelGatewayError("tool_protocol_invalid", false)
     }
+    let toolOutputCharacters = 0
     const toolOutputs = outputs.map((output) => {
       assertModelSafeValue(output.output)
       let serialized: string
@@ -574,7 +628,8 @@ export class AzureOpenAIModelGateway implements ModelGateway {
       }
       if (
         serialized === undefined ||
-        serialized.length > this.limits.maxToolOutputCharacters
+        (toolOutputCharacters += serialized.length) >
+          this.limits.maxToolOutputCharacters
       ) {
         throw new ModelGatewayError("limit_exceeded", false)
       }
@@ -617,6 +672,12 @@ export class AzureOpenAIModelGateway implements ModelGateway {
             continuationInstructions,
             this.limits.maxInputCharacters
           )
+    if (
+      continuationTextCharacters + (instructions?.length ?? 0) >
+      this.limits.maxInputCharacters
+    ) {
+      throw new ModelGatewayError("limit_exceeded", false)
+    }
     const response = await this.create({
       model: this.deployment,
       input: [...input, ...toolOutputs],
@@ -656,29 +717,42 @@ export class AzureOpenAIModelGateway implements ModelGateway {
     }
     const parts: string[] = []
     let completed: ReturnType<typeof parseResponse> | undefined
-    try {
-      for await (const rawEvent of stream) {
-        const event = streamEventSchema.safeParse(rawEvent)
-        if (!event.success) {
+    const iterator = stream[Symbol.asyncIterator]()
+    while (true) {
+      let iteration: IteratorResult<unknown>
+      try {
+        iteration = await iterator.next()
+      } catch (error) {
+        throw normalizeModelGatewayError(error)
+      }
+      if (iteration.done) break
+      const event = streamEventSchema.safeParse(iteration.value)
+      if (!event.success) {
+        throw new ModelGatewayError("malformed_output", false)
+      }
+      if (event.data.type === "response.output_text.delta") {
+        const delta = z.string().safeParse(event.data["delta"])
+        if (!delta.success) {
           throw new ModelGatewayError("malformed_output", false)
         }
-        if (event.data.type === "response.output_text.delta") {
-          const delta = z.string().safeParse(event.data["delta"])
-          if (!delta.success) {
-            throw new ModelGatewayError("malformed_output", false)
-          }
-          parts.push(delta.data)
-          await onEvent({ type: "text_delta", delta: delta.data })
-        } else if (event.data.type === "response.refusal.delta") {
-          throw new ModelGatewayError("refused", false)
-        } else if (event.data.type === "response.completed") {
-          completed = parseResponse(event.data["response"])
-        } else if (event.data.type === "response.failed") {
-          parseResponse(event.data["response"])
+        parts.push(delta.data)
+        await onEvent({ type: "text_delta", delta: delta.data })
+      } else if (event.data.type === "response.refusal.delta") {
+        throw new ModelGatewayError("refused", false)
+      } else if (event.data.type === "response.completed") {
+        completed = parseResponse(event.data["response"])
+      } else if (
+        event.data.type === "response.failed" ||
+        event.data.type === "response.incomplete"
+      ) {
+        parseResponse(event.data["response"])
+      } else if (event.data.type === "error") {
+        const code = z.string().nullable().safeParse(event.data["code"])
+        if (code.success && code.data?.includes("content_filter")) {
+          throw new ModelGatewayError("content_filtered", false)
         }
+        throw new ModelGatewayError("provider_unavailable", true)
       }
-    } catch (error) {
-      throw normalizeModelGatewayError(error)
     }
     if (completed === undefined || parts.length === 0) {
       throw new ModelGatewayError("malformed_output", false)
@@ -693,16 +767,17 @@ export function createAzureOpenAIModelGateway(
   environment: AzureOpenAIEnvironment,
   limits: ModelCallLimits = defaultModelCallLimits
 ): AzureOpenAIModelGateway {
+  const parsedEnvironment = loadAzureOpenAIEnvironment(environment)
   const parsedLimits = modelCallLimitsSchema.parse(limits)
   const client = new OpenAI({
-    apiKey: environment.AZURE_OPENAI_API_KEY,
-    baseURL: environment.AZURE_OPENAI_ENDPOINT,
+    apiKey: parsedEnvironment.AZURE_OPENAI_API_KEY,
+    baseURL: parsedEnvironment.AZURE_OPENAI_ENDPOINT,
     maxRetries: parsedLimits.maxRetries,
     timeout: parsedLimits.timeoutMs,
   })
   return new AzureOpenAIModelGateway(
     new OpenAIResponsesTransport(client),
-    environment.AZURE_OPENAI_DEPLOYMENT,
+    parsedEnvironment.AZURE_OPENAI_DEPLOYMENT,
     parsedLimits
   )
 }

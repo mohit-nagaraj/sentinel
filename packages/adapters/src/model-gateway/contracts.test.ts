@@ -35,13 +35,23 @@ describe("model gateway contracts", () => {
   })
 
   it("rejects nested sensitive tool data", () => {
-    expect(() =>
-      assertModelSafeValue({ result: { api_key_value: "plaintext" } })
-    ).toThrowError(
-      expect.objectContaining({
-        code: "invalid_request",
-        retryable: false,
-      })
-    )
+    for (const key of [
+      "api_key_value",
+      "apiKeyValue",
+      "APIKeyValue",
+      "accessTokenValue",
+      "clientSecretValue",
+      "passwordConfirmation",
+      "privateKeyPem",
+    ]) {
+      expect(() =>
+        assertModelSafeValue({ result: { [key]: "plaintext" } })
+      ).toThrowError(
+        expect.objectContaining({
+          code: "invalid_request",
+          retryable: false,
+        })
+      )
+    }
   })
 })

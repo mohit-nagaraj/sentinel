@@ -197,7 +197,6 @@ graph LR
 
 - **SNT-005** — Azure OpenAI model gateway compatibility spike is in review.
 - External preparation can proceed without implementation ownership conflicts:
-  - Azure OpenAI resource/deployment credentials for SNT-005;
   - GitHub App registration inputs for SNT-026;
   - public baseline/head deployment decision for SNT-030.
 

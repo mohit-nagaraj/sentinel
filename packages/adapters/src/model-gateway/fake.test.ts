@@ -19,12 +19,23 @@ describe("scripted model gateway", () => {
         },
       ],
       calls: [{ callId: "call-1", name: "lookup_count", arguments: {} }],
-      tools: [],
+      tools: [
+        {
+          name: "lookup_count",
+          description: "Look up a count.",
+          parameters: {
+            type: "object",
+            properties: {},
+            additionalProperties: false,
+          },
+        },
+      ],
     }
     const gateway = new ScriptedModelGateway([
       {
         kind: "tools",
         result: {
+          kind: "tool_calls",
           output: continuation.calls,
           continuation,
           model: "fake",
@@ -43,8 +54,16 @@ describe("scripted model gateway", () => {
 
     const decision = await gateway.decideTools({
       input: "Find the count",
-      tools: [],
+      tools: [
+        {
+          name: "lookup_count",
+          description: "Look up a count.",
+          parameters: z.strictObject({}),
+        },
+      ],
     })
+    expect(decision.kind).toBe("tool_calls")
+    if (decision.kind !== "tool_calls") throw new Error("expected tool calls")
     await expect(
       gateway.continueTools(decision.continuation, [
         { callId: "call-1", output: { count: 42 } },
@@ -73,6 +92,67 @@ describe("scripted model gateway", () => {
       code: "rate_limited",
       retryable: true,
     })
+    gateway.assertComplete()
+  })
+
+  it("rejects mismatched tool results before consuming a scripted step", async () => {
+    const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 }
+    const continuation = {
+      items: [
+        { type: "user_text" as const, text: "look up" },
+        {
+          type: "function_call" as const,
+          callId: "call-1",
+          name: "lookup",
+          argumentsJson: "{}",
+        },
+      ],
+      calls: [{ callId: "call-1", name: "lookup", arguments: {} }],
+      tools: [
+        {
+          name: "lookup",
+          description: "Look up a value.",
+          parameters: {
+            type: "object",
+            properties: {},
+            additionalProperties: false,
+          },
+        },
+      ],
+    }
+    const gateway = new ScriptedModelGateway([
+      {
+        kind: "continuation",
+        result: { output: "done", model: "fake", usage },
+      },
+    ])
+    await expect(
+      gateway.continueTools(continuation, [{ callId: "wrong", output: {} }])
+    ).rejects.toMatchObject({ code: "tool_protocol_invalid" })
+    await expect(
+      gateway.continueTools(continuation, [{ callId: "call-1", output: {} }])
+    ).resolves.toMatchObject({ output: "done" })
+    gateway.assertComplete()
+  })
+
+  it("normalizes malformed scripted structured output", async () => {
+    const gateway = new ScriptedModelGateway([
+      {
+        kind: "structured",
+        result: {
+          output: { count: "wrong" },
+          model: "fake",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        },
+      },
+    ])
+    await expect(
+      gateway.generateStructured({
+        input: "count",
+        schemaName: "count_result",
+        schema: z.strictObject({ count: z.number() }),
+      })
+    ).rejects.toMatchObject({ code: "malformed_output" })
     gateway.assertComplete()
   })
 })
