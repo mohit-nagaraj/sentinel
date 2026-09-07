@@ -7,6 +7,7 @@ export type DocumentationErrorCode =
   | "invalid_input"
   | "limit_exceeded"
   | "robots_denied"
+  | "time_limit_exceeded"
   | "unsafe_destination"
 
 export class DocumentationSourceError extends Error {

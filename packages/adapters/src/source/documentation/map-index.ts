@@ -26,6 +26,19 @@ export interface DocumentationTreePage {
   readonly sections: readonly DocumentSectionRecord[]
 }
 
+export interface DocumentationSectionRead {
+  readonly id: string
+  readonly pageId: string
+  readonly sourceUri: string
+  readonly headingPath: readonly string[]
+  readonly excerpt: string
+  readonly startOffset: number
+  readonly endOffset: number
+  readonly fullEndOffset: number
+  readonly fullContentHash: string
+  readonly truncated: boolean
+}
+
 export class DocumentationMapIndex {
   private readonly pagesById: ReadonlyMap<string, DocumentPageRecord>
   private readonly sectionsById: ReadonlyMap<string, DocumentSectionRecord>
@@ -57,7 +70,7 @@ export class DocumentationMapIndex {
       .filter(
         (page) =>
           afterCanonicalUri === undefined ||
-          page.fact.canonicalUri > afterCanonicalUri
+          page.fact.canonicalUri.localeCompare(afterCanonicalUri) > 0
       )
       .sort((left, right) =>
         left.fact.canonicalUri.localeCompare(right.fact.canonicalUri)
@@ -91,7 +104,10 @@ export class DocumentationMapIndex {
     }))
   }
 
-  readSection(sectionId: string, maxCharacters = 4_096): DocumentSectionRecord {
+  readSection(
+    sectionId: string,
+    maxCharacters = 4_096
+  ): DocumentationSectionRead {
     const bounded = z.number().int().min(1).max(4_096).parse(maxCharacters)
     const section = this.sectionsById.get(sectionId)
     if (section === undefined) {
@@ -100,13 +116,18 @@ export class DocumentationMapIndex {
         "Documentation section is outside the approved map"
       )
     }
-    if (section.sanitizedText.length <= bounded) return section
-    const text = section.sanitizedText.slice(0, bounded)
+    const excerpt = section.sanitizedText.slice(0, bounded)
     return {
-      ...section,
-      fact: { ...section.fact, excerpt: text },
-      endOffset: section.startOffset + text.length,
-      sanitizedText: text,
+      id: section.fact.id,
+      pageId: section.fact.pageId,
+      sourceUri: section.sourceUri,
+      headingPath: section.fact.headingPath,
+      excerpt,
+      startOffset: section.startOffset,
+      endOffset: section.startOffset + excerpt.length,
+      fullEndOffset: section.endOffset,
+      fullContentHash: section.fact.contentHash,
+      truncated: excerpt.length < section.sanitizedText.length,
     }
   }
 

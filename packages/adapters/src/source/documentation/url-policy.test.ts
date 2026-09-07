@@ -34,8 +34,20 @@ describe("documentation URL policy", () => {
       canonicalizeDocumentationUrl("https://user:pass@example.com/docs")
     ).toThrow(/credentials/)
     expect(() =>
+      canonicalizeDocumentationUrl("https://example.com/docs?token=secret")
+    ).toThrow(/credential/)
+    expect(() =>
       canonicalizeDocumentationUrl("https://example.com/docs/%2e%2e/private")
     ).toThrow(/traversal/)
+    for (const ambiguous of [
+      "https://example.com/docs/..%2fprivate",
+      "https://example.com/docs/%252e%252e/private",
+      "https://example.com/docs\\..\\private",
+    ]) {
+      expect(() => canonicalizeDocumentationUrl(ambiguous)).toThrow(
+        /ambiguous|traversal/
+      )
+    }
     for (const address of [
       "127.0.0.1",
       "10.0.0.1",

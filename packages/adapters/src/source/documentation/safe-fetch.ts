@@ -4,12 +4,16 @@ import { fetch } from "undici"
 import { DocumentationSourceError, documentationError } from "./errors.ts"
 import type { DocumentationUrlPolicy } from "./url-policy.ts"
 
-export interface SafeFetchResult {
-  readonly body: string
+export interface SafeFetchBytesResult {
+  readonly body: Uint8Array
   readonly bytes: number
   readonly contentType: string
   readonly finalUrl: string
   readonly status: number
+}
+
+export interface SafeFetchResult extends Omit<SafeFetchBytesResult, "body"> {
+  readonly body: string
 }
 
 export interface SafeFetchOptions {
@@ -26,8 +30,8 @@ export interface SafeFetchOptions {
 async function readBody(
   body: ReadableStream<Uint8Array> | null,
   maxBytes: number
-): Promise<{ body: string; bytes: number }> {
-  if (body === null) return { body: "", bytes: 0 }
+): Promise<{ body: Uint8Array; bytes: number }> {
+  if (body === null) return { body: new Uint8Array(), bytes: 0 }
   const reader = body.getReader()
   const chunks: Uint8Array[] = []
   let bytes = 0
@@ -53,24 +57,13 @@ async function readBody(
     combined.set(chunk, offset)
     offset += chunk.byteLength
   }
-  try {
-    return {
-      body: new TextDecoder("utf-8", { fatal: true }).decode(combined),
-      bytes,
-    }
-  } catch (error) {
-    throw new DocumentationSourceError(
-      "invalid_content",
-      "Documentation response is not valid UTF-8",
-      { cause: error }
-    )
-  }
+  return { body: combined, bytes }
 }
 
-export async function safeFetchText(
+export async function safeFetchBytes(
   input: string,
   options: SafeFetchOptions
-): Promise<SafeFetchResult> {
+): Promise<SafeFetchBytesResult> {
   const maxRedirects = options.maxRedirects ?? 5
   let url = options.controlRequest
     ? options.policy.canonicalizeControl(input)
@@ -84,8 +77,7 @@ export async function safeFetchText(
       const response = await fetch(url, {
         dispatcher: options.dispatcher,
         headers: {
-          accept:
-            "text/html,text/markdown,text/plain,application/xml,text/xml;q=0.9",
+          accept: "*/*",
           "user-agent": options.userAgent,
         },
         redirect: "manual",
@@ -144,6 +136,31 @@ export async function safeFetchText(
       "Documentation redirect limit was reached"
     )
   } catch (error) {
+    if (options.signal?.aborted === true) {
+      throw new DocumentationSourceError(
+        "aborted",
+        "Documentation request was cancelled"
+      )
+    }
     throw documentationError(error)
+  }
+}
+
+export async function safeFetchText(
+  input: string,
+  options: SafeFetchOptions
+): Promise<SafeFetchResult> {
+  const response = await safeFetchBytes(input, options)
+  try {
+    return {
+      ...response,
+      body: new TextDecoder("utf-8", { fatal: true }).decode(response.body),
+    }
+  } catch (error) {
+    throw new DocumentationSourceError(
+      "invalid_content",
+      "Documentation response is not valid UTF-8",
+      { cause: error }
+    )
   }
 }

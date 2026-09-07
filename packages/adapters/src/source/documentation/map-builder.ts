@@ -90,11 +90,16 @@ export function buildDocumentationMap(
     ])
   )
 
-  const sorted = [...input.pages].sort(
-    (left, right) =>
-      left.canonicalUri.localeCompare(right.canonicalUri) ||
+  const sorted = [...input.pages].sort((left, right) => {
+    const canonicalOrder = left.canonicalUri.localeCompare(right.canonicalUri)
+    if (canonicalOrder !== 0) return canonicalOrder
+    const leftIsCanonical = left.sourceUri === left.canonicalUri ? 0 : 1
+    const rightIsCanonical = right.sourceUri === right.canonicalUri ? 0 : 1
+    return (
+      leftIsCanonical - rightIsCanonical ||
       left.sourceUri.localeCompare(right.sourceUri)
-  )
+    )
+  })
   const unique: PreparedPage[] = []
   const aliasToCanonical = new Map<string, string>()
   const contentOwners = new Map<string, PreparedPage>()
@@ -246,7 +251,17 @@ export function buildDocumentationMap(
   const failedUris = Object.freeze([...(input.failedUris ?? [])].sort())
   const attemptedPages =
     input.attemptedPages ?? input.pages.length + failedUris.length
-  const removedPages = previous.size
+  const removalIsAuthoritative =
+    failedUris.length === 0 &&
+    !(input.warnings ?? []).some((warning) =>
+      [
+        "byte_limit_reached",
+        "failed_page",
+        "page_limit_reached",
+        "time_limit_reached",
+      ].includes(warning.code)
+    )
+  const removedPages = removalIsAuthoritative ? previous.size : 0
   const warningCandidates: CrawlWarning[] = [
     ...(input.warnings ?? []),
     ...internalWarnings,

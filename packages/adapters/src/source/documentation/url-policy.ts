@@ -14,6 +14,8 @@ const pathSchema = z
   .min(1)
   .max(2_048)
   .refine((value) => value.startsWith("/"))
+const sensitiveQueryKey =
+  /^(?:access_token|api[_-]?key|auth|authorization|client[_-]?secret|code|credential|id_token|key|oauth_token|password|private[_-]?key|refresh_token|secret|session(?:[_-]?id)?|sig|signature|token|x-amz-.+|x-goog-.+)$/i
 
 export interface UrlPolicyOptions {
   readonly roots: readonly string[]
@@ -52,8 +54,10 @@ export function canonicalizeDocumentationUrl(
   input: string,
   base?: string
 ): string {
-  if (/%2e/i.test(input)) {
-    return unsafe("Documentation URL contains encoded path traversal syntax")
+  if (/\\|%(?:25|2e|2f|5c)/i.test(input)) {
+    return unsafe(
+      "Documentation URL contains ambiguous encoded path traversal syntax"
+    )
   }
   let url: URL
   try {
@@ -66,6 +70,11 @@ export function canonicalizeDocumentationUrl(
   }
   if (url.username.length > 0 || url.password.length > 0) {
     return unsafe("Documentation URLs cannot contain credentials")
+  }
+  if ([...url.searchParams.keys()].some((key) => sensitiveQueryKey.test(key))) {
+    return unsafe(
+      "Documentation URLs cannot contain credential query parameters"
+    )
   }
   url.hash = ""
   url.pathname = normalizePath(url.pathname)

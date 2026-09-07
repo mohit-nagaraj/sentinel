@@ -76,6 +76,9 @@ describe("documentation map", () => {
     expect(() =>
       index.readSection(`document-section:v1:${"f".repeat(64)}`)
     ).toThrow(/outside the approved map/)
+    const read = index.readSection(first.sections[0]?.fact.id ?? "", 10)
+    expect(read).toMatchObject({ truncated: true, excerpt: "Create an " })
+    expect(read.fullEndOffset).toBeGreaterThan(read.endOffset)
   })
 
   it("classifies changed, unchanged, and removed pages", () => {
@@ -118,5 +121,59 @@ describe("documentation map", () => {
       "changed",
     ])
     expect(current.coverage.removedPages).toBe(1)
+
+    const partial = buildDocumentationMap({
+      applicationId,
+      kind: "web",
+      rootUri: "https://docs.example.com/docs",
+      pages: [unchanged],
+      failedUris: [changed.canonicalUri],
+      previousPages: [
+        {
+          canonicalUri: changed.canonicalUri,
+          contentHash: hashCanonical({ old: true }),
+        },
+      ],
+    })
+    expect(partial.coverage).toMatchObject({
+      failedPages: 1,
+      removedPages: 0,
+      complete: false,
+    })
+  })
+
+  it("prefers authoritative canonical pages and paginates with one ordering", () => {
+    const canonical = page(
+      "https://docs.example.com/docs/z",
+      "Canonical",
+      "Authoritative canonical content."
+    )
+    const alias = {
+      ...page(
+        "https://docs.example.com/docs/a-alias",
+        "Alias",
+        "Stale alias content."
+      ),
+      canonicalUri: canonical.canonicalUri,
+    }
+    const ordered = buildDocumentationMap({
+      applicationId,
+      kind: "web",
+      rootUri: "https://docs.example.com/docs",
+      pages: [
+        alias,
+        canonical,
+        page("https://docs.example.com/docs/B", "B", "B page"),
+      ],
+    })
+    expect(
+      ordered.pages.find(
+        (record) => record.fact.canonicalUri === canonical.canonicalUri
+      )?.sanitizedText
+    ).toBe("Authoritative canonical content.")
+    const index = new DocumentationMapIndex(ordered)
+    const firstPage = index.listPages(1)[0]
+    const remainder = index.listPages(10, firstPage?.fact.canonicalUri)
+    expect([firstPage, ...remainder]).toHaveLength(ordered.pages.length)
   })
 })

@@ -119,11 +119,23 @@ async function insertMap(
       JSON.stringify(map.warnings),
     ]
   )
-  await database.query(
-    `delete from sentinel.document_pages
-     where application_id = $1::uuid and source_stable_key = $2`,
-    [applicationDatabaseId, map.source.id]
-  )
+  if (map.coverage.complete) {
+    await database.query(
+      `delete from sentinel.document_pages
+       where application_id = $1::uuid and source_stable_key = $2`,
+      [applicationDatabaseId, map.source.id]
+    )
+  } else {
+    for (const page of map.pages) {
+      await database.query(
+        `delete from sentinel.document_pages
+         where application_id = $1::uuid
+           and source_stable_key = $2
+           and canonical_uri = $3`,
+        [applicationDatabaseId, map.source.id, page.canonicalUri]
+      )
+    }
+  }
   for (const page of map.pages) {
     await database.query(
       `insert into sentinel.document_pages (
@@ -187,10 +199,16 @@ export class DocumentMapRepository {
     )
     validateMap(map)
     await this.database.transaction(async (transaction) => {
-      await transaction.query(
-        "select id from sentinel.applications where id = $1::uuid for update",
+      const applications = await transaction.query<{ stable_key: string }>(
+        `select stable_key from sentinel.applications
+         where id = $1::uuid for update`,
         [applicationDatabaseId]
       )
+      if (applications[0]?.stable_key !== map.source.applicationId) {
+        throw new Error(
+          "Document map application identity does not match the operational record"
+        )
+      }
       await insertMap(transaction, applicationDatabaseId, map)
     })
   }

@@ -27,7 +27,7 @@
     "jsdom": "26.1.0",
     "mdast-util-to-string": "4.0.0",
     "openai": "7.10.0",
-    "playwright": "1.55.0",
+    "playwright": "1.63.0",
     "remark-parse": "11.0.0",
     "robots-parser": "3.0.1",
     "undici": "7.29.1",

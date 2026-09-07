@@ -33,6 +33,8 @@ beforeAll(async () => {
         <url><loc>${origin}/docs/duplicate</loc></url>
         <url><loc>${origin}/docs/malicious</loc></url>
         <url><loc>${origin}/docs/client</loc></url>
+        <url><loc>${origin}/docs/client-evil</loc></url>
+        <url><loc>${origin}/docs/offhost-redirect</loc></url>
         <url><loc>${origin}/docs/private</loc></url>
         <url><loc>http://169.254.169.254/latest/meta-data</loc></url>
       </urlset>`)
@@ -41,6 +43,12 @@ beforeAll(async () => {
     if (url === "/docs/redirect") {
       response.statusCode = 302
       response.setHeader("location", "/docs/page")
+      response.end()
+      return
+    }
+    if (url === "/docs/offhost-redirect") {
+      response.statusCode = 302
+      response.setHeader("location", "http://169.254.169.254/latest/meta-data")
       response.end()
       return
     }
@@ -77,11 +85,23 @@ beforeAll(async () => {
       )
       return
     }
-    if (url === "/docs/client") {
+    if (url === "/docs/client" || url === "/docs/client-evil") {
       response.setHeader("content-type", "text/html")
       response.end(
         "<!doctype html><html><head><title>Client</title></head><body><div id=root></div></body></html>"
       )
+      return
+    }
+    if (url === "/docs/slow") {
+      setTimeout(() => {
+        response.setHeader("content-type", "text/html")
+        response.end(
+          page(
+            "Slow",
+            "This delayed page exists only to verify in-flight cancellation propagation."
+          )
+        )
+      }, 250)
       return
     }
     response.statusCode = 404
@@ -108,10 +128,13 @@ describe("web documentation source", () => {
     const renderer: DocumentationRenderer = {
       render: async () => {
         rendered += 1
-        return page(
-          "Client reference",
-          "Client-rendered documentation is fetched only for the explicitly configured path and then sanitized."
-        )
+        return {
+          html: page(
+            "Client reference",
+            "Client-rendered documentation is fetched only for the explicitly configured path and then sanitized."
+          ),
+          transferredBytes: 0,
+        }
       },
       close: async () => undefined,
     }
@@ -142,6 +165,8 @@ describe("web documentation source", () => {
     expect(requests).not.toContain("/latest/meta-data")
     expect(requests.filter((url) => url === "/docs/private")).toHaveLength(0)
     expect(map.failedUris).not.toContain(`${origin}/docs/private`)
+    expect(map.failedUris).toContain(`${origin}/docs/client-evil`)
+    expect(map.failedUris).toContain(`${origin}/docs/offhost-redirect`)
     expect(map.coverage.successfulPages).toBeGreaterThanOrEqual(4)
   }, 30_000)
 
@@ -155,5 +180,58 @@ describe("web documentation source", () => {
         maxRequestRetries: 0,
       })
     ).rejects.toThrow(/private|reserved|request failed/i)
+  })
+
+  it("rejects cancellation and rendered pages outside the crawl byte budget", async () => {
+    const cancelled = new AbortController()
+    cancelled.abort()
+    await expect(
+      crawlWebDocumentation({
+        applicationId,
+        roots: [`${origin}/docs`],
+        allowHttp: true,
+        allowPrivateNetworkForTests: true,
+        signal: cancelled.signal,
+      })
+    ).rejects.toMatchObject({ code: "aborted" })
+
+    const inFlight = new AbortController()
+    const pending = crawlWebDocumentation({
+      applicationId,
+      roots: [`${origin}/docs/slow`],
+      allowHttp: true,
+      allowPrivateNetworkForTests: true,
+      maxPages: 1,
+      maxSitemaps: 0,
+      maxRequestRetries: 0,
+      signal: inFlight.signal,
+    })
+    setTimeout(() => inFlight.abort(), 50)
+    await expect(pending).rejects.toMatchObject({ code: "aborted" })
+
+    const oversizedRenderer: DocumentationRenderer = {
+      render: async () => ({
+        html: page("Oversized", "x".repeat(2_000)),
+        transferredBytes: 0,
+      }),
+      close: async () => undefined,
+    }
+    const limited = await crawlWebDocumentation({
+      applicationId,
+      roots: [`${origin}/docs/client`],
+      allowHttp: true,
+      allowPrivateNetworkForTests: true,
+      maxPageBytes: 512,
+      maxTotalBytes: 8_192,
+      maxPages: 1,
+      maxSitemaps: 0,
+      maxRequestRetries: 0,
+      clientRenderedPaths: ["/docs/client"],
+      renderer: oversizedRenderer,
+    })
+    expect(limited.pages).toHaveLength(0)
+    expect(limited.warnings.map((warning) => warning.code)).toContain(
+      "byte_limit_reached"
+    )
   })
 })

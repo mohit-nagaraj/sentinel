@@ -45,12 +45,38 @@ describe("repository documentation source", () => {
       roots: ["docs"],
     })
     expect(map.pages).toHaveLength(2)
+    expect(map.pages.every((page) => page.sourceUri.includes(commitSha))).toBe(
+      true
+    )
     expect(
-      map.pages.every((page) => page.fact.canonicalUri.includes(commitSha))
+      map.pages.every((page) => !page.fact.canonicalUri.includes(commitSha))
     ).toBe(true)
     expect(map.links).toHaveLength(1)
     expect(
       map.sections.some((section) => section.sanitizedText.includes("Never"))
     ).toBe(false)
+
+    const nextSnapshot: CheckoutSnapshot = {
+      ...snapshot,
+      metadata: {
+        ...snapshot.metadata,
+        commitSha: "9".repeat(40),
+      },
+    }
+    const next = await prepareRepositoryDocumentation({
+      applicationId,
+      repository: { host: "github.com", owner: "acme", name: "app" },
+      snapshot: nextSnapshot,
+      roots: ["docs"],
+      previousPages: map.pages.map((record) => ({
+        canonicalUri: record.fact.canonicalUri,
+        contentHash: record.fact.contentHash,
+      })),
+    })
+    expect(next.source.id).toBe(map.source.id)
+    expect(next.pages.map((record) => record.change)).toEqual([
+      "unchanged",
+      "unchanged",
+    ])
   })
 })

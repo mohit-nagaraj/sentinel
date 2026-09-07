@@ -69,6 +69,11 @@ describeIntegration("documentation map Postgres persistence", () => {
   it("atomically replaces sanitized facts and denies browser roles", async () => {
     const uri =
       "repository://github.com/acme/app/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/docs/index.md"
+    const secondUri =
+      "repository://github.com/acme/app/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/docs/api.md"
+    const canonicalUri = "repository://github.com/acme/app/path/docs/index.md"
+    const secondCanonicalUri =
+      "repository://github.com/acme/app/path/docs/api.md"
     const document = parseMarkdownDocument(
       "# Checkout\n\nChoose a ticket and create an order.\n\n<script>steal()</script>",
       uri
@@ -81,9 +86,18 @@ describeIntegration("documentation map Postgres persistence", () => {
       pages: [
         {
           sourceUri: uri,
-          canonicalUri: uri,
+          canonicalUri,
           mediaType: "text/markdown",
           document,
+        },
+        {
+          sourceUri: secondUri,
+          canonicalUri: secondCanonicalUri,
+          mediaType: "text/markdown",
+          document: parseMarkdownDocument(
+            "# API\n\nCreate an order through the endpoint.",
+            secondUri
+          ),
         },
       ],
     })
@@ -98,6 +112,28 @@ describeIntegration("documentation map Postgres persistence", () => {
     expect(jsonShape[0]?.bytes).toBeLessThan(16_384)
     await repository.replace(applicationDatabaseId, persistence)
     await repository.replace(applicationDatabaseId, persistence)
+    const partial = buildDocumentationMap({
+      applicationId: application.stableKey,
+      kind: "repository",
+      rootUri: map.source.rootUri,
+      pages: [
+        {
+          sourceUri: uri,
+          canonicalUri,
+          mediaType: "text/markdown",
+          document,
+        },
+      ],
+      failedUris: [secondUri],
+      previousPages: map.pages.map((page) => ({
+        canonicalUri: page.fact.canonicalUri,
+        contentHash: page.fact.contentHash,
+      })),
+    })
+    await repository.replace(
+      applicationDatabaseId,
+      documentMapPersistenceView(partial)
+    )
 
     const rows = await database.query<{
       pages: number
@@ -115,14 +151,14 @@ describeIntegration("documentation map Postgres persistence", () => {
          ) as unsafe`,
       [applicationDatabaseId]
     )
-    expect(rows[0]).toEqual({ pages: 1, sections: 1, unsafe: false })
+    expect(rows[0]).toEqual({ pages: 2, sections: 2, unsafe: false })
     await expect(
       repository.previousPages(applicationDatabaseId, map.source.id)
     ).resolves.toEqual([
-      {
-        canonicalUri: uri,
-        contentHash: map.pages[0]?.fact.contentHash,
-      },
+      ...map.pages.map((page) => ({
+        canonicalUri: page.fact.canonicalUri,
+        contentHash: page.fact.contentHash,
+      })),
     ])
 
     for (const role of ["anon", "authenticated"]) {

@@ -22,11 +22,16 @@ class RecordingDatabase implements DatabaseClient {
     []
   transactions = 0
 
+  constructor(private readonly applicationStableKey = applicationId) {}
+
   async query<Row extends Record<string, unknown>>(
     statement: string,
     parameters: readonly SqlParameter[] = []
   ): Promise<readonly Row[]> {
     this.calls.push({ statement, parameters })
+    if (statement.includes("select stable_key from sentinel.applications")) {
+      return [{ stable_key: this.applicationStableKey }] as unknown as Row[]
+    }
     if (statement.includes("select canonical_uri")) {
       return [
         { canonical_uri: "https://docs.example.com/docs", content_hash: hash },
@@ -113,5 +118,29 @@ describe("document map repository", () => {
     ).resolves.toEqual([
       { canonicalUri: "https://docs.example.com/docs", contentHash: hash },
     ])
+  })
+
+  it("rejects cross-application maps and preserves absent pages on partial replacement", async () => {
+    const mismatched = new RecordingDatabase(`application:v1:${"f".repeat(64)}`)
+    await expect(
+      new DocumentMapRepository(mismatched).replace(applicationDatabaseId, map)
+    ).rejects.toThrow(/identity does not match/)
+    expect(
+      mismatched.calls.some((call) =>
+        call.statement.includes("insert into sentinel.document_maps")
+      )
+    ).toBe(false)
+
+    const partial = new RecordingDatabase()
+    await new DocumentMapRepository(partial).replace(applicationDatabaseId, {
+      ...map,
+      coverage: { ...map.coverage, complete: false, failedPages: 1 },
+      warnings: [{ code: "failed_page", message: "partial" }],
+    })
+    const deletes = partial.calls.filter((call) =>
+      call.statement.includes("delete from sentinel.document_pages")
+    )
+    expect(deletes).toHaveLength(1)
+    expect(deletes[0]?.statement).toContain("canonical_uri = $3")
   })
 })

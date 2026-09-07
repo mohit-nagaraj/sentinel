@@ -8,8 +8,11 @@ import robotsParser from "robots-parser"
 import { DocumentationSourceError, documentationError } from "./errors.ts"
 import { parseHtmlDocument } from "./html-parser.ts"
 import { buildDocumentationMap } from "./map-builder.ts"
-import type { DocumentationRenderer } from "./playwright-renderer.ts"
-import { safeFetchText } from "./safe-fetch.ts"
+import type {
+  DocumentationRenderer,
+  RenderedDocumentation,
+} from "./playwright-renderer.ts"
+import { safeFetchBytes, safeFetchText } from "./safe-fetch.ts"
 import type {
   CrawlWarning,
   DocumentationMap,
@@ -21,6 +24,11 @@ import { DocumentationUrlPolicy } from "./url-policy.ts"
 interface RobotsPolicy {
   isAllowed(url: string, userAgent?: string): boolean | undefined
   getSitemaps(): string[]
+}
+
+interface RenderPath {
+  readonly path: string
+  readonly prefix: boolean
 }
 
 export interface WebDocumentationOptions {
@@ -69,14 +77,36 @@ async function parseSitemapSafely(content: string): Promise<{
   return { pages, nested }
 }
 
+function parseRenderPaths(patterns: readonly string[]): readonly RenderPath[] {
+  return patterns.map((pattern) => {
+    const prefix = pattern.endsWith("*")
+    const path = prefix ? pattern.slice(0, -1) : pattern
+    if (
+      !path.startsWith("/") ||
+      path.length > 2_048 ||
+      path.includes("*") ||
+      path.includes("?") ||
+      path.includes("#")
+    ) {
+      throw new DocumentationSourceError(
+        "invalid_input",
+        "Client-rendered paths must be exact absolute paths or end in one wildcard"
+      )
+    }
+    return { path, prefix }
+  })
+}
+
 function configuredForRendering(
   url: string,
-  patterns: readonly string[]
+  patterns: readonly RenderPath[]
 ): boolean {
-  return patterns.some((pattern) => {
-    const normalized = pattern.endsWith("*") ? pattern.slice(0, -1) : pattern
-    return new URL(url).pathname.startsWith(normalized)
-  })
+  const pathname = new URL(url).pathname
+  return patterns.some((pattern) =>
+    pattern.prefix
+      ? pathname.startsWith(pattern.path)
+      : pathname === pattern.path
+  )
 }
 
 export async function crawlWebDocumentation(
@@ -90,6 +120,7 @@ export async function crawlWebDocumentation(
   const maxRequestRetries = options.maxRequestRetries ?? 2
   const maxSitemaps = options.maxSitemaps ?? 20
   const userAgent = options.userAgent ?? "SentinelDocumentationBot/0.0.1"
+  const renderPaths = parseRenderPaths(options.clientRenderedPaths ?? [])
   const parseRobots = robotsParser as unknown as (
     url: string,
     content: string
@@ -109,6 +140,7 @@ export async function crawlWebDocumentation(
       "Web documentation limits are invalid"
     )
   }
+
   const policy = new DocumentationUrlPolicy({
     roots: options.roots,
     ...(options.allowHttp === undefined
@@ -123,23 +155,54 @@ export async function crawlWebDocumentation(
   const robotsByOrigin = new Map<string, RobotsPolicy>()
   const sitemapQueue: string[] = []
   const sitemapSeen = new Set<string>()
+  const prepared: PreparedPage[] = []
+  const failedUris: string[] = []
+  const warnings: CrawlWarning[] = []
   let fetchedBytes = 0
+  let byteLimitReached = false
+
+  const addByteLimitWarning = () => {
+    byteLimitReached = true
+    warnings.push({
+      code: "byte_limit_reached",
+      message: "Web documentation byte limit was reached",
+    })
+  }
+  const addTimeLimitWarning = () => {
+    warnings.push({
+      code: "time_limit_reached",
+      message: "Web documentation time limit was reached",
+    })
+  }
+  const remainingTime = () => timeoutMs - (Date.now() - startedAt)
 
   try {
     for (const root of policy.roots) {
+      if (byteLimitReached) break
       const origin = new URL(root).origin
       if (robotsByOrigin.has(origin)) continue
       const robotsUrl = policy.canonicalizeControl("/robots.txt", origin)
+      const remainingBytes = maxTotalBytes - fetchedBytes
+      const controlTimeout = remainingTime()
+      if (controlTimeout <= 0) {
+        addTimeLimitWarning()
+        break
+      }
+      if (remainingBytes <= 0) {
+        addByteLimitWarning()
+        break
+      }
       try {
         const response = await safeFetchText(robotsUrl, {
           policy,
           dispatcher,
           ...(options.signal === undefined ? {} : { signal: options.signal }),
-          timeoutMs: requestTimeoutMs,
-          maxBytes: Math.min(maxPageBytes, 512 * 1_024),
+          timeoutMs: Math.min(requestTimeoutMs, controlTimeout),
+          maxBytes: Math.min(maxPageBytes, 512 * 1_024, remainingBytes),
           userAgent,
           controlRequest: true,
         })
+        fetchedBytes += response.bytes
         if (response.status === 429 || response.status >= 500) {
           throw new DocumentationSourceError(
             "fetch_failed",
@@ -149,18 +212,26 @@ export async function crawlWebDocumentation(
         }
         const robots = parseRobots(
           robotsUrl,
-          response.status === 404 ? "" : response.body
+          response.status >= 400 ? "" : response.body
         )
         robotsByOrigin.set(origin, robots)
         for (const sitemap of robots.getSitemaps()) {
           try {
             sitemapQueue.push(policy.canonicalizeControl(sitemap, origin))
           } catch {
-            // An off-origin robots directive is not permitted to expand crawl authority.
+            // Control files are candidates and cannot widen crawl authority.
           }
         }
       } catch (error) {
         const normalized = documentationError(error)
+        if (remainingTime() <= 0) {
+          addTimeLimitWarning()
+          break
+        }
+        if (normalized.code === "limit_exceeded") {
+          addByteLimitWarning()
+          break
+        }
         if (
           normalized.code === "aborted" ||
           normalized.code === "unsafe_destination" ||
@@ -174,20 +245,35 @@ export async function crawlWebDocumentation(
     }
 
     const sitemapPages: string[] = []
-    while (sitemapQueue.length > 0 && sitemapSeen.size < maxSitemaps) {
+    while (
+      !byteLimitReached &&
+      sitemapQueue.length > 0 &&
+      sitemapSeen.size < maxSitemaps
+    ) {
       const sitemapUrl = sitemapQueue.shift()
       if (sitemapUrl === undefined || sitemapSeen.has(sitemapUrl)) continue
       sitemapSeen.add(sitemapUrl)
+      const remainingBytes = maxTotalBytes - fetchedBytes
+      const controlTimeout = remainingTime()
+      if (controlTimeout <= 0) {
+        addTimeLimitWarning()
+        break
+      }
+      if (remainingBytes <= 0) {
+        addByteLimitWarning()
+        break
+      }
       try {
         const response = await safeFetchText(sitemapUrl, {
           policy,
           dispatcher,
           ...(options.signal === undefined ? {} : { signal: options.signal }),
-          timeoutMs: requestTimeoutMs,
-          maxBytes: Math.min(maxPageBytes, 2 * 1_024 * 1_024),
+          timeoutMs: Math.min(requestTimeoutMs, controlTimeout),
+          maxBytes: Math.min(maxPageBytes, 2 * 1_024 * 1_024, remainingBytes),
           userAgent,
           controlRequest: true,
         })
+        fetchedBytes += response.bytes
         if (response.status >= 400) continue
         const parsed = await parseSitemapSafely(response.body)
         for (const page of parsed.pages) {
@@ -201,7 +287,7 @@ export async function crawlWebDocumentation(
               sitemapPages.push(candidate)
             }
           } catch {
-            // Sitemap entries are candidates only and cannot widen approved scope.
+            // Sitemap entries are candidates and cannot widen crawl authority.
           }
         }
         for (const nested of parsed.nested) {
@@ -213,6 +299,14 @@ export async function crawlWebDocumentation(
         }
       } catch (error) {
         const normalized = documentationError(error)
+        if (remainingTime() <= 0) {
+          addTimeLimitWarning()
+          break
+        }
+        if (normalized.code === "limit_exceeded") {
+          addByteLimitWarning()
+          break
+        }
         if (
           normalized.code === "aborted" ||
           normalized.code === "unsafe_destination"
@@ -237,15 +331,131 @@ export async function crawlWebDocumentation(
         robotsByOrigin.get(new URL(seed).origin)?.isAllowed(seed, userAgent) !==
         false
     )
+    for (const root of policy.roots) {
+      if (!allowedSeeds.includes(root)) failedUris.push(root)
+    }
     const enqueuedUris = new Set<string>()
     let frontierTruncated = allowedSeeds.length > maxPages
     for (const seed of allowedSeeds.slice(0, maxPages)) {
       await queue.addRequest({ url: seed })
       enqueuedUris.add(seed)
     }
-    const prepared: PreparedPage[] = []
-    const failedUris: string[] = []
-    const warnings: CrawlWarning[] = []
+    let terminalError: DocumentationSourceError | undefined
+
+    const renderPage = async (
+      renderer: DocumentationRenderer,
+      url: string,
+      initialHtml: string,
+      staticBytes: number
+    ): Promise<RenderedDocumentation> => {
+      if (remainingTime() <= 0) {
+        throw new DocumentationSourceError(
+          "time_limit_exceeded",
+          "Web documentation time limit was reached"
+        )
+      }
+      const transferBudget = Math.min(
+        maxPageBytes - staticBytes,
+        maxTotalBytes - fetchedBytes
+      )
+      if (transferBudget <= 0) {
+        throw new DocumentationSourceError(
+          "limit_exceeded",
+          "Client-rendered documentation has no remaining byte budget"
+        )
+      }
+      let observedTransferredBytes = 0
+      const renderTimeoutSignal = AbortSignal.timeout(
+        Math.max(1, Math.min(requestTimeoutMs, remainingTime()))
+      )
+      const renderSignal =
+        options.signal === undefined
+          ? renderTimeoutSignal
+          : AbortSignal.any([options.signal, renderTimeoutSignal])
+      let rendered: RenderedDocumentation
+      try {
+        rendered = await new Promise<RenderedDocumentation>(
+          (resolve, reject) => {
+            const aborted = () =>
+              reject(
+                new DocumentationSourceError(
+                  options.signal?.aborted === true
+                    ? "aborted"
+                    : "time_limit_exceeded",
+                  options.signal?.aborted === true
+                    ? "Documentation crawl was cancelled"
+                    : "Client-rendered documentation exceeded its time budget"
+                )
+              )
+            renderSignal.addEventListener("abort", aborted, { once: true })
+            void renderer
+              .render({
+                url,
+                initialHtml,
+                maxTransferBytes: transferBudget,
+                maxSerializedBytes: maxPageBytes,
+                signal: renderSignal,
+                fetchResource: async (target, requestedLimit, signal) => {
+                  const remaining = transferBudget - observedTransferredBytes
+                  if (remaining <= 0) {
+                    throw new DocumentationSourceError(
+                      "limit_exceeded",
+                      "Client-rendered documentation exceeded its transfer budget"
+                    )
+                  }
+                  const resource = await safeFetchBytes(target, {
+                    policy,
+                    dispatcher,
+                    ...(signal === undefined ? {} : { signal }),
+                    timeoutMs: Math.max(
+                      1,
+                      Math.min(requestTimeoutMs, remainingTime())
+                    ),
+                    maxBytes: Math.min(requestedLimit, remaining),
+                    userAgent,
+                  })
+                  observedTransferredBytes += resource.bytes
+                  return {
+                    body: resource.body,
+                    contentType: resource.contentType,
+                    status: resource.status,
+                  }
+                },
+              })
+              .then(resolve, reject)
+              .finally(() => renderSignal.removeEventListener("abort", aborted))
+          }
+        )
+      } catch (error) {
+        if (options.signal?.aborted === true) {
+          throw new DocumentationSourceError(
+            "aborted",
+            "Documentation crawl was cancelled"
+          )
+        }
+        if (renderTimeoutSignal.aborted) {
+          throw new DocumentationSourceError(
+            "time_limit_exceeded",
+            "Client-rendered documentation exceeded its time budget"
+          )
+        }
+        throw error
+      }
+      if (
+        !Number.isSafeInteger(rendered.transferredBytes) ||
+        rendered.transferredBytes < 0 ||
+        rendered.transferredBytes !== observedTransferredBytes ||
+        rendered.transferredBytes > transferBudget ||
+        Buffer.byteLength(rendered.html, "utf8") > maxPageBytes
+      ) {
+        throw new DocumentationSourceError(
+          "limit_exceeded",
+          "Client renderer returned content outside the enforced byte budget"
+        )
+      }
+      fetchedBytes += rendered.transferredBytes
+      return rendered
+    }
 
     const crawler = new BasicCrawler(
       {
@@ -264,10 +474,7 @@ export async function crawlWebDocumentation(
           }
           if (Date.now() - startedAt >= timeoutMs) {
             request.noRetry = true
-            warnings.push({
-              code: "time_limit_reached",
-              message: "Web documentation time limit was reached",
-            })
+            addTimeLimitWarning()
             return
           }
           const requestedUrl = policy.canonicalize(request.url)
@@ -282,10 +489,7 @@ export async function crawlWebDocumentation(
           const remainingBytes = maxTotalBytes - fetchedBytes
           if (remainingBytes <= 0) {
             request.noRetry = true
-            warnings.push({
-              code: "byte_limit_reached",
-              message: "Web documentation byte limit was reached",
-            })
+            addByteLimitWarning()
             return
           }
           try {
@@ -299,6 +503,7 @@ export async function crawlWebDocumentation(
               maxBytes: Math.min(maxPageBytes, remainingBytes),
               userAgent,
             })
+            fetchedBytes += response.bytes
             if (response.status === 429 || response.status >= 500) {
               throw new DocumentationSourceError(
                 "fetch_failed",
@@ -323,28 +528,22 @@ export async function crawlWebDocumentation(
                 "Documentation page is not HTML"
               )
             }
-            fetchedBytes += response.bytes
             let html = response.body
             const canRender =
               options.renderer !== undefined &&
-              configuredForRendering(
-                response.finalUrl,
-                options.clientRenderedPaths ?? []
-              )
-            const authorizeRenderedRequest = async (target: string) => {
-              const canonical = policy.canonicalize(target, response.finalUrl)
-              await policy.assertResolvedTarget(canonical)
-            }
+              configuredForRendering(response.finalUrl, renderPaths)
             let parsed
             try {
               parsed = parseHtmlDocument(html, response.finalUrl)
             } catch (error) {
               if (!canRender || options.renderer === undefined) throw error
-              html = await options.renderer.render(
+              const rendered = await renderPage(
+                options.renderer,
                 response.finalUrl,
-                options.signal,
-                authorizeRenderedRequest
+                html,
+                response.bytes
               )
+              html = rendered.html
               parsed = parseHtmlDocument(html, response.finalUrl)
             }
             if (
@@ -352,11 +551,13 @@ export async function crawlWebDocumentation(
               canRender &&
               options.renderer !== undefined
             ) {
-              html = await options.renderer.render(
+              const rendered = await renderPage(
+                options.renderer,
                 response.finalUrl,
-                options.signal,
-                authorizeRenderedRequest
+                html,
+                response.bytes
               )
+              html = rendered.html
               parsed = parseHtmlDocument(html, response.finalUrl)
             }
             const canonicalHint = extractCanonical(html, response.finalUrl)
@@ -368,7 +569,7 @@ export async function crawlWebDocumentation(
                   response.finalUrl
                 )
               } catch {
-                // An invalid canonical hint is ignored rather than granted authority.
+                // Canonical hints are evidence, never crawl authority.
               }
             }
             const links = parsed.links
@@ -407,13 +608,30 @@ export async function crawlWebDocumentation(
             throw normalized
           }
         },
-        failedRequestHandler: ({ request }) => {
+        failedRequestHandler: async ({ request }, error) => {
+          const normalized = documentationError(error)
+          if (normalized.code === "aborted") {
+            terminalError = normalized
+            await crawler.autoscaledPool?.abort()
+            return
+          }
+          if (normalized.code === "limit_exceeded") addByteLimitWarning()
+          if (normalized.code === "time_limit_exceeded") {
+            addTimeLimitWarning()
+          }
           failedUris.push(request.url)
         },
       },
       configuration
     )
     await crawler.run()
+    if (options.signal?.aborted === true) {
+      throw new DocumentationSourceError(
+        "aborted",
+        "Documentation crawl was cancelled"
+      )
+    }
+    if (terminalError !== undefined) throw terminalError
     if (frontierTruncated) {
       warnings.push({
         code: "page_limit_reached",

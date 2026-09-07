@@ -1,5 +1,7 @@
 import { posix } from "node:path"
 
+import { hashCanonical } from "@sentinel/contracts"
+
 import type {
   CheckoutSnapshot,
   GitHubRepositoryIdentity,
@@ -27,13 +29,28 @@ export interface RepositoryDocumentationOptions {
   readonly previousPages?: readonly PreviousPageSnapshot[]
 }
 
-function repositoryUri(
+function repositoryRevisionUri(
   repository: GitHubRepositoryIdentity,
   commitSha: string,
   path = ""
 ): string {
   const suffix = path.length === 0 ? "" : `/${path}`
   return `repository://${repository.host}/${repository.owner}/${repository.name}/commit/${commitSha}${suffix}`
+}
+
+function repositoryPageUri(
+  repository: GitHubRepositoryIdentity,
+  path: string
+): string {
+  return `repository://${repository.host}/${repository.owner}/${repository.name}/path/${path}`
+}
+
+function repositorySourceUri(
+  repository: GitHubRepositoryIdentity,
+  roots: readonly string[]
+): string {
+  const scope = hashCanonical({ roots }).slice("sha256:".length)
+  return `repository://${repository.host}/${repository.owner}/${repository.name}/docs-scope/${scope}`
 }
 
 function normalizeRoot(input: string): string {
@@ -58,8 +75,7 @@ function resolveRepositoryLink(
   currentPath: string,
   href: string,
   approvedPaths: ReadonlySet<string>,
-  repository: GitHubRepositoryIdentity,
-  commitSha: string
+  repository: GitHubRepositoryIdentity
 ): string | undefined {
   const withoutFragment = href.split("#", 1)[0] ?? ""
   if (
@@ -86,7 +102,7 @@ function resolveRepositoryLink(
   const matched = alternatives.find((path) => approvedPaths.has(path))
   return matched === undefined
     ? undefined
-    : repositoryUri(repository, commitSha, matched)
+    : repositoryPageUri(repository, matched)
 }
 
 export async function prepareRepositoryDocumentation(
@@ -127,7 +143,7 @@ export async function prepareRepositoryDocumentation(
   let fetchedBytes = 0
 
   for (const entry of entries) {
-    const uri = repositoryUri(
+    const uri = repositoryRevisionUri(
       options.repository,
       options.snapshot.metadata.commitSha,
       entry.path
@@ -165,7 +181,7 @@ export async function prepareRepositoryDocumentation(
       const parsed = parseMarkdownDocument(markdown, uri)
       prepared.push({
         sourceUri: uri,
-        canonicalUri: uri,
+        canonicalUri: repositoryPageUri(options.repository, entry.path),
         mediaType: "text/markdown",
         document: {
           ...parsed,
@@ -175,8 +191,7 @@ export async function prepareRepositoryDocumentation(
                 entry.path,
                 href,
                 approvedPaths,
-                options.repository,
-                options.snapshot.metadata.commitSha
+                options.repository
               )
             )
             .filter((link): link is string => link !== undefined),
@@ -192,10 +207,7 @@ export async function prepareRepositoryDocumentation(
   return buildDocumentationMap({
     applicationId: options.applicationId,
     kind: "repository",
-    rootUri: repositoryUri(
-      options.repository,
-      options.snapshot.metadata.commitSha
-    ),
+    rootUri: repositorySourceUri(options.repository, roots),
     pages: prepared,
     failedUris,
     warnings,
