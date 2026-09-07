@@ -9,6 +9,8 @@
 ## Conventions
 
 - Keep source access read-only, bounded, and tied to immutable provider identity.
+- Reject unsupported repository identity before checkout and pin browser DNS before navigation.
+- Apply the approved-origin policy to both HTTP and WebSocket browser traffic.
 - Inject repository, URL, browser, and clock ports for deterministic tests.
 - Treat errors as reason-coded compatibility output; never forward provider detail or secrets.
 - Close checkouts, dispatchers, contexts, and browsers on every terminal path.

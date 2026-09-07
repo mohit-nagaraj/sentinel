@@ -67,6 +67,7 @@ describe("versioned wire contracts", () => {
     previewUrlPattern: "https://{branch}.preview.hi.events",
     authentication: {
       method: "credentials",
+      automationConfirmed: true,
       fields: [
         { key: "email", label: "Email", value: "operator@example.com" },
         { key: "password", label: "Password", value: "target-credential" },
@@ -109,6 +110,7 @@ describe("versioned wire contracts", () => {
       },
       authentication: {
         method: "credentials",
+        automationConfirmed: true,
         revision: 1,
         fields: parsed.authentication.fields.map(({ key, label }) => ({
           key,
@@ -167,7 +169,11 @@ describe("versioned wire contracts", () => {
     expect(() =>
       onboardingSubmissionSchema.parse({
         ...onboardingSubmission,
-        authentication: { method: "storage_state", value: "not-json" },
+        authentication: {
+          method: "storage_state",
+          automationConfirmed: false,
+          value: "not-json",
+        },
       })
     ).toThrow("valid JSON")
   })

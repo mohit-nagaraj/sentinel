@@ -28,7 +28,9 @@ bounded, disposable checkout. The report cites evidence for TypeScript/React,
 PHP/Laravel, Laravel routes, OpenAPI/Scramble, and Playwright assets, then names
 the selected adapters. Web documentation and application probes enforce HTTPS,
 DNS/public-network, approved-origin/path, redirect, timeout, and response-size
-boundaries. A real Playwright page load confirms browser readiness.
+boundaries. Repository approval is checked before checkout. A real Playwright page
+load pins the approved DNS result and applies the origin policy to HTTP and
+WebSocket traffic.
 
 Reports are `supported`, `partial`, or `blocked`. Missing optional target-owned
 Playwright assets produce a warning; unreachable, unsafe, unsupported, or
@@ -36,15 +38,20 @@ misaligned core inputs produce blockers and operator actions.
 
 ## Secrets and authorization
 
-Server Actions validate authorization on every call. The server derives the
-operator UUID from `SENTINEL_OPERATOR_ID`, and storage queries repeat the owner
-predicate next to the data. The client receives explicit public projections,
-not database rows.
+The Proxy requires `SENTINEL_OPERATOR_TOKEN` through HTTP Basic or Bearer
+authentication, and Server Actions repeat that request check on every call. The
+server derives the owner UUID from `SENTINEL_OPERATOR_ID`, and storage queries
+repeat the owner predicate next to the data. The client receives explicit public
+projections, not database rows.
 
 Credentials and storage state are transient form inputs. Supabase Vault stores
 their encrypted values while ordinary tables retain opaque references only.
 Client props, Server Action responses, logs, run state, source rows, graph data,
 and model context do not contain plaintext values.
+
+Credential and storage-state methods also require an operator attestation that
+the deployment accepts automated login without CAPTCHA or mandatory human
+verification. Missing attestation is a compatibility blocker with a human action.
 
 ## Freshness and confirmation
 
@@ -54,6 +61,8 @@ Relevant edits invalidate prior inspection and confirmation. Applications with
 published knowledge remain visibly stale after reinspection until a later
 refresh succeeds.
 
-Scope confirmation uses a compare-and-set write against the current inspected
-fingerprint and rejects blocked reports. The confirmed application is ready for
-initialization, but onboarding itself creates no initialization run.
+Scope confirmation reconstructs and fingerprints the submitted non-secret form,
+rejects secret/authentication edits, and then uses a compare-and-set write against
+the current inspected fingerprint. Editing an inspected field requires
+reinspection. The confirmed application is ready for initialization, but
+onboarding itself creates no initialization run.

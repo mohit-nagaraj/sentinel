@@ -1,3 +1,7 @@
+import type { LookupAddress } from "node:dns"
+import { lookup as dnsLookup } from "node:dns/promises"
+import { isIP } from "node:net"
+
 import { chromium, type BrowserType } from "playwright"
 
 import {
@@ -13,8 +17,15 @@ import {
   type OnboardingConfiguration,
 } from "@sentinel/contracts"
 
-import { createBrowserPolicy, isAllowedBrowserUrl } from "../browser/policy.ts"
-import { DocumentationUrlPolicy } from "../source/documentation/url-policy.ts"
+import {
+  createBrowserPolicy,
+  isAllowedBrowserUrl,
+  isAllowedBrowserWebSocketUrl,
+} from "../browser/policy.ts"
+import {
+  DocumentationUrlPolicy,
+  isPublicAddress,
+} from "../source/documentation/url-policy.ts"
 import { safeFetchBytes } from "../source/documentation/safe-fetch.ts"
 import {
   GitHubSourceConnector,
@@ -63,6 +74,48 @@ export interface ApplicationReadinessProbe {
     allowedOrigins: readonly string[],
     signal?: AbortSignal
   ): Promise<ApplicationReadinessResult>
+}
+
+export interface BrowserHostResolver {
+  lookup(hostname: string): Promise<readonly LookupAddress[]>
+}
+
+const defaultBrowserHostResolver: BrowserHostResolver = {
+  lookup: (hostname) => dnsLookup(hostname, { all: true, verbatim: true }),
+}
+
+export async function resolvePinnedBrowserHost(
+  url: string,
+  options: {
+    readonly allowPrivateNetworkForTests?: boolean
+    readonly resolver?: BrowserHostResolver
+  } = {}
+): Promise<{ readonly hostname: string; readonly address: string } | null> {
+  const hostname = new URL(url).hostname.replace(/^\[|\]$/g, "")
+  const allowPrivate = options.allowPrivateNetworkForTests ?? false
+  if (isIP(hostname) !== 0) {
+    if (!allowPrivate && !isPublicAddress(hostname)) {
+      throw new Error("Application destination is private or reserved")
+    }
+    return null
+  }
+  const addresses = await (
+    options.resolver ?? defaultBrowserHostResolver
+  ).lookup(hostname)
+  if (addresses.length === 0) {
+    throw new Error("Application destination did not resolve")
+  }
+  if (
+    !allowPrivate &&
+    addresses.some((entry) => !isPublicAddress(entry.address))
+  ) {
+    throw new Error("Application destination is private or reserved")
+  }
+  const selected = addresses.find((entry) => entry.family === 4) ?? addresses[0]
+  if (selected === undefined) {
+    throw new Error("Application destination did not resolve")
+  }
+  return { hostname, address: selected.address }
 }
 
 export interface CompatibilityInspectorOptions {
@@ -169,6 +222,7 @@ export class PlaywrightApplicationReadinessProbe implements ApplicationReadiness
     private readonly browserType: BrowserType = chromium,
     private readonly options: {
       readonly allowInsecureLocalhost?: boolean
+      readonly allowPrivateNetworkForTests?: boolean
       readonly timeoutMs?: number
     } = {}
   ) {}
@@ -187,7 +241,24 @@ export class PlaywrightApplicationReadinessProbe implements ApplicationReadiness
         maxDurationMs: this.options.timeoutMs ?? 20_000,
       },
     })
-    const browser = await this.browserType.launch({ headless: true })
+    const pinnedHost = await resolvePinnedBrowserHost(url, {
+      allowPrivateNetworkForTests:
+        this.options.allowPrivateNetworkForTests ?? false,
+    })
+    const pinnedAddress =
+      pinnedHost === null || !pinnedHost.address.includes(":")
+        ? pinnedHost?.address
+        : `[${pinnedHost.address}]`
+    const browser = await this.browserType.launch({
+      headless: true,
+      ...(pinnedHost === null || pinnedAddress === undefined
+        ? {}
+        : {
+            args: [
+              `--host-resolver-rules=MAP ${pinnedHost.hostname} ${pinnedAddress}`,
+            ],
+          }),
+    })
     try {
       const context = await browser.newContext({ serviceWorkers: "block" })
       try {
@@ -196,6 +267,13 @@ export class PlaywrightApplicationReadinessProbe implements ApplicationReadiness
             await route.continue()
           } else {
             await route.abort("blockedbyclient")
+          }
+        })
+        await context.routeWebSocket("**/*", (webSocket) => {
+          if (isAllowedBrowserWebSocketUrl(webSocket.url(), policy)) {
+            webSocket.connectToServer()
+          } else {
+            webSocket.close({ code: 1008, reason: "Blocked by browser policy" })
           }
         })
         const page = await context.newPage()
@@ -354,193 +432,251 @@ export class CompatibilityInspector {
       "configuration",
       configuration.crawl.allowedHosts
     )
+    const authenticationNeedsConfirmation =
+      configuration.authentication.method !== "none" &&
+      !configuration.authentication.automationConfirmed
     addEvidence(
       "authentication_automatable",
-      "detected",
-      `${configuration.authentication.method}_authentication_configured`,
+      authenticationNeedsConfirmation ? "blocked" : "detected",
+      authenticationNeedsConfirmation
+        ? "authentication_requires_confirmation"
+        : `${configuration.authentication.method}_authentication_configured`,
       configuration.authentication.method === "none"
         ? "The selected workflow does not require authentication"
-        : "Authentication is configured through restricted secret references",
+        : authenticationNeedsConfirmation
+          ? "Automated login without human verification has not been confirmed"
+          : "The operator confirmed automated login without human verification",
       "configuration"
     )
-
-    try {
-      repository = await this.options.repository.open(
-        configuration.repository.url,
-        configuration.repository.ref,
-        signal
+    if (authenticationNeedsConfirmation) {
+      addFinding(
+        "blocker",
+        "authentication_requires_confirmation",
+        "Protected application access is not confirmed as automatable",
+        "Verify login without CAPTCHA or human verification and inspect again"
       )
-      resolvedCommitSha = repository.resolvedCommitSha
-      if (!this.approvedRepositories.has(repository.identity.toLowerCase())) {
+    }
+
+    const addUnavailableRepositoryCapabilities = () => {
+      for (const capability of [
+        "typescript_react",
+        "php_laravel",
+        "laravel_routes",
+        "openapi_scramble",
+        "playwright_assets",
+      ] as const) {
         addEvidence(
-          "repository_resolved",
+          capability,
           "blocked",
-          "repository_not_approved",
-          "Repository identity is outside the approved Hi.Events sources",
+          `${capability}_not_evaluated`,
+          `${capability.replaceAll("_", " ")} could not be evaluated without an approved repository checkout`,
           "repository"
         )
-        addFinding(
-          "blocker",
-          "repository_not_approved",
-          "The repository is not an approved Hi.Events source",
-          "Select the configured Hi.Events fork or request explicit upstream approval"
-        )
-      } else {
-        addEvidence(
-          "repository_resolved",
-          "detected",
-          "immutable_commit_resolved",
-          "Repository reference resolved to an immutable commit",
-          "repository",
-          [resolvedCommitSha]
-        )
-        const paths = new Set(
-          repository.paths.map((path) => path.toLowerCase())
-        )
-        const configs = await readJsonFiles(
-          repository,
-          new Set(["package.json", "composer.json"])
-        )
-        const packageEntries = [...configs.entries()].filter(([path]) =>
-          path.toLowerCase().endsWith("package.json")
-        )
-        const composerEntries = [...configs.entries()].filter(([path]) =>
-          path.toLowerCase().endsWith("composer.json")
-        )
-        const reactConfigs = packageEntries
-          .filter(([, value]) =>
-            ["dependencies", "devDependencies", "peerDependencies"].some(
-              (key) => objectKeys(value, key).includes("react")
-            )
-          )
-          .map(([path]) => path)
-        const laravelConfigs = composerEntries
-          .filter(([, value]) =>
-            ["require", "require-dev"].some((key) =>
-              objectKeys(value, key).includes("laravel/framework")
-            )
-          )
-          .map(([path]) => path)
-        const scrambleConfigs = composerEntries
-          .filter(([, value]) =>
-            ["require", "require-dev"].some((key) =>
-              objectKeys(value, key).includes("dedoc/scramble")
-            )
-          )
-          .map(([path]) => path)
-        const tsxPaths = repository.paths.filter((path) =>
-          /\.(?:tsx|jsx)$/i.test(path)
-        )
-        const routePaths = repository.paths.filter((path) =>
-          /(?:^|\/)routes\/(?:api|web)\.php$/i.test(path)
-        )
-        const openApiPaths = repository.paths.filter((path) =>
-          /(?:^|\/)(?:openapi|swagger)(?:\.[^.]+)?\.(?:json|ya?ml)$/i.test(path)
-        )
-        const playwrightPaths = repository.paths.filter((path) =>
-          /(?:^|\/)playwright\.config\.(?:js|mjs|cjs|ts)$|(?:^|\/)tests?\/.*\.spec\.(?:js|ts)$/i.test(
-            path
-          )
-        )
-
-        const capability = (
-          name: CompatibilityCapability,
-          detected: boolean,
-          references: readonly string[],
-          adapter: string,
-          required: boolean,
-          missingSummary: string,
-          humanAction: string
-        ) => {
-          if (detected) {
-            addEvidence(
-              name,
-              "detected",
-              `${name}_detected`,
-              `${name.replaceAll("_", " ")} evidence was detected`,
-              "repository",
-              references
-            )
-            selectedAdapters.push(adapter)
-            repositoryPaths.push(...references.map(repositoryRoot))
-            return
-          }
-          addEvidence(
-            name,
-            "missing",
-            `${name}_missing`,
-            missingSummary,
-            "repository"
-          )
-          addFinding(
-            required ? "blocker" : "warning",
-            `${name}_missing`,
-            missingSummary,
-            humanAction
-          )
-        }
-
-        capability(
-          "typescript_react",
-          reactConfigs.length > 0 && tsxPaths.length > 0,
-          [...reactConfigs, ...tsxPaths.slice(0, 5)],
-          "typescript_react",
-          true,
-          "TypeScript or React source evidence is incomplete",
-          "Point the repository ref at a commit containing the React frontend"
-        )
-        capability(
-          "php_laravel",
-          laravelConfigs.length > 0 && paths.has("artisan"),
-          [...laravelConfigs, ...(paths.has("artisan") ? ["artisan"] : [])],
-          "php_laravel",
-          true,
-          "PHP or Laravel source evidence is incomplete",
-          "Point the repository ref at a commit containing the Laravel backend"
-        )
-        capability(
-          "laravel_routes",
-          routePaths.length > 0,
-          routePaths.slice(0, 10),
-          "laravel_routes",
-          scrambleConfigs.length === 0 && openApiPaths.length === 0,
-          "Laravel route evidence was not detected",
-          "Add or expose Laravel API/web route files or a supported OpenAPI artifact"
-        )
-        capability(
-          "openapi_scramble",
-          scrambleConfigs.length > 0 || openApiPaths.length > 0,
-          [...scrambleConfigs, ...openApiPaths].slice(0, 10),
-          "openapi_scramble",
-          routePaths.length === 0,
-          "OpenAPI or Scramble evidence was not detected",
-          "Expose a supported OpenAPI artifact or retain parseable Laravel routes"
-        )
-        capability(
-          "playwright_assets",
-          playwrightPaths.length > 0,
-          playwrightPaths.slice(0, 10),
-          "playwright",
-          false,
-          "Existing Playwright assets were not detected",
-          "Confirm the target can use Sentinel's browser adapter without target-owned fixtures"
-        )
       }
-    } catch (error) {
-      normalizeError(error)
+    }
+    const repositoryUrl = new URL(configuration.repository.url)
+    const requestedRepositoryIdentity = repositoryUrl.pathname
+      .replace(/^\//, "")
+      .replace(/\.git$/, "")
+      .toLowerCase()
+    if (!this.approvedRepositories.has(requestedRepositoryIdentity)) {
       addEvidence(
         "repository_resolved",
         "blocked",
-        "repository_unreachable",
-        "Repository metadata or bounded checkout could not be inspected",
+        "repository_not_approved",
+        "Repository identity is outside the approved Hi.Events sources",
         "repository"
       )
       addFinding(
         "blocker",
-        "repository_unreachable",
-        "The repository or requested ref could not be inspected",
-        "Verify repository access and select an existing branch or immutable commit"
+        "repository_not_approved",
+        "The repository is not an approved Hi.Events source",
+        "Select the configured Hi.Events fork or request explicit upstream approval"
       )
+      addUnavailableRepositoryCapabilities()
+    } else {
+      try {
+        repository = await this.options.repository.open(
+          configuration.repository.url,
+          configuration.repository.ref,
+          signal
+        )
+        resolvedCommitSha = repository.resolvedCommitSha
+        if (!this.approvedRepositories.has(repository.identity.toLowerCase())) {
+          addEvidence(
+            "repository_resolved",
+            "blocked",
+            "repository_not_approved",
+            "Repository identity is outside the approved Hi.Events sources",
+            "repository"
+          )
+          addFinding(
+            "blocker",
+            "repository_not_approved",
+            "The repository is not an approved Hi.Events source",
+            "Select the configured Hi.Events fork or request explicit upstream approval"
+          )
+          addUnavailableRepositoryCapabilities()
+        } else {
+          addEvidence(
+            "repository_resolved",
+            "detected",
+            "immutable_commit_resolved",
+            "Repository reference resolved to an immutable commit",
+            "repository",
+            [resolvedCommitSha]
+          )
+          const paths = new Set(
+            repository.paths.map((path) => path.toLowerCase())
+          )
+          const configs = await readJsonFiles(
+            repository,
+            new Set(["package.json", "composer.json"])
+          )
+          const packageEntries = [...configs.entries()].filter(([path]) =>
+            path.toLowerCase().endsWith("package.json")
+          )
+          const composerEntries = [...configs.entries()].filter(([path]) =>
+            path.toLowerCase().endsWith("composer.json")
+          )
+          const reactConfigs = packageEntries
+            .filter(([, value]) =>
+              ["dependencies", "devDependencies", "peerDependencies"].some(
+                (key) => objectKeys(value, key).includes("react")
+              )
+            )
+            .map(([path]) => path)
+          const laravelConfigs = composerEntries
+            .filter(([, value]) =>
+              ["require", "require-dev"].some((key) =>
+                objectKeys(value, key).includes("laravel/framework")
+              )
+            )
+            .map(([path]) => path)
+          const scrambleConfigs = composerEntries
+            .filter(([, value]) =>
+              ["require", "require-dev"].some((key) =>
+                objectKeys(value, key).includes("dedoc/scramble")
+              )
+            )
+            .map(([path]) => path)
+          const tsxPaths = repository.paths.filter((path) =>
+            /\.(?:tsx|jsx)$/i.test(path)
+          )
+          const routePaths = repository.paths.filter((path) =>
+            /(?:^|\/)routes\/(?:api|web)\.php$/i.test(path)
+          )
+          const openApiPaths = repository.paths.filter((path) =>
+            /(?:^|\/)(?:openapi|swagger)(?:\.[^.]+)?\.(?:json|ya?ml)$/i.test(
+              path
+            )
+          )
+          const playwrightPaths = repository.paths.filter((path) =>
+            /(?:^|\/)playwright\.config\.(?:js|mjs|cjs|ts)$|(?:^|\/)tests?\/.*\.spec\.(?:js|ts)$/i.test(
+              path
+            )
+          )
+
+          const capability = (
+            name: CompatibilityCapability,
+            detected: boolean,
+            references: readonly string[],
+            adapter: string,
+            required: boolean,
+            missingSummary: string,
+            humanAction: string
+          ) => {
+            if (detected) {
+              addEvidence(
+                name,
+                "detected",
+                `${name}_detected`,
+                `${name.replaceAll("_", " ")} evidence was detected`,
+                "repository",
+                references
+              )
+              selectedAdapters.push(adapter)
+              repositoryPaths.push(...references.map(repositoryRoot))
+              return
+            }
+            addEvidence(
+              name,
+              "missing",
+              `${name}_missing`,
+              missingSummary,
+              "repository"
+            )
+            addFinding(
+              required ? "blocker" : "warning",
+              `${name}_missing`,
+              missingSummary,
+              humanAction
+            )
+          }
+
+          capability(
+            "typescript_react",
+            reactConfigs.length > 0 && tsxPaths.length > 0,
+            [...reactConfigs, ...tsxPaths.slice(0, 5)],
+            "typescript_react",
+            true,
+            "TypeScript or React source evidence is incomplete",
+            "Point the repository ref at a commit containing the React frontend"
+          )
+          capability(
+            "php_laravel",
+            laravelConfigs.length > 0 && paths.has("artisan"),
+            [...laravelConfigs, ...(paths.has("artisan") ? ["artisan"] : [])],
+            "php_laravel",
+            true,
+            "PHP or Laravel source evidence is incomplete",
+            "Point the repository ref at a commit containing the Laravel backend"
+          )
+          capability(
+            "laravel_routes",
+            routePaths.length > 0,
+            routePaths.slice(0, 10),
+            "laravel_routes",
+            scrambleConfigs.length === 0 && openApiPaths.length === 0,
+            "Laravel route evidence was not detected",
+            "Add or expose Laravel API/web route files or a supported OpenAPI artifact"
+          )
+          capability(
+            "openapi_scramble",
+            scrambleConfigs.length > 0 || openApiPaths.length > 0,
+            [...scrambleConfigs, ...openApiPaths].slice(0, 10),
+            "openapi_scramble",
+            routePaths.length === 0,
+            "OpenAPI or Scramble evidence was not detected",
+            "Expose a supported OpenAPI artifact or retain parseable Laravel routes"
+          )
+          capability(
+            "playwright_assets",
+            playwrightPaths.length > 0,
+            playwrightPaths.slice(0, 10),
+            "playwright",
+            false,
+            "Existing Playwright assets were not detected",
+            "Confirm the target can use Sentinel's browser adapter without target-owned fixtures"
+          )
+        }
+      } catch (error) {
+        normalizeError(error)
+        addEvidence(
+          "repository_resolved",
+          "blocked",
+          "repository_unreachable",
+          "Repository metadata or bounded checkout could not be inspected",
+          "repository"
+        )
+        addFinding(
+          "blocker",
+          "repository_unreachable",
+          "The repository or requested ref could not be inspected",
+          "Verify repository access and select an existing branch or immutable commit"
+        )
+        addUnavailableRepositoryCapabilities()
+      }
     }
 
     try {

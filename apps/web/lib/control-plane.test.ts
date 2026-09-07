@@ -52,6 +52,7 @@ function validForm(
   form.set("denyPrivilegeChanges", "on")
   form.set("capabilityHints", "Attendee checkout")
   if (authentication === "credentials") {
+    form.set("authenticationAutomationConfirmed", "on")
     form.append("credentialKey", "email")
     form.append("credentialLabel", "Email")
     form.append("credentialValue", "operator@example.com")
@@ -60,6 +61,7 @@ function validForm(
     form.append("credentialValue", "super-private-target-password")
   }
   if (authentication === "storage_state") {
+    form.set("authenticationAutomationConfirmed", "on")
     form.set("storageState", JSON.stringify({ cookies: [], origins: [] }))
   }
   return form
@@ -376,6 +378,7 @@ describe("onboarding control plane", () => {
       configuration: {
         authentication: {
           method: "credentials",
+          automationConfirmed: true,
           configuredFields: [
             { key: "email", label: "Email" },
             { key: "password", label: "Password" },
@@ -403,6 +406,17 @@ describe("onboarding control plane", () => {
       "inputFingerprint",
       inspected.application?.compatibility?.inputFingerprint ?? ""
     )
+    form.delete("credentialValue")
+    form.append("credentialValue", "")
+    form.append("credentialValue", "")
+    form.set("repositoryRef", "main")
+    const staleConfirmation = await controlPlane.confirm(form)
+    expect(staleConfirmation.status).toBe("validation_error")
+    expect(staleConfirmation.fieldErrors["form"]).toContain(
+      "Configuration changed; inspect the current values again"
+    )
+
+    form.set("repositoryRef", "develop")
     const confirmed = await controlPlane.confirm(form)
 
     expect(confirmed).toMatchObject({
@@ -429,6 +443,7 @@ describe("onboarding control plane", () => {
       ],
       authentication: {
         method: "credentials",
+        automationConfirmed: true,
         revision: 1,
         fields: [
           {
@@ -480,6 +495,7 @@ describe("onboarding control plane", () => {
     expect(secrets.deleted).toEqual([`secret-ref:v1:${"c".repeat(64)}`])
     expect(store.record?.configuration.authentication).toMatchObject({
       method: "credentials",
+      automationConfirmed: true,
       revision: 2,
     })
   })
@@ -500,6 +516,77 @@ describe("onboarding control plane", () => {
     expect(secrets.created).toHaveLength(1)
     expect(secrets.deleted).toEqual([secrets.created[0]?.reference])
     expect(JSON.stringify(result)).not.toContain("must-not-leak")
+  })
+
+  it("cleans newly created Vault references when an existing edit fails to save", async () => {
+    const existingForm = validForm("credentials")
+    const bootstrap = createControlPlane({
+      operatorId,
+      store,
+      secrets,
+      inspector: new FakeInspector(),
+    })
+    const initial = await bootstrap.inspect(existingForm)
+    expect(initial.status).toBe("inspected")
+    const previousReferences = [
+      ...secrets.created.map((entry) => entry.reference),
+    ]
+
+    store.saveCalls.length = 0
+    store.failSaveAt = 1
+    const edit = validForm("credentials")
+    edit.set("recordId", applicationId)
+    edit.delete("credentialValue")
+    edit.append("credentialValue", "")
+    edit.append("credentialValue", "replacement-after-failure")
+
+    const result = await bootstrap.inspect(edit)
+
+    expect(result.status).toBe("error")
+    const replacement = secrets.created.at(-1)?.reference
+    expect(replacement).toBeDefined()
+    expect(previousReferences).not.toContain(replacement)
+    expect(secrets.deleted).toContain(replacement)
+    expect(store.deleteDraftCalls).toHaveLength(0)
+  })
+
+  it("blocks protected targets until no-CAPTCHA automation is confirmed", async () => {
+    const controlPlane = createControlPlane({
+      operatorId,
+      store,
+      secrets,
+      inspector: {
+        inspect: async (configuration) => {
+          const supported = compatibility(configuration)
+          const finding = {
+            severity: "blocker" as const,
+            code: "authentication_requires_confirmation",
+            summary: "Automated authentication has not been confirmed",
+            humanAction:
+              "Verify automated login without CAPTCHA and inspect again",
+          }
+          return compatibilityReportSchema.parse({
+            ...supported,
+            status: "blocked",
+            findings: [finding],
+            humanActions: [finding.humanAction],
+          })
+        },
+      },
+    })
+    const form = validForm("credentials")
+    form.delete("authenticationAutomationConfirmed")
+
+    const result = await controlPlane.inspect(form)
+
+    expect(result.application?.compatibility).toMatchObject({
+      status: "blocked",
+      findings: [
+        expect.objectContaining({
+          code: "authentication_requires_confirmation",
+        }),
+      ],
+    })
   })
 
   it("blocks cross-operator identifiers before secret or inspection work", async () => {

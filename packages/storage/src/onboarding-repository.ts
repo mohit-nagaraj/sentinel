@@ -292,6 +292,10 @@ export function toPublicOnboardingApplication(
         method: authentication.method,
         configuredFields,
         revision: authentication.revision,
+        automationConfirmed:
+          authentication.method === "none"
+            ? true
+            : authentication.automationConfirmed,
       },
       crawl: record.configuration.crawl,
       capabilityHints: record.configuration.capabilityHints,
@@ -380,27 +384,43 @@ export class OnboardingRepository {
 
     return this.database.transaction(async (transaction) => {
       if (recordId === undefined) {
-        const applicationRows = await transaction.query<{ id: string }>(
+        const applicationRows = await transaction.query<{
+          id: string
+          knowledge_stale: boolean
+        }>(
           `insert into sentinel.applications (
              stable_key, name, deployment_url, status
            ) values ($1, $2, $3, 'inspecting')
-           on conflict (stable_key) do nothing
-           returning id`,
+           on conflict (stable_key) do update
+           set name = excluded.name,
+               deployment_url = excluded.deployment_url,
+               status = case
+                 when sentinel.applications.graph_revision > 0
+                   or sentinel.applications.indexed_commit_sha is not null
+                 then 'stale'
+                 else 'inspecting'
+               end
+           returning id,
+             (graph_revision > 0 or indexed_commit_sha is not null)
+               as knowledge_stale`,
           [stableKey, configuration.name, configuration.deploymentUrl]
         )
-        const applicationId = applicationRows[0]?.id
+        const application = applicationRows[0]
+        const applicationId = application?.id
         if (applicationId === undefined) {
           throw new Error("Application already exists or could not be created")
         }
         await transaction.query(
           `insert into sentinel.onboarding_configurations (
-             application_id, operator_id, configuration, input_fingerprint
-           ) values ($1::uuid, $2::uuid, $3::jsonb, $4)`,
+             application_id, operator_id, configuration, input_fingerprint,
+             knowledge_stale
+           ) values ($1::uuid, $2::uuid, $3::jsonb, $4, $5)`,
           [
             applicationId,
             operatorId,
             JSON.stringify(configuration),
             inputFingerprint,
+            application?.knowledge_stale ?? false,
           ]
         )
         await syncSources(transaction, applicationId, stableKey, configuration)

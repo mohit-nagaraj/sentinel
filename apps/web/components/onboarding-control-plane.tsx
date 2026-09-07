@@ -89,6 +89,7 @@ function newValues(): OnboardingFormValues {
     documentationSources: "",
     previewUrlPattern: "",
     authenticationMethod: "none",
+    authenticationAutomationConfirmed: false,
     credentialFields: [
       { key: "email", label: "Email" },
       { key: "password", label: "Password" },
@@ -123,6 +124,8 @@ function valuesFromApplication(
     documentationSources: configuration.documentationSources.join("\n"),
     previewUrlPattern: configuration.previewUrlPattern ?? "",
     authenticationMethod: configuration.authentication.method,
+    authenticationAutomationConfirmed:
+      configuration.authentication.automationConfirmed,
     credentialFields:
       configuration.authentication.method === "credentials"
         ? configuration.authentication.configuredFields
@@ -350,10 +353,14 @@ function Workspace({
   readonly onApplication: (application: PublicOnboardingApplication) => void
 }) {
   const seed = useMemo(() => initialState(application), [application])
+  const [dirty, setDirty] = useState(false)
   const inspectWithUpdate = useCallback(
     async (previousState: OnboardingActionState, formData: FormData) => {
       const result = await inspectOnboardingAction(previousState, formData)
-      if (result.application !== undefined) onApplication(result.application)
+      if (result.application !== undefined) {
+        setDirty(false)
+        onApplication(result.application)
+      }
       return result
     },
     [onApplication]
@@ -361,7 +368,10 @@ function Workspace({
   const confirmWithUpdate = useCallback(
     async (previousState: OnboardingActionState, formData: FormData) => {
       const result = await confirmOnboardingAction(previousState, formData)
-      if (result.application !== undefined) onApplication(result.application)
+      if (result.application !== undefined) {
+        setDirty(false)
+        onApplication(result.application)
+      }
       return result
     },
     [onApplication]
@@ -457,7 +467,14 @@ function Workspace({
 
       <StepNavigation step={step} onStep={handleStep} />
 
-      <form ref={formRef} action={inspectAction} className="min-w-0">
+      <form
+        ref={formRef}
+        action={inspectAction}
+        className="min-w-0"
+        onChange={() => {
+          if (report !== undefined) setDirty(true)
+        }}
+      >
         {state.values.recordId !== undefined ? (
           <input type="hidden" name="recordId" value={state.values.recordId} />
         ) : null}
@@ -655,6 +672,20 @@ function Workspace({
               errors={fieldErrors["authentication"]}
               id="authentication-error"
             />
+
+            {authMethod !== "none" ? (
+              <label className="flex min-h-11 items-center gap-3 border-y border-border py-3 text-sm">
+                <input
+                  className="size-4 accent-[var(--primary)]"
+                  type="checkbox"
+                  name="authenticationAutomationConfirmed"
+                  defaultChecked={
+                    state.values.authenticationAutomationConfirmed
+                  }
+                />
+                Automated login works without CAPTCHA or human verification
+              </label>
+            ) : null}
 
             {authMethod === "credentials" ? (
               <div className="grid gap-4">
@@ -1074,6 +1105,11 @@ function Workspace({
             Back
           </Button>
           <div className="flex items-center gap-2">
+            {dirty && report !== undefined ? (
+              <span className="text-xs text-amber-700">
+                Reinspect before confirming changes
+              </span>
+            ) : null}
             {step < steps.length - 1 ? (
               <Button
                 type="button"
@@ -1104,6 +1140,7 @@ function Workspace({
                 </Button>
                 {report !== undefined &&
                 report.status !== "blocked" &&
+                !dirty &&
                 !currentApplication?.confirmed ? (
                   <Button
                     type="submit"

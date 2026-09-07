@@ -63,6 +63,7 @@ function configuration(
     documentationSources: ["https://hi.events/docs", "repository://README.md"],
     authentication: {
       method: "credentials",
+      automationConfirmed: true,
       revision: 1,
       fields: [
         {
@@ -187,7 +188,7 @@ describe("onboarding repository", () => {
   it("creates an owned application, safe configuration, and pending sources", async () => {
     const config = configuration()
     const database = new ScriptedDatabase([
-      [{ id: applicationId }],
+      [{ id: applicationId, knowledge_stale: false }],
       [],
       [],
       [row({ config })],
@@ -204,10 +205,49 @@ describe("onboarding repository", () => {
     expect(result.record.status).toBe("inspecting")
     expect(database.transactionCalls).toBe(1)
     expect(database.calls[1]?.parameters[1]).toBe(operatorId)
+    expect(database.calls[0]?.statement).toContain(
+      "on conflict (stable_key) do update"
+    )
+    expect(database.calls[0]?.statement).toContain("then 'stale'")
     expect(database.calls[2]?.statement).toContain("sentinel.sources")
     const persisted = JSON.stringify(database.calls[1]?.parameters)
     expect(persisted).toContain("secret-ref:v1")
     expect(persisted).not.toContain("plaintext")
+  })
+
+  it("attaches onboarding to a pre-existing application and preserves stale knowledge", async () => {
+    const config = configuration()
+    const database = new ScriptedDatabase([
+      [{ id: applicationId, knowledge_stale: true }],
+      [],
+      [],
+      [
+        row({
+          config,
+          status: "stale",
+          graphRevision: 2,
+          indexedCommitSha: "e".repeat(40),
+          knowledgeStale: true,
+        }),
+      ],
+    ])
+    const repository = new OnboardingRepository(database)
+
+    const result = await repository.saveDraft({
+      operatorId,
+      stableKey,
+      configuration: config,
+    })
+
+    expect(result.record).toMatchObject({
+      status: "stale",
+      graphRevision: 2,
+      knowledgeStale: true,
+    })
+    expect(database.calls[0]?.statement).toContain(
+      "on conflict (stable_key) do update"
+    )
+    expect(database.calls[1]?.parameters[4]).toBe(true)
   })
 
   it("scopes lists and reads to the supplied server operator", async () => {
@@ -444,6 +484,7 @@ describe("onboarding repository", () => {
 
     expect(publicApplication.configuration.authentication).toEqual({
       method: "credentials",
+      automationConfirmed: true,
       configuredFields: [
         { key: "email", label: "Email" },
         { key: "password", label: "Password" },
@@ -467,6 +508,9 @@ describe("onboarding migration", () => {
     expect(migration).toContain("sentinel.onboarding_configurations")
     expect(migration).toContain("operator_id uuid not null")
     expect(migration).toContain("input_fingerprint text not null")
+    expect(migration).toContain("'lax $.**.keyvalue()")
+    expect(migration).toContain("'{}'::jsonb")
+    expect(migration).not.toContain("'strict $.**.keyvalue()")
     expect(migration).toContain("confirmation_fingerprint = input_fingerprint")
     expect(migration).toContain(
       "compatibility_report ->> 'status' <> 'blocked'"

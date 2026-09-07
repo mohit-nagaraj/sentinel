@@ -96,6 +96,7 @@ export const emptyOnboardingFormValues = onboardingFormValuesSchema.parse({
   documentationSources: "",
   previewUrlPattern: "",
   authenticationMethod: "none",
+  authenticationAutomationConfirmed: false,
   credentialFields: [
     { key: "email", label: "Email" },
     { key: "password", label: "Password" },
@@ -199,6 +200,9 @@ export function readSafeOnboardingValues(
       readText(formData, "authenticationMethod", 32),
       ["none", "credentials", "storage_state"] as const,
       "none"
+    ),
+    authenticationAutomationConfirmed: formData.has(
+      "authenticationAutomationConfirmed"
     ),
     credentialFields,
     allowedHosts: readText(formData, "allowedHosts", 4_096),
@@ -378,13 +382,17 @@ async function prepareAuthentication(input: {
     const raw = readText(input.formData, "storageState", storageStateLimit + 1)
     if (raw.length === 0 && previous?.method === "storage_state") {
       return {
-        authentication: previous,
+        authentication: {
+          ...previous,
+          automationConfirmed: input.values.authenticationAutomationConfirmed,
+        },
         createdReferences: [],
         supersededReferences: [],
       }
     }
     const parsed = onboardingAuthenticationInputSchema.safeParse({
       method: "storage_state",
+      automationConfirmed: input.values.authenticationAutomationConfirmed,
       value: raw,
     })
     if (!parsed.success) {
@@ -402,6 +410,7 @@ async function prepareAuthentication(input: {
     return {
       authentication: {
         method: "storage_state",
+        automationConfirmed: input.values.authenticationAutomationConfirmed,
         revision,
         reference: created.reference,
       },
@@ -423,6 +432,7 @@ async function prepareAuthentication(input: {
   )
   const validation = onboardingAuthenticationInputSchema.safeParse({
     method: "credentials",
+    automationConfirmed: input.values.authenticationAutomationConfirmed,
     fields: input.values.credentialFields.map(({ key, label }, index) => ({
       key,
       label,
@@ -465,6 +475,7 @@ async function prepareAuthentication(input: {
     }
     const authentication = onboardingAuthenticationConfigurationSchema.parse({
       method: "credentials",
+      automationConfirmed: input.values.authenticationAutomationConfirmed,
       revision,
       fields,
     })
@@ -508,6 +519,7 @@ export class ControlPlane {
       })
     }
     let provisionalApplicationId: string | undefined
+    let secretApplicationId: string | undefined
     let createdReferences: readonly string[] = []
     let committedConfiguration = false
     try {
@@ -536,6 +548,7 @@ export class ControlPlane {
         applicationId = provisional.record.id
         provisionalApplicationId = applicationId
       }
+      secretApplicationId = applicationId
 
       const prepared =
         applicationId === undefined
@@ -606,9 +619,9 @@ export class ControlPlane {
       if (!committedConfiguration) {
         await Promise.allSettled(
           createdReferences.map((reference) =>
-            provisionalApplicationId === undefined
+            secretApplicationId === undefined
               ? Promise.resolve(false)
-              : this.options.secrets.delete(provisionalApplicationId, reference)
+              : this.options.secrets.delete(secretApplicationId, reference)
           )
         )
         if (provisionalApplicationId !== undefined) {
@@ -636,6 +649,57 @@ export class ControlPlane {
       })
     }
     try {
+      const current = await this.options.store.get(
+        this.operatorId,
+        applicationId.data
+      )
+      if (current === null) {
+        return validationState(values, {
+          form: ["The application is unavailable for this operator"],
+        })
+      }
+      const submittedSecrets = [
+        ...readTexts(formData, "credentialValue", 10, secretValueLimit + 1),
+        readText(formData, "storageState", storageStateLimit + 1),
+      ]
+      const currentAuthentication = current.configuration.authentication
+      const credentialDefinitionsMatch =
+        currentAuthentication.method !== "credentials" ||
+        (currentAuthentication.fields.length ===
+          values.credentialFields.length &&
+          currentAuthentication.fields.every(
+            (field, index) =>
+              field.key === values.credentialFields[index]?.key &&
+              field.label === values.credentialFields[index]?.label
+          ))
+      const automationMatches =
+        currentAuthentication.method === "none" ||
+        currentAuthentication.automationConfirmed ===
+          values.authenticationAutomationConfirmed
+      if (
+        currentAuthentication.method !== values.authenticationMethod ||
+        !credentialDefinitionsMatch ||
+        !automationMatches ||
+        submittedSecrets.some((value) => value.length > 0)
+      ) {
+        return validationState(values, {
+          authentication: [
+            "Authentication changes require a new compatibility inspection",
+          ],
+        })
+      }
+      const submittedConfiguration = onboardingConfigurationSchema.parse({
+        ...baseConfiguration(values),
+        authentication: currentAuthentication,
+      })
+      if (
+        createOnboardingInputFingerprint(submittedConfiguration) !==
+        fingerprint.data
+      ) {
+        return validationState(values, {
+          form: ["Configuration changed; inspect the current values again"],
+        })
+      }
       const confirmed = await this.options.store.confirm({
         operatorId: this.operatorId,
         applicationId: applicationId.data,
@@ -653,7 +717,10 @@ export class ControlPlane {
         values: { ...values, recordId: confirmed.id },
         application: toPublicOnboardingApplication(confirmed),
       })
-    } catch {
+    } catch (error) {
+      if (error instanceof FormValidationError) {
+        return validationState(values, error.fieldErrors)
+      }
       return errorState(values)
     }
   }
@@ -827,20 +894,37 @@ class MemoryOnboardingStore implements OnboardingStore {
 
 class FixtureCompatibilityInspector implements OnboardingInspector {
   async inspect(configuration: OnboardingConfiguration) {
-    const blocked = new URL(configuration.deploymentUrl).hostname.startsWith(
-      "blocked."
-    )
-    const finding = blocked
-      ? [
-          {
-            severity: "blocker" as const,
-            code: "application_unreachable",
-            summary: "The fixture application is intentionally unavailable",
-            humanAction:
-              "Use a reachable fixture application host and inspect again",
-          },
-        ]
-      : []
+    const applicationBlocked = new URL(
+      configuration.deploymentUrl
+    ).hostname.startsWith("blocked.")
+    const authenticationBlocked =
+      configuration.authentication.method !== "none" &&
+      !configuration.authentication.automationConfirmed
+    const finding = [
+      ...(applicationBlocked
+        ? [
+            {
+              severity: "blocker" as const,
+              code: "application_unreachable",
+              summary: "The fixture application is intentionally unavailable",
+              humanAction:
+                "Use a reachable fixture application host and inspect again",
+            },
+          ]
+        : []),
+      ...(authenticationBlocked
+        ? [
+            {
+              severity: "blocker" as const,
+              code: "authentication_requires_confirmation",
+              summary: "Automated authentication has not been confirmed",
+              humanAction:
+                "Verify automated login without CAPTCHA and inspect again",
+            },
+          ]
+        : []),
+    ]
+    const blocked = finding.length > 0
     return compatibilityReportSchema.parse({
       schemaVersion: 1,
       inputFingerprint: createOnboardingInputFingerprint(configuration),
@@ -913,11 +997,11 @@ class FixtureCompatibilityInspector implements OnboardingInspector {
         },
         {
           capability: "application_reachable",
-          status: blocked ? "blocked" : "detected",
-          code: blocked
+          status: applicationBlocked ? "blocked" : "detected",
+          code: applicationBlocked
             ? "application_unreachable"
             : "application_browser_ready",
-          summary: blocked
+          summary: applicationBlocked
             ? "The fixture application is unavailable"
             : "The deployment is reachable and exposes a browser document",
           source: "application",
@@ -925,9 +1009,13 @@ class FixtureCompatibilityInspector implements OnboardingInspector {
         },
         {
           capability: "authentication_automatable",
-          status: "detected",
-          code: `${configuration.authentication.method}_authentication_configured`,
-          summary: "Authentication configuration is ready",
+          status: authenticationBlocked ? "blocked" : "detected",
+          code: authenticationBlocked
+            ? "authentication_requires_confirmation"
+            : `${configuration.authentication.method}_authentication_configured`,
+          summary: authenticationBlocked
+            ? "Automated authentication requires operator confirmation"
+            : "Authentication configuration is ready",
           source: "configuration",
           references: [],
         },

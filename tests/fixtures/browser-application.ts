@@ -121,7 +121,7 @@ function fixturePage(
     });
     ${stale ? "setTimeout(() => { const button = document.createElement('button'); button.textContent = 'Late action'; document.querySelector('main').append(button); }, 500);" : ""}
     ${staleAttributes ? "setTimeout(() => { document.querySelector('#mutable').type = 'submit'; }, 500);" : ""}
-    ${stalePosition ? "setTimeout(() => { const hidden = document.createElement('button'); hidden.hidden = true; document.querySelector('main').prepend(hidden); }, 500);" : ""}
+    ${stalePosition ? "setTimeout(() => { const hidden = document.createElement('button'); hidden.hidden = true; document.querySelector('main').prepend(hidden); fetch('/api/position-ready'); }, 500);" : ""}
     ${stalePiiName ? "setTimeout(() => { document.querySelector('#person').textContent = 'View bob@example.test'; }, 500);" : ""}
   </script>
 </body>
@@ -161,6 +161,11 @@ export async function startBrowserFixtureApplication(): Promise<BrowserFixtureAp
         send(response, 200, JSON.stringify({ ok: true }), {
           "content-type": "application/json",
         })
+        return
+      }
+      if (url.pathname === "/api/position-ready") {
+        response.writeHead(204)
+        response.end()
         return
       }
       if (url.pathname === "/redirect-external") {

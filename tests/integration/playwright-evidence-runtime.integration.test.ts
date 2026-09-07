@@ -101,6 +101,15 @@ function failureCode(error: unknown): string | undefined {
 describe("Playwright browser evidence runtime", () => {
   let fixture: BrowserFixtureApplication
 
+  async function waitForFixtureRequest(path: string): Promise<void> {
+    const deadline = Date.now() + 5_000
+    while (Date.now() < deadline) {
+      if (fixture.requests.some((request) => request.path === path)) return
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
+    throw new Error(`Fixture request ${path} was not observed`)
+  }
+
   beforeAll(async () => {
     fixture = await startBrowserFixtureApplication()
   }, 30_000)
@@ -396,7 +405,7 @@ describe("Playwright browser evidence runtime", () => {
     const positioned = positionObservation.candidates.find(
       (value) => value.name === "Show position state"
     )
-    await new Promise((resolve) => setTimeout(resolve, 600))
+    await waitForFixtureRequest("/api/position-ready")
     const positionedTransition = await runtime.performAction(
       runIds.expired,
       positioned?.actionId ?? "missing"

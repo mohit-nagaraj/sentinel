@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   commitShaSchema,
+  publicOnboardingApplicationSchema,
   type PublicOnboardingApplication,
 } from "@sentinel/contracts"
 
@@ -34,6 +35,7 @@ const connectedApplication: PublicOnboardingApplication = {
     documentationSources: ["https://hi.events/docs", "repository://README.md"],
     authentication: {
       method: "credentials",
+      automationConfirmed: true,
       configuredFields: [
         { key: "email", label: "Email" },
         { key: "password", label: "Password" },
@@ -56,6 +58,39 @@ const connectedApplication: PublicOnboardingApplication = {
   confirmed: false,
   updatedAt: "2026-09-08T00:00:00.000Z",
 }
+
+const inspectedApplication = publicOnboardingApplicationSchema.parse({
+  ...connectedApplication,
+  compatibility: {
+    schemaVersion: 1,
+    inputFingerprint: `sha256:${"e".repeat(64)}`,
+    status: "supported",
+    resolvedCommitSha: "0497418d5c66d20693751e68be066260eda3f37f",
+    selectedAdapters: ["typescript_react"],
+    evidence: [
+      {
+        capability: "repository_resolved",
+        status: "detected",
+        code: "immutable_commit_resolved",
+        summary: "Repository reference resolved to an immutable commit",
+        source: "repository",
+        references: ["composer.json"],
+      },
+    ],
+    findings: [],
+    humanActions: [],
+    proposedScope: {
+      repositoryPaths: ["frontend"],
+      documentationSources: ["repository://README.md"],
+      applicationOrigins: ["https://demo.hi.events"],
+      allowedActionCategories: ["safe_read"],
+      maxActions: 40,
+      maxScreens: 20,
+      maxDurationSeconds: 300,
+    },
+    inspectedAt: "2026-09-08T00:00:00.000Z",
+  },
+})
 
 describe("onboarding control plane page", () => {
   it("renders the application shell and a server-backed onboarding workspace", () => {
@@ -89,6 +124,11 @@ describe("onboarding control plane page", () => {
         .getByLabelText("Password secret value")
         .getAttribute("autocomplete")
     ).toBe("new-password")
+    expect(
+      screen.getByLabelText(
+        "Automated login works without CAPTCHA or human verification"
+      )
+    ).toBeDefined()
     fireEvent.click(screen.getByRole("button", { name: "Add field" }))
     expect(screen.getByLabelText("Credential 3 secret value")).toBeDefined()
 
@@ -134,5 +174,23 @@ describe("onboarding control plane page", () => {
     expect(
       (screen.getByLabelText("Application name") as HTMLInputElement).value
     ).toBe("")
+  })
+
+  it("requires reinspection before confirming edited form values", () => {
+    render(
+      <OnboardingControlPlane initialApplications={[inspectedApplication]} />
+    )
+
+    expect(screen.getByRole("button", { name: "Confirm scope" })).toBeDefined()
+    fireEvent.click(screen.getByRole("tab", { name: "Sources" }))
+    fireEvent.change(screen.getByLabelText("Branch or commit"), {
+      target: { value: "main" },
+    })
+    fireEvent.click(screen.getByRole("tab", { name: "Review" }))
+
+    expect(screen.queryByRole("button", { name: "Confirm scope" })).toBeNull()
+    expect(
+      screen.getByText("Reinspect before confirming changes")
+    ).toBeDefined()
   })
 })

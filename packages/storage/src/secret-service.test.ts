@@ -65,6 +65,38 @@ describe("target secret service", () => {
     expect(database.calls[1]?.parameters).not.toContain("plaintext-value")
   })
 
+  it("accepts encrypted browser storage state above the credential-field limit", async () => {
+    const storageState = JSON.stringify({
+      cookies: [],
+      origins: [],
+      padding: "x".repeat(20_000),
+    })
+    const database = new ScriptedDatabase([
+      [{ id: vaultSecretId }],
+      [
+        {
+          id: mappingId,
+          application_id: applicationId,
+          secret_name: "storage_state",
+          vault_secret_id: vaultSecretId,
+          opaque_reference:
+            "secret-ref:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          rotated_at: null,
+        },
+      ],
+    ])
+
+    const result = await new TargetSecretService(database).create({
+      applicationId,
+      name: "storage_state",
+      value: storageState,
+    })
+
+    expect(result.reference).toMatch(/^secret-ref:v1:/)
+    expect(database.calls[0]?.parameters[0]).toBe(storageState)
+    expect(JSON.stringify(result)).not.toContain("padding")
+  })
+
   it("resolves plaintext only through the server-side Vault join", async () => {
     const reference =
       "secret-ref:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

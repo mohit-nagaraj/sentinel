@@ -9,7 +9,9 @@ create table if not exists sentinel.onboarding_configurations (
     and octet_length(configuration::text) <= 131072
     and not jsonb_path_exists(
       configuration,
-      'strict $.**.keyvalue() ? (@.key like_regex "^(value|password|secret|storageState)$" flag "i")'
+      'lax $.**.keyvalue() ? (@.key like_regex "^(value|password|secret|storageState)$" flag "i")',
+      '{}'::jsonb,
+      true
     )
   ),
   input_fingerprint text not null check (

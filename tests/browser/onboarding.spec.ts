@@ -6,6 +6,7 @@ const privilegedCanaries = [
   "neo4j-password-canary-snt022",
   "azure-model-canary-snt022",
   "github-token-canary-snt022",
+  "operator-token-canary-snt022-must-not-leak",
 ]
 
 async function fillSources(
@@ -34,6 +35,9 @@ async function configureCredentials(page: Page) {
     .getByRole("radiogroup", { name: "Authentication method" })
     .getByText("Credentials", { exact: true })
     .click()
+  await page
+    .getByLabel("Automated login works without CAPTCHA or human verification")
+    .check()
   await page.getByLabel("Email secret value").fill("operator@example.com")
   await page.getByLabel("Password secret value").fill(targetPassword)
 }
@@ -101,6 +105,24 @@ test("completes onboarding, inspects compatibility, confirms scope, and isolates
   ).toBeVisible()
   await expect(page.getByText("Playwright assets were detected")).toBeVisible()
   await expect(page.getByText(targetPassword)).toHaveCount(0)
+
+  await page.getByRole("tab", { name: "Sources" }).click()
+  await page.getByLabel("Branch or commit").fill("main")
+  await page.getByRole("tab", { name: "Review" }).click()
+  await expect(
+    page.getByText("Reinspect before confirming changes")
+  ).toBeVisible()
+  await expect(page.getByRole("button", { name: "Confirm scope" })).toHaveCount(
+    0
+  )
+  await page.getByRole("tab", { name: "Sources" }).click()
+  await page.getByLabel("Branch or commit").fill("develop")
+  await page.getByRole("tab", { name: "Review" }).click()
+  await page.getByRole("button", { name: "Reinspect" }).click()
+  await expect(page.getByText("supported", { exact: true })).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "Confirm scope" })
+  ).toBeVisible()
 
   await page.getByRole("button", { name: "Confirm scope" }).click()
   await expect(page.getByText("Scope confirmed", { exact: true })).toBeVisible()

@@ -7,6 +7,7 @@ import {
 
 import {
   CompatibilityInspector,
+  resolvePinnedBrowserHost,
   type ApplicationReadinessProbe,
   type RepositoryCompatibilityProbe,
   type RepositoryCompatibilitySnapshot,
@@ -44,6 +45,7 @@ function configuration(): OnboardingConfiguration {
 
 class FakeRepositoryProbe implements RepositoryCompatibilityProbe {
   disposeCalls = 0
+  openCalls = 0
 
   constructor(
     private readonly files: Readonly<Record<string, string>>,
@@ -52,6 +54,7 @@ class FakeRepositoryProbe implements RepositoryCompatibilityProbe {
   ) {}
 
   async open(): Promise<RepositoryCompatibilitySnapshot> {
+    this.openCalls += 1
     if (this.failure !== undefined) throw this.failure
     return {
       identity: this.identity,
@@ -168,6 +171,7 @@ describe("onboarding compatibility inspector", () => {
       applicationOrigins: ["https://demo.hi.events/"],
       maxActions: 40,
     })
+    expect(repository.openCalls).toBe(1)
     expect(repository.disposeCalls).toBe(1)
   })
 
@@ -192,6 +196,42 @@ describe("onboarding compatibility inspector", () => {
     expect(repository.disposeCalls).toBe(1)
   })
 
+  it("blocks protected targets until automated login is explicitly confirmed", async () => {
+    const protectedConfiguration = onboardingConfigurationSchema.parse({
+      ...configuration(),
+      authentication: {
+        method: "credentials",
+        automationConfirmed: false,
+        revision: 1,
+        fields: [
+          {
+            key: "password",
+            label: "Password",
+            reference: `secret-ref:v1:${"f".repeat(64)}`,
+          },
+        ],
+      },
+    })
+
+    const report = await inspector({
+      repository: new FakeRepositoryProbe(supportedFiles),
+    }).inspect(protectedConfiguration)
+
+    expect(report.status).toBe("blocked")
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({
+        code: "authentication_requires_confirmation",
+        severity: "blocker",
+      })
+    )
+    expect(report.evidence).toContainEqual(
+      expect.objectContaining({
+        capability: "authentication_automatable",
+        status: "blocked",
+      })
+    )
+  })
+
   it("blocks unapproved, unsafe, unreachable, and incomplete targets", async () => {
     const repository = new FakeRepositoryProbe(
       { "README.md": "# Other" },
@@ -201,13 +241,21 @@ describe("onboarding compatibility inspector", () => {
       new Set(["https://hi.events/docs", "https://demo.hi.events/"])
     )
 
+    const unapprovedConfiguration = onboardingConfigurationSchema.parse({
+      ...configuration(),
+      repository: {
+        url: "https://github.com/other/example",
+        ref: "main",
+        accessMode: "manual",
+      },
+    })
     const report = await inspector({
       repository,
       urls,
       application: new FakeApplicationProbe(
         new Error("Redirect left the approved origin")
       ),
-    }).inspect(configuration())
+    }).inspect(unapprovedConfiguration)
 
     expect(report.status).toBe("blocked")
     expect(report.findings.map((finding) => finding.code)).toEqual([
@@ -217,7 +265,8 @@ describe("onboarding compatibility inspector", () => {
     ])
     expect(report.humanActions).toHaveLength(3)
     expect(JSON.stringify(report)).not.toContain("Redirect left")
-    expect(repository.disposeCalls).toBe(1)
+    expect(repository.openCalls).toBe(0)
+    expect(repository.disposeCalls).toBe(0)
   })
 
   it("is deterministic apart from a supplied clock and always disposes checkout", async () => {
@@ -233,5 +282,31 @@ describe("onboarding compatibility inspector", () => {
     expect(first.inputFingerprint).toBe(second.inputFingerprint)
     expect(second.status).toBe("blocked")
     expect(failingRepository.disposeCalls).toBe(1)
+  })
+
+  it("pins public DNS results and rejects any private or reserved answer", async () => {
+    await expect(
+      resolvePinnedBrowserHost("https://demo.hi.events", {
+        resolver: {
+          lookup: async () => [{ address: "8.8.8.8", family: 4 }],
+        },
+      })
+    ).resolves.toEqual({
+      hostname: "demo.hi.events",
+      address: "8.8.8.8",
+    })
+    await expect(
+      resolvePinnedBrowserHost("https://demo.hi.events", {
+        resolver: {
+          lookup: async () => [
+            { address: "8.8.8.8", family: 4 },
+            { address: "127.0.0.1", family: 4 },
+          ],
+        },
+      })
+    ).rejects.toThrow("private or reserved")
+    await expect(resolvePinnedBrowserHost("https://127.0.0.1")).rejects.toThrow(
+      "private or reserved"
+    )
   })
 })

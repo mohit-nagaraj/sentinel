@@ -191,6 +191,7 @@ export const onboardingAuthenticationInputSchema = z.discriminatedUnion(
     z.strictObject({ method: z.literal("none") }),
     z.strictObject({
       method: z.literal("credentials"),
+      automationConfirmed: z.boolean(),
       fields: z
         .array(
           z.strictObject({
@@ -209,6 +210,7 @@ export const onboardingAuthenticationInputSchema = z.discriminatedUnion(
     }),
     z.strictObject({
       method: z.literal("storage_state"),
+      automationConfirmed: z.boolean(),
       value: storageStateJsonSchema,
     }),
   ]
@@ -220,6 +222,7 @@ export const onboardingAuthenticationConfigurationSchema = z.discriminatedUnion(
     z.strictObject({ method: z.literal("none"), revision: z.literal(0) }),
     z.strictObject({
       method: z.literal("credentials"),
+      automationConfirmed: z.boolean(),
       revision: z.number().int().positive(),
       fields: z
         .array(
@@ -239,6 +242,7 @@ export const onboardingAuthenticationConfigurationSchema = z.discriminatedUnion(
     }),
     z.strictObject({
       method: z.literal("storage_state"),
+      automationConfirmed: z.boolean(),
       revision: z.number().int().positive(),
       reference: secretReferenceSchema,
     }),
@@ -452,6 +456,7 @@ export const publicOnboardingConfigurationSchema = z.strictObject({
       )
       .max(10),
     revision: z.number().int().nonnegative(),
+    automationConfirmed: z.boolean(),
   }),
   crawl: onboardingCrawlPolicySchema,
   capabilityHints: z.array(shortTextSchema).max(20),
@@ -485,6 +490,7 @@ export const onboardingFormValuesSchema = z.strictObject({
   documentationSources: z.string().max(16_384),
   previewUrlPattern: z.string().max(2_048),
   authenticationMethod: z.enum(["none", "credentials", "storage_state"]),
+  authenticationAutomationConfirmed: z.boolean(),
   credentialFields: z
     .array(
       z.strictObject({
