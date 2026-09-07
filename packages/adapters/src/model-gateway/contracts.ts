@@ -16,7 +16,7 @@ export type ModelCallLimits = z.infer<typeof modelCallLimitsSchema>
 export const defaultModelCallLimits: ModelCallLimits = {
   maxInputCharacters: 16_000,
   maxOutputTokens: 512,
-  maxTools: 8,
+  maxTools: 16,
   maxToolCalls: 8,
   maxToolOutputCharacters: 8_192,
   timeoutMs: 30_000,

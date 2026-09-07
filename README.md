@@ -267,3 +267,51 @@ Run focused browser-runtime checks with:
 pnpm exec vitest run --project unit packages/adapters/src/browser packages/contracts/src/browser-runtime.test.ts packages/contracts/src/identity.test.ts
 pnpm exec vitest run --project integration tests/integration/playwright-evidence-runtime.integration.test.ts --maxWorkers=1
 ```
+
+## Code Explorer
+
+`@sentinel/contracts` defines the Code Explorer mission, source evidence,
+proposed claim, implementation path, unresolved boundary, tool observation,
+and terminal result schemas. Results retain the shared `MissionResult` fields
+and add deterministically ordered candidate paths. Claims remain proposals: the
+schemas do not expose accepted status or authoritative evidence tiers.
+
+`@sentinel/adapters` composes the prepared TypeScript, PHP/Laravel, and endpoint
+indexes through `CodeExplorerRepository` and `CodeExplorerTools`. The model can
+select only `list_repository_modules`, symbol/text search, bounded symbol and
+relationship inspection, endpoint/frontend lookup, focused test inspection,
+claim submission, and mission completion. It receives no shell, Git, arbitrary
+filesystem, Neo4j, or graph-write operation. Repository paths, languages,
+results, traversal hops, source lines, and source characters are validated at
+the deterministic tool boundary. Text matches have lexical strength, and
+focused tests are marked as corroboration only.
+
+`@sentinel/orchestration` exposes `CodeExplorerService`. Each iteration requires
+one strict function-tool call, revalidates it through the tool port, accounts
+for model/tool/content/source/repository/time budgets, and records normalized
+visit keys before execution. Repeated visits stop without replaying the tool.
+Only a recorded structural edge whose source, target, and relationship kind
+match the proposal can support a claim; lexical matches, same-name symbols,
+source slices, and tests do not establish a relationship by themselves. All
+composed indexes must share one application, run, repository, and immutable
+commit identity, and resolved targets outside mission scope are suppressed.
+Dynamic calls, computed targets,
+dependency-injection ambiguity, and unmapped endpoints remain typed unresolved
+boundaries. This service is a feature-specific bounded loop; generic specialist
+checkpoint, interrupt, and cross-agent behavior is not part of its API.
+
+Run focused Code Explorer checks with:
+
+```sh
+pnpm exec vitest run --project unit packages/contracts/src/code-explorer.test.ts packages/adapters/src/code-explorer/tools.test.ts packages/orchestration/src/code-explorer.test.ts
+pnpm test:agent
+```
+
+The pinned Hi.Events order-creation evaluation is network- and model-backed and
+therefore requires both live-test flags plus the existing GitHub/Azure
+configuration:
+
+```sh
+RUN_LIVE_TESTS=1 RUN_CODE_EXPLORER_HI_EVENTS=1 \
+  pnpm vitest run --project live tests/live/code-explorer-hi-events.live.test.ts
+```

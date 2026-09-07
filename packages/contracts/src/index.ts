@@ -1,5 +1,6 @@
 export * from "./assessment.ts"
 export * from "./browser-runtime.ts"
+export * from "./code-explorer.ts"
 export {
   loadEnvironment,
   type EnvironmentSource,
