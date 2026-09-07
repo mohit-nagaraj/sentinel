@@ -84,7 +84,7 @@ describe("runtime request redaction", () => {
     expect(JSON.stringify(result)).not.toContain("password/reset")
   })
 
-  it("hashes only redaction shape, not sensitive values", () => {
+  it("hashes transient values without returning them", () => {
     const first = sanitizedRuntimeRequestHash({
       method: "POST",
       url: "/orders?token=first-secret",
@@ -98,6 +98,8 @@ describe("runtime request redaction", () => {
       body: { privateKey: "second" },
     })
 
-    expect(first).toBe(second)
+    expect(first).not.toBe(second)
+    expect(first).toMatch(/^sha256:[a-f0-9]{64}$/)
+    expect(first).not.toContain("first-secret")
   })
 })

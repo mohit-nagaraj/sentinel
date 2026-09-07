@@ -283,16 +283,11 @@ export function matchRuntimeRequest(
 export function sanitizedRuntimeRequestHash(
   input: Pick<RuntimeRequestInput, "method" | "headers" | "body" | "url">
 ): ContentHash {
-  const summary = runtimeSummary({
-    ...input,
-    applicationId:
-      `application:v1:${"0".repeat(64)}` as EndpointTemplate["applicationId"],
-    sourceHash: `sha256:${"0".repeat(64)}` as ContentHash,
-    observedAt: "1970-01-01T00:00:00.000Z",
-  })
   return hashCanonical({
     kind: "redacted_runtime_request",
     method: input.method.trim().toUpperCase(),
-    ...summary,
+    url: input.url,
+    headers: input.headers ?? {},
+    body: input.body ?? null,
   })
 }
