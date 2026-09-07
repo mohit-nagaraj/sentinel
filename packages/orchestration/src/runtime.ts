@@ -102,6 +102,13 @@ export class ResumeAuthorizationError extends Error {
   }
 }
 
+export class ResumeConflictError extends Error {
+  constructor() {
+    super("Resume decision conflicts with the committed decision")
+    this.name = "ResumeConflictError"
+  }
+}
+
 export class BudgetExhaustedError extends Error {
   constructor() {
     super("Orchestration elapsed budget exhausted")
@@ -191,6 +198,7 @@ function isSafeRuntimeError(error: unknown): error is Error {
     error instanceof CancelledOrchestrationError ||
     error instanceof LeaseOwnershipError ||
     error instanceof ResumeAuthorizationError ||
+    error instanceof ResumeConflictError ||
     error instanceof BudgetExhaustedError ||
     error instanceof CheckpointStateError ||
     error instanceof EventPersistenceError ||

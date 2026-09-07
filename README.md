@@ -146,7 +146,8 @@ documents, source/DOM, prompts, credentials, and oversized payloads are rejected
 Node wrappers recheck run ownership before side effects, retry only explicit
 transient failures, sanitize checkpointed errors, and project redacted lifecycle
 events into durable run events only after node state commits. Concurrent resume
-attempts are serialized by a transaction-scoped PostgreSQL advisory lock.
+attempts are serialized by a bounded, error-handled PostgreSQL pool and a
+transaction-scoped advisory lock; contradictory repeats return a conflict.
 
 Do not deploy incompatible node names, routing, or checkpoint-state schemas while
 threads are interrupted or failed. Drain/resume those threads on the prior graph,

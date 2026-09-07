@@ -5,6 +5,7 @@ import {
   CancelledOrchestrationError,
   CheckpointStateError,
   ResumeAuthorizationError,
+  ResumeConflictError,
   SanitizedNodeError,
   TransientOrchestrationError,
   type OrchestrationEvent,
@@ -230,6 +231,43 @@ describe("synthetic LangGraph runtime", () => {
     expect(result.status).toBe("blocked")
     expect(result.state.stopReason).toBe("review_rejected")
     expect(test.attempts.has("finalize")).toBe(false)
+  })
+
+  it("rejects a conflicting concurrent decision after one result commits", async () => {
+    const memory = new MemorySaver()
+    const test = harness()
+    const graph = buildSyntheticGraph(test.dependencies, memory)
+    const service = new SyntheticOrchestrationService(graph, test.dependencies)
+    await service.start(
+      createSyntheticInitialState({
+        runId,
+        applicationId,
+        budget: normalBudget,
+      })
+    )
+    const results = await Promise.allSettled([
+      service.resume({
+        runId,
+        actorId: "reviewer-a",
+        decisionId: "synthetic_review",
+        approved: true,
+      }),
+      service.resume({
+        runId,
+        actorId: "reviewer-b",
+        decisionId: "synthetic_review",
+        approved: false,
+      }),
+    ])
+    expect(
+      results.filter((result) => result.status === "fulfilled")
+    ).toHaveLength(1)
+    const rejected = results.find((result) => result.status === "rejected")
+    expect(rejected).toMatchObject({
+      status: "rejected",
+      reason: expect.any(ResumeConflictError),
+    })
+    expect(test.attempts.get("finalize") ?? 0).toBeLessThanOrEqual(1)
   })
 
   it("returns cancelled before the first node side effect", async () => {

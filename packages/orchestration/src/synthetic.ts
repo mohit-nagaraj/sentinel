@@ -24,6 +24,7 @@ import {
   CheckpointStateError,
   LeaseOwnershipError,
   ResumeAuthorizationError,
+  ResumeConflictError,
   emitCommittedNodeEvent,
   emitInterruptEvent,
   transientRetryPolicy,
@@ -500,6 +501,12 @@ export class SyntheticOrchestrationService {
         }
         if (!authorized) throw new ResumeAuthorizationError()
         if (state.resumeDecisionId === parsed.decisionId) {
+          if (
+            state.approved !== parsed.approved ||
+            state.resumeActorId !== parsed.actorId
+          ) {
+            throw new ResumeConflictError()
+          }
           return this.toResult(state, true)
         }
         if (state.pendingReview?.decisionId !== parsed.decisionId) {

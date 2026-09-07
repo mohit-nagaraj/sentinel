@@ -74,5 +74,5 @@ Follow LangGraph's documented guidance: state stores raw data/IDs, external call
 - Node wrappers are generic over validated specialist state, recheck ownership and elapsed budget after handlers, preserve LangGraph interrupt control flow, and replace raw failures with fixed checkpoint-safe errors.
 - Node completion is emitted only from the following committed graph step; transient pending-write recovery cannot claim an uncommitted sibling completion.
 - Concurrent resume uses a per-decision coordinator; production uses PostgreSQL transaction-scoped advisory locks and unit tests use the serialized in-memory implementation.
-- Default verification on 2026-09-07: formatting, zero-warning lint, TypeScript build, 27 files and 167 tests passed; 5 orchestration files and 33 tests passed.
+- Default verification on 2026-09-07: formatting, zero-warning lint, TypeScript build, 27 files and 168 tests passed; 5 orchestration files and 34 tests passed.
 - Opt-in disposable Postgres verification: 1 integration test passed checkpoint setup/privacy, close/recreate restart, interrupt persistence, concurrent authorized/idempotent resume with one finalizer, durable event ordering, and exact thread cleanup.

@@ -49,8 +49,11 @@ export class PostgresResumeCoordinator implements ResumeCoordinator {
   constructor(connectionString: string) {
     this.pool = new Pool({
       connectionString: parseCheckpointConnectionString(connectionString),
+      connectionTimeoutMillis: 10_000,
+      idleTimeoutMillis: 30_000,
       max: 2,
     })
+    this.pool.on("error", () => undefined)
   }
 
   async runExclusive<Output>(
@@ -61,6 +64,8 @@ export class PostgresResumeCoordinator implements ResumeCoordinator {
     try {
       client = await this.pool.connect()
       await client.query("begin")
+      await client.query("set local statement_timeout = '30000ms'")
+      await client.query("set local lock_timeout = '30000ms'")
       await client.query(
         "select pg_advisory_xact_lock(hashtextextended($1, 0))",
         [lockKey(input)]
