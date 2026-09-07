@@ -105,6 +105,12 @@ describeIntegration("Neo4j Aura graph foundation", () => {
       graphRevision: 2,
       properties: { statement: "updated requirement" },
     })
+    await expect(
+      repository.mergeNode({
+        ...requirement,
+        properties: { statement: "stale requirement" },
+      })
+    ).rejects.toThrow("stale graph revision")
     await repository.mergeNode({
       applicationId: namespaceA.applicationId,
       kind: "workflow",
@@ -142,6 +148,7 @@ describeIntegration("Neo4j Aura graph foundation", () => {
            })
            RETURN count(requirement) AS nodeCount,
                   requirement.graph_revision AS revision,
+                  requirement.statement AS statement,
                   relationship.confidence AS confidence`,
           {
             applicationId: namespaceA.applicationId,
@@ -153,11 +160,17 @@ describeIntegration("Neo4j Aura graph foundation", () => {
         return {
           nodeCount: toNativeGraphValue(row?.get("nodeCount")),
           revision: toNativeGraphValue(row?.get("revision")),
+          statement: toNativeGraphValue(row?.get("statement")),
           confidence: toNativeGraphValue(row?.get("confidence")),
         }
       }
     )
-    expect(result).toEqual({ nodeCount: 1, revision: 2, confidence: 0.95 })
+    expect(result).toEqual({
+      nodeCount: 1,
+      revision: 2,
+      statement: "updated requirement",
+      confidence: 0.95,
+    })
   })
 
   it("rolls back a partial multi-write transaction", async () => {

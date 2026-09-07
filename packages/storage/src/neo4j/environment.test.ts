@@ -49,6 +49,24 @@ describe("Neo4j environment", () => {
     ).toThrow(Neo4jConfigurationError)
   })
 
+  it("requires verified TLS away from explicit loopback hosts", () => {
+    for (const uri of [
+      "neo4j://example.databases.neo4j.io",
+      "bolt://example.databases.neo4j.io",
+      "neo4j+ssc://example.databases.neo4j.io",
+    ]) {
+      expect(() =>
+        loadNeo4jEnvironment({ ...validEnvironment, NEO4J_URI: uri })
+      ).toThrow(Neo4jConfigurationError)
+    }
+    expect(
+      loadNeo4jEnvironment({
+        ...validEnvironment,
+        NEO4J_URI: "bolt://127.0.0.1:7687",
+      }).NEO4J_URI
+    ).toBe("bolt://127.0.0.1:7687")
+  })
+
   it("requires an explicit opt-in and generated namespace", () => {
     expect(
       loadNeo4jIntegrationEnvironment({

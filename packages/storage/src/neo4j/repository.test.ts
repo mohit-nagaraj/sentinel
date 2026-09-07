@@ -1,4 +1,4 @@
-import type { Record as Neo4jRecord } from "neo4j-driver"
+import neo4j, { type Record as Neo4jRecord } from "neo4j-driver"
 import { describe, expect, it } from "vitest"
 
 import type {
@@ -44,6 +44,8 @@ class RecordingGraphDatabase implements GraphDatabase {
   private activeContext: GraphTransactionContext | undefined
   private activeMode: "read" | "write" = "read"
 
+  constructor(private readonly rejectedRevisions = new Set<number>()) {}
+
   private readonly transaction: GraphTransaction = {
     run: async (cypher, parameters = {}): Promise<GraphQueryResult> => {
       if (this.activeContext === undefined) throw new Error("missing context")
@@ -60,10 +62,25 @@ class RecordingGraphDatabase implements GraphDatabase {
         return {
           records: [
             record({
-              n: { properties: { application_id: applicationId, score: 7 } },
+              n: new neo4j.types.Node(
+                neo4j.int(1),
+                ["Requirement"],
+                {
+                  application_id: applicationId,
+                  properties: "ordinary property",
+                  score: 7,
+                },
+                "test-node"
+              ),
             }),
           ],
         }
+      }
+      if (
+        typeof parameters["graphRevision"] === "number" &&
+        this.rejectedRevisions.has(parameters["graphRevision"])
+      ) {
+        return { records: [] }
       }
       return { records: [record({ n: {} })] }
     },
@@ -128,7 +145,7 @@ describe("Neo4j fact repository", () => {
     const database = new RecordingGraphDatabase()
     await new Neo4jFactRepository(database).mergeNode(
       requirementFact(),
-      "run-1"
+      "run:11111111-1111-4111-8111-111111111111"
     )
 
     expect(database.queries).toHaveLength(1)
@@ -141,7 +158,7 @@ describe("Neo4j fact repository", () => {
     })
     expect(database.queries[0]?.context).toMatchObject({
       applicationId,
-      runId: "run-1",
+      runId: "run:11111111-1111-4111-8111-111111111111",
     })
   })
 
@@ -156,6 +173,43 @@ describe("Neo4j fact repository", () => {
     await expect(
       repository.mergeNode(requirementFact({ values: [1, "2"] }))
     ).rejects.toThrow("unsupported array")
+    await expect(
+      repository.mergeNode(requirementFact({ password: "plaintext" }))
+    ).rejects.toThrow("sensitive fields")
+    for (const key of ["api_key", "connect_sid", "privatekey"] as const) {
+      await expect(
+        repository.mergeNode(requirementFact({ [key]: "plaintext" }))
+      ).rejects.toThrow("sensitive fields")
+    }
+    await expect(
+      repository.mergeNode(
+        requirementFact({ note: "authorization: Bearer must-not-persist" })
+      )
+    ).rejects.toThrow("unsafe persisted text")
+    await expect(
+      repository.mergeNode(requirementFact(), "run-1")
+    ).rejects.toThrow("Invalid graph run identifier")
+    await expect(
+      repository.mergeNode(
+        requirementFact(
+          Object.fromEntries(
+            Array.from({ length: 17 }, (_, index) => [
+              `field_${index}`,
+              "x".repeat(4_000),
+            ])
+          )
+        )
+      )
+    ).rejects.toThrow("64 KiB")
+  })
+
+  it("rejects stale graph revisions instead of overwriting newer facts", async () => {
+    const repository = new Neo4jFactRepository(
+      new RecordingGraphDatabase(new Set([1]))
+    )
+    await expect(repository.mergeNode(requirementFact())).rejects.toThrow(
+      "stale graph revision"
+    )
   })
 
   it("validates relationship endpoints and binds relationship data", async () => {
@@ -178,6 +232,19 @@ describe("Neo4j fact repository", () => {
       fromStableKey: requirementId,
       toStableKey: workflowId,
     })
+    await expect(
+      new Neo4jFactRepository(
+        new RecordingGraphDatabase(new Set([2]))
+      ).mergeRelationship({
+        applicationId,
+        stableKey: evidenceId,
+        type: "COVERED_BY",
+        fromStableKey: requirementId,
+        toStableKey: workflowId,
+        graphRevision: 2,
+        properties: {},
+      })
+    ).rejects.toThrow("graph revision is stale")
     await expect(
       repository.mergeRelationship({
         applicationId,
@@ -213,6 +280,7 @@ describe("Neo4j fact repository", () => {
       repository.readNode(applicationId, requirementId)
     ).resolves.toEqual({
       application_id: applicationId,
+      properties: "ordinary property",
       score: 7,
     })
 
@@ -230,6 +298,9 @@ describe("Neo4j fact repository", () => {
     await expect(
       repository.cleanupTestNamespace(namespace.applicationId, "production")
     ).rejects.toThrow()
+    await expect(
+      repository.cleanupTestNamespace(applicationId, namespace.testPrefix)
+    ).rejects.toThrow("identity does not match")
   })
 
   it("creates validated application and revision namespaces", () => {

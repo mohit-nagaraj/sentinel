@@ -1,9 +1,15 @@
+import {
+  applicationIdSchema,
+  reasonCodeSchema,
+  runIdSchema,
+} from "@sentinel/contracts"
 import neo4j, {
   type Driver,
   type ManagedTransaction,
   type QueryResult,
   type Record as Neo4jRecord,
 } from "neo4j-driver"
+import { z } from "zod"
 
 import type { Neo4jEnvironment } from "./environment.ts"
 
@@ -31,6 +37,56 @@ export interface GraphTransactionContext {
   readonly runId?: string
   readonly operation: string
   readonly timeoutMs?: number
+}
+
+function parseTransactionContext(
+  context: GraphTransactionContext,
+  defaultTimeoutMs: number
+): {
+  readonly applicationId?: string
+  readonly runId?: string
+  readonly operation: string
+  readonly timeoutMs: number
+} {
+  const applicationId =
+    context.applicationId === undefined
+      ? undefined
+      : applicationIdSchema.safeParse(context.applicationId)
+  const runId =
+    context.runId === undefined
+      ? undefined
+      : runIdSchema.safeParse(context.runId)
+  const operation = reasonCodeSchema.safeParse(context.operation)
+  const timeoutMs = z
+    .number()
+    .int()
+    .positive()
+    .max(120_000)
+    .safeParse(context.timeoutMs ?? defaultTimeoutMs)
+  const invalidFields = [
+    ...(applicationId !== undefined && !applicationId.success
+      ? ["applicationId"]
+      : []),
+    ...(runId !== undefined && !runId.success ? ["runId"] : []),
+    ...(!operation.success ? ["operation"] : []),
+    ...(!timeoutMs.success ? ["timeoutMs"] : []),
+  ]
+  if (invalidFields.length > 0) {
+    throw new Error(
+      `Invalid Neo4j transaction context: ${invalidFields.join(", ")}`
+    )
+  }
+  if (!operation.success || !timeoutMs.success) {
+    throw new Error("Invalid Neo4j transaction context")
+  }
+  return {
+    ...(applicationId?.success !== true
+      ? {}
+      : { applicationId: applicationId.data }),
+    ...(runId?.success !== true ? {} : { runId: runId.data }),
+    operation: operation.data,
+    timeoutMs: timeoutMs.data,
+  }
 }
 
 export interface GraphDatabase {
@@ -80,13 +136,18 @@ export class Neo4jGraphDatabase implements GraphDatabase {
     context: GraphTransactionContext,
     work: (transaction: GraphTransaction) => Promise<T>
   ): Promise<T> {
+    const parsedContext = parseTransactionContext(
+      context,
+      this.transactionTimeoutMs
+    )
     const session = this.driver.session({ database: this.database })
     const configuration = {
-      timeout: context.timeoutMs ?? this.transactionTimeoutMs,
+      timeout: parsedContext.timeoutMs,
       metadata: {
-        sentinel_application_id: context.applicationId ?? "not_applicable",
-        sentinel_run_id: context.runId ?? "not_applicable",
-        sentinel_operation: context.operation,
+        sentinel_application_id:
+          parsedContext.applicationId ?? "not_applicable",
+        sentinel_run_id: parsedContext.runId ?? "not_applicable",
+        sentinel_operation: parsedContext.operation,
       },
     }
     try {

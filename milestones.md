@@ -14,14 +14,14 @@
 
 ## Status vocabulary
 
-| Status        | Meaning                                                           |
-| ------------- | ----------------------------------------------------------------- |
+| Status | Meaning |
+|---|---|
 | `not-started` | Dependencies may or may not be satisfied; no implementation begun |
-| `ready`       | All dependencies are complete and implementation can begin        |
-| `in-progress` | One owner/agent is actively implementing it                       |
-| `blocked`     | An external input or failed dependency prevents progress          |
-| `review`      | Implementation and issue-level tests pass; awaiting review        |
-| `done`        | Reviewed, accepted, and regression checks pass                    |
+| `ready` | All dependencies are complete and implementation can begin |
+| `in-progress` | One owner/agent is actively implementing it |
+| `blocked` | An external input or failed dependency prevents progress |
+| `review` | Implementation and issue-level tests pass; awaiting review |
+| `done` | Reviewed, accepted, and regression checks pass |
 
 ## Milestone dependency graph
 
@@ -48,14 +48,14 @@ graph LR
 
 **Exit gate:** A synthetic graph can be queued, checkpointed in Supabase, interrupted/resumed, emit durable events, and read/write an isolated Neo4j test namespace without exposing secrets.
 
-| ID      | Issue                                                                                                                                | Depends on                | Status      |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- | ----------- |
-| SNT-001 | [Workspace and testing foundation](./.tasks/milestone-01-foundation/SNT-001-workspace-testing-foundation.md)                         | —                         | done        |
-| SNT-002 | [Core domain contracts and stable identity](./.tasks/milestone-01-foundation/SNT-002-core-contracts-stable-identity.md)              | SNT-001                   | done        |
-| SNT-003 | [Supabase operational state, secrets, and artifact storage](./.tasks/milestone-01-foundation/SNT-003-supabase-operational-schema.md) | SNT-001, SNT-002          | done        |
-| SNT-004 | [Neo4j constraints, repositories, and test isolation](./.tasks/milestone-01-foundation/SNT-004-neo4j-foundation.md)                  | SNT-001, SNT-002          | review      |
-| SNT-005 | [Azure OpenAI model gateway compatibility spike](./.tasks/milestone-01-foundation/SNT-005-azure-model-gateway.md)                    | SNT-001, SNT-002          | not-started |
-| SNT-006 | [LangGraph runtime, checkpointing, events, and interrupts](./.tasks/milestone-01-foundation/SNT-006-langgraph-runtime.md)            | SNT-002, SNT-003, SNT-005 | not-started |
+| ID | Issue | Depends on | Status |
+|---|---|---|---|
+| SNT-001 | [Workspace and testing foundation](./.tasks/milestone-01-foundation/SNT-001-workspace-testing-foundation.md) | — | done |
+| SNT-002 | [Core domain contracts and stable identity](./.tasks/milestone-01-foundation/SNT-002-core-contracts-stable-identity.md) | SNT-001 | done |
+| SNT-003 | [Supabase operational state, secrets, and artifact storage](./.tasks/milestone-01-foundation/SNT-003-supabase-operational-schema.md) | SNT-001, SNT-002 | done |
+| SNT-004 | [Neo4j constraints, repositories, and test isolation](./.tasks/milestone-01-foundation/SNT-004-neo4j-foundation.md) | SNT-001, SNT-002 | review |
+| SNT-005 | [Azure OpenAI model gateway compatibility spike](./.tasks/milestone-01-foundation/SNT-005-azure-model-gateway.md) | SNT-001, SNT-002 | not-started |
+| SNT-006 | [LangGraph runtime, checkpointing, events, and interrupts](./.tasks/milestone-01-foundation/SNT-006-langgraph-runtime.md) | SNT-002, SNT-003, SNT-005 | not-started |
 
 ---
 
@@ -67,15 +67,15 @@ graph LR
 
 **Exit gate:** Pinned Hi.Events fixtures produce stable document sections, code symbols, endpoint mappings, changed-symbol mappings, browser states/actions/transitions, and private artifact references across repeated runs.
 
-| ID      | Issue                                                                                                                                      | Depends on                | Status      |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- | ----------- |
-| SNT-007 | [Read-only GitHub source connector and ephemeral checkout](./.tasks/milestone-02-source-evidence/SNT-007-github-source-connector.md)       | SNT-002, SNT-003          | not-started |
-| SNT-008 | [Documentation discovery, parsing, and provenance map](./.tasks/milestone-02-source-evidence/SNT-008-documentation-source-map.md)          | SNT-002, SNT-003, SNT-007 | not-started |
-| SNT-009 | [TypeScript and React structural indexer](./.tasks/milestone-02-source-evidence/SNT-009-typescript-react-indexer.md)                       | SNT-002, SNT-007          | not-started |
-| SNT-010 | [PHP and Laravel structural indexer](./.tasks/milestone-02-source-evidence/SNT-010-php-laravel-indexer.md)                                 | SNT-002, SNT-007          | not-started |
-| SNT-011 | [OpenAPI and cross-stack endpoint normalization](./.tasks/milestone-02-source-evidence/SNT-011-openapi-endpoint-normalization.md)          | SNT-009, SNT-010          | not-started |
-| SNT-012 | [Playwright observation, safe actions, and evidence capture](./.tasks/milestone-02-source-evidence/SNT-012-playwright-evidence-runtime.md) | SNT-002, SNT-003          | not-started |
-| SNT-013 | [PR diff to base/head symbol mapping](./.tasks/milestone-02-source-evidence/SNT-013-pr-diff-symbol-mapping.md)                             | SNT-007, SNT-009, SNT-010 | not-started |
+| ID | Issue | Depends on | Status |
+|---|---|---|---|
+| SNT-007 | [Read-only GitHub source connector and ephemeral checkout](./.tasks/milestone-02-source-evidence/SNT-007-github-source-connector.md) | SNT-002, SNT-003 | not-started |
+| SNT-008 | [Documentation discovery, parsing, and provenance map](./.tasks/milestone-02-source-evidence/SNT-008-documentation-source-map.md) | SNT-002, SNT-003, SNT-007 | not-started |
+| SNT-009 | [TypeScript and React structural indexer](./.tasks/milestone-02-source-evidence/SNT-009-typescript-react-indexer.md) | SNT-002, SNT-007 | not-started |
+| SNT-010 | [PHP and Laravel structural indexer](./.tasks/milestone-02-source-evidence/SNT-010-php-laravel-indexer.md) | SNT-002, SNT-007 | not-started |
+| SNT-011 | [OpenAPI and cross-stack endpoint normalization](./.tasks/milestone-02-source-evidence/SNT-011-openapi-endpoint-normalization.md) | SNT-009, SNT-010 | not-started |
+| SNT-012 | [Playwright observation, safe actions, and evidence capture](./.tasks/milestone-02-source-evidence/SNT-012-playwright-evidence-runtime.md) | SNT-002, SNT-003 | not-started |
+| SNT-013 | [PR diff to base/head symbol mapping](./.tasks/milestone-02-source-evidence/SNT-013-pr-diff-symbol-mapping.md) | SNT-007, SNT-009, SNT-010 | not-started |
 
 ---
 
@@ -87,12 +87,12 @@ graph LR
 
 **Exit gate:** Each specialist completes golden missions, obeys scope and budgets, rejects unsafe/unavailable tools, produces no uncited claims, and can checkpoint/resume without replaying unsafe effects.
 
-| ID      | Issue                                                                                                        | Depends on                         | Status      |
-| ------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------- | ----------- |
-| SNT-014 | [Shared specialist agent kernel](./.tasks/milestone-03-specialist-agents/SNT-014-specialist-agent-kernel.md) | SNT-005, SNT-006                   | not-started |
-| SNT-015 | [Documentation Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-015-documentation-explorer.md)    | SNT-008, SNT-014                   | not-started |
-| SNT-016 | [Code Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-016-code-explorer.md)                      | SNT-009, SNT-010, SNT-011, SNT-014 | not-started |
-| SNT-017 | [Application Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-017-application-explorer.md)        | SNT-012, SNT-014                   | not-started |
+| ID | Issue | Depends on | Status |
+|---|---|---|---|
+| SNT-014 | [Shared specialist agent kernel](./.tasks/milestone-03-specialist-agents/SNT-014-specialist-agent-kernel.md) | SNT-005, SNT-006 | not-started |
+| SNT-015 | [Documentation Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-015-documentation-explorer.md) | SNT-008, SNT-014 | not-started |
+| SNT-016 | [Code Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-016-code-explorer.md) | SNT-009, SNT-010, SNT-011, SNT-014 | not-started |
+| SNT-017 | [Application Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-017-application-explorer.md) | SNT-012, SNT-014 | not-started |
 
 ---
 
@@ -104,11 +104,11 @@ graph LR
 
 **Exit gate:** A Hi.Events fixture yields at least one complete `DocumentSection → Requirement → Workflow → UIElement → APIEndpoint → CodeSymbol` path, one scoped coverage gap, and one Curator-driven follow-up mission, with no Tier-D claim entering confident traversal.
 
-| ID      | Issue                                                                                                                                    | Depends on                         | Status      |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ----------- |
-| SNT-018 | [Evidence validation, tiers, and candidate linking](./.tasks/milestone-04-graph-reconciliation/SNT-018-evidence-validation-linking.md)   | SNT-004, SNT-015, SNT-016, SNT-017 | not-started |
-| SNT-019 | [Evidence Curator and bounded reconciliation](./.tasks/milestone-04-graph-reconciliation/SNT-019-evidence-curator.md)                    | SNT-014, SNT-018                   | not-started |
-| SNT-020 | [Coverage assessments and absence semantics](./.tasks/milestone-04-graph-reconciliation/SNT-020-coverage-absence.md)                     | SNT-015, SNT-017, SNT-018          | not-started |
+| ID | Issue | Depends on | Status |
+|---|---|---|---|
+| SNT-018 | [Evidence validation, tiers, and candidate linking](./.tasks/milestone-04-graph-reconciliation/SNT-018-evidence-validation-linking.md) | SNT-004, SNT-015, SNT-016, SNT-017 | not-started |
+| SNT-019 | [Evidence Curator and bounded reconciliation](./.tasks/milestone-04-graph-reconciliation/SNT-019-evidence-curator.md) | SNT-014, SNT-018 | not-started |
+| SNT-020 | [Coverage assessments and absence semantics](./.tasks/milestone-04-graph-reconciliation/SNT-020-coverage-absence.md) | SNT-015, SNT-017, SNT-018 | not-started |
 | SNT-021 | [Atomic current-graph publication and evidence queries](./.tasks/milestone-04-graph-reconciliation/SNT-021-graph-publication-queries.md) | SNT-004, SNT-018, SNT-019, SNT-020 | not-started |
 
 ---
@@ -121,12 +121,12 @@ graph LR
 
 **Exit gate:** Refreshing the browser preserves run progress; private artifacts use authorized access; agent activity shows structured facts rather than chain-of-thought; a reviewer can approve/reject a pending link and resume the checkpointed run.
 
-| ID      | Issue                                                                                                                                            | Depends on                                  | Status      |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- | ----------- |
-| SNT-022 | [Application onboarding, compatibility, auth, and safety configuration](./.tasks/milestone-05-control-plane/SNT-022-onboarding-control-plane.md) | SNT-003, SNT-007, SNT-012                   | not-started |
-| SNT-023 | [Run APIs, worker control, cancellation, and recovery](./.tasks/milestone-05-control-plane/SNT-023-run-control-api.md)                           | SNT-006, SNT-022                            | not-started |
-| SNT-024 | [Realtime specialist activity and screenshot storyboard](./.tasks/milestone-05-control-plane/SNT-024-agent-activity-ux.md)                       | SNT-006, SNT-017, SNT-023                   | not-started |
-| SNT-025 | [Knowledge, coverage, evidence-path, and review UI](./.tasks/milestone-05-control-plane/SNT-025-knowledge-review-ui.md)                          | SNT-019, SNT-020, SNT-021, SNT-023, SNT-024 | not-started |
+| ID | Issue | Depends on | Status |
+|---|---|---|---|
+| SNT-022 | [Application onboarding, compatibility, auth, and safety configuration](./.tasks/milestone-05-control-plane/SNT-022-onboarding-control-plane.md) | SNT-003, SNT-007, SNT-012 | not-started |
+| SNT-023 | [Run APIs, worker control, cancellation, and recovery](./.tasks/milestone-05-control-plane/SNT-023-run-control-api.md) | SNT-006, SNT-022 | not-started |
+| SNT-024 | [Realtime specialist activity and screenshot storyboard](./.tasks/milestone-05-control-plane/SNT-024-agent-activity-ux.md) | SNT-006, SNT-017, SNT-023 | not-started |
+| SNT-025 | [Knowledge, coverage, evidence-path, and review UI](./.tasks/milestone-05-control-plane/SNT-025-knowledge-review-ui.md) | SNT-019, SNT-020, SNT-021, SNT-023, SNT-024 | not-started |
 
 ---
 
@@ -138,12 +138,12 @@ graph LR
 
 **Exit gate:** A real public Hi.Events PR produces an immutable report with base/head identity, changed symbols, evidence paths, affected UI/workflows/requirements, unknowns, recommended tests, and a GitHub check linking to the dashboard.
 
-| ID      | Issue                                                                                                                              | Depends on                                  | Status      |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ----------- |
-| SNT-026 | [GitHub App webhook ingestion and check lifecycle](./.tasks/milestone-06-pr-impact/SNT-026-github-app-checks.md)                   | SNT-003, SNT-007, SNT-023                   | not-started |
-| SNT-027 | [Agentic PR investigation workflow](./.tasks/milestone-06-pr-impact/SNT-027-pr-investigation-workflow.md)                          | SNT-013, SNT-016, SNT-019, SNT-021, SNT-026 | not-started |
-| SNT-028 | [Blast-radius traversal, scoring, and unknown handling](./.tasks/milestone-06-pr-impact/SNT-028-blast-radius-engine.md)            | SNT-021, SNT-027                            | not-started |
-| SNT-029 | [Grounded report generation, dashboard, and GitHub summary](./.tasks/milestone-06-pr-impact/SNT-029-assessment-report-delivery.md) | SNT-005, SNT-025, SNT-026, SNT-028          | not-started |
+| ID | Issue | Depends on | Status |
+|---|---|---|---|
+| SNT-026 | [GitHub App webhook ingestion and check lifecycle](./.tasks/milestone-06-pr-impact/SNT-026-github-app-checks.md) | SNT-003, SNT-007, SNT-023 | not-started |
+| SNT-027 | [Agentic PR investigation workflow](./.tasks/milestone-06-pr-impact/SNT-027-pr-investigation-workflow.md) | SNT-013, SNT-016, SNT-019, SNT-021, SNT-026 | not-started |
+| SNT-028 | [Blast-radius traversal, scoring, and unknown handling](./.tasks/milestone-06-pr-impact/SNT-028-blast-radius-engine.md) | SNT-021, SNT-027 | not-started |
+| SNT-029 | [Grounded report generation, dashboard, and GitHub summary](./.tasks/milestone-06-pr-impact/SNT-029-assessment-report-delivery.md) | SNT-005, SNT-025, SNT-026, SNT-028 | not-started |
 
 ---
 
@@ -155,11 +155,11 @@ graph LR
 
 **Exit gate:** A trusted fixture/head environment shows one affected flow and one control, setup is separated from behavior under test, observed results remain distinct from predicted risk, and a successful refresh advances the indexed commit atomically.
 
-| ID      | Issue                                                                                                                                           | Depends on                                                    | Status      |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ----------- |
-| SNT-030 | [Trusted deployment identity and verification planning](./.tasks/milestone-07-verification-refresh/SNT-030-deployment-verification-planning.md) | SNT-022, SNT-027, SNT-028                                     | blocked     |
-| SNT-031 | [Agentic targeted verification and deterministic verdicts](./.tasks/milestone-07-verification-refresh/SNT-031-agentic-targeted-verification.md) | SNT-017, SNT-024, SNT-029, SNT-030                            | not-started |
-| SNT-032 | [Incremental post-deployment knowledge refresh](./.tasks/milestone-07-verification-refresh/SNT-032-incremental-knowledge-refresh.md)            | SNT-008, SNT-013, SNT-017, SNT-019, SNT-021, SNT-027, SNT-030 | not-started |
+| ID | Issue | Depends on | Status |
+|---|---|---|---|
+| SNT-030 | [Trusted deployment identity and verification planning](./.tasks/milestone-07-verification-refresh/SNT-030-deployment-verification-planning.md) | SNT-022, SNT-027, SNT-028 | blocked |
+| SNT-031 | [Agentic targeted verification and deterministic verdicts](./.tasks/milestone-07-verification-refresh/SNT-031-agentic-targeted-verification.md) | SNT-017, SNT-024, SNT-029, SNT-030 | not-started |
+| SNT-032 | [Incremental post-deployment knowledge refresh](./.tasks/milestone-07-verification-refresh/SNT-032-incremental-knowledge-refresh.md) | SNT-008, SNT-013, SNT-017, SNT-019, SNT-021, SNT-027, SNT-030 | not-started |
 
 ---
 
@@ -171,27 +171,27 @@ graph LR
 
 **Exit gate:** Clean setup succeeds from the README; full CI/regression/eval suite passes; the selected PR report is reproducible; mandatory assignment questions are answered; remaining limitations and next-week priorities are explicit.
 
-| ID      | Issue                                                                                                                                    | Depends on                                  | Status      |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ----------- |
-| SNT-033 | [Golden dataset and stage/trajectory evaluation harness](./.tasks/milestone-08-evaluation-delivery/SNT-033-evaluation-harness.md)        | SNT-015, SNT-016, SNT-017, SNT-019, SNT-028 | not-started |
-| SNT-034 | [Security, resilience, and regression hardening](./.tasks/milestone-08-evaluation-delivery/SNT-034-security-resilience-hardening.md)     | SNT-026, SNT-029, SNT-031, SNT-032, SNT-033 | not-started |
-| SNT-035 | [README, design document, sample output, and Loom preparation](./.tasks/milestone-08-evaluation-delivery/SNT-035-assignment-delivery.md) | SNT-029, SNT-033, SNT-034                   | not-started |
+| ID | Issue | Depends on | Status |
+|---|---|---|---|
+| SNT-033 | [Golden dataset and stage/trajectory evaluation harness](./.tasks/milestone-08-evaluation-delivery/SNT-033-evaluation-harness.md) | SNT-015, SNT-016, SNT-017, SNT-019, SNT-028 | not-started |
+| SNT-034 | [Security, resilience, and regression hardening](./.tasks/milestone-08-evaluation-delivery/SNT-034-security-resilience-hardening.md) | SNT-026, SNT-029, SNT-031, SNT-032, SNT-033 | not-started |
+| SNT-035 | [README, design document, sample output, and Loom preparation](./.tasks/milestone-08-evaluation-delivery/SNT-035-assignment-delivery.md) | SNT-029, SNT-033, SNT-034 | not-started |
 
 ---
 
 ## Global progress
 
-| Milestone                                |  Done |  Total | Status                         |
-| ---------------------------------------- | ----: | -----: | ------------------------------ |
-| M1 Foundation and durable execution      |     3 |      6 | in-progress                    |
-| M2 Deterministic source evidence         |     0 |      7 | not-started                    |
-| M3 Specialist discovery agents           |     0 |      4 | not-started                    |
-| M4 Graph construction and reconciliation |     0 |      4 | not-started                    |
-| M5 Onboarding and control plane          |     0 |      4 | not-started                    |
-| M6 PR blast-radius loop                  |     0 |      4 | not-started                    |
-| M7 Verification and refresh              |     0 |      3 | blocked on deployment decision |
-| M8 Evaluation and delivery               |     0 |      3 | not-started                    |
-| **Overall**                              | **3** | **35** | **review: SNT-004**            |
+| Milestone | Done | Total | Status |
+|---|---:|---:|---|
+| M1 Foundation and durable execution | 3 | 6 | in-progress |
+| M2 Deterministic source evidence | 0 | 7 | not-started |
+| M3 Specialist discovery agents | 0 | 4 | not-started |
+| M4 Graph construction and reconciliation | 0 | 4 | not-started |
+| M5 Onboarding and control plane | 0 | 4 | not-started |
+| M6 PR blast-radius loop | 0 | 4 | not-started |
+| M7 Verification and refresh | 0 | 3 | blocked on deployment decision |
+| M8 Evaluation and delivery | 0 | 3 | not-started |
+| **Overall** | **3** | **35** | **review: SNT-004** |
 
 ## Active front
 

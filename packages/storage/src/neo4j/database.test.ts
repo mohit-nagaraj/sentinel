@@ -66,8 +66,9 @@ describe("Neo4j database boundary", () => {
 
     await database.write(
       {
-        applicationId: "application:v1:abc",
-        runId: "run:123",
+        applicationId:
+          "application:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        runId: "run:11111111-1111-4111-8111-111111111111",
         operation: "merge_node",
       },
       async (transaction) => transaction.run("RETURN $value", { value: 7 })
@@ -78,13 +79,30 @@ describe("Neo4j database boundary", () => {
     expect(fake.executeWrite.mock.calls[0]?.[1]).toEqual({
       timeout: 12_000,
       metadata: {
-        sentinel_application_id: "application:v1:abc",
-        sentinel_run_id: "run:123",
+        sentinel_application_id:
+          "application:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        sentinel_run_id: "run:11111111-1111-4111-8111-111111111111",
         sentinel_operation: "merge_node",
       },
     })
     expect(fake.run).toHaveBeenCalledWith("RETURN $value", { value: 7 })
     expect(fake.closeSession).toHaveBeenCalledOnce()
+  })
+
+  it("rejects invalid metadata without echoing or opening a session", async () => {
+    const fake = createDriver()
+    const database = new Neo4jGraphDatabase(fake.driver, "neo4j")
+    const unsafe = "password=must-not-reach-observability"
+
+    await expect(
+      database.read({ operation: unsafe }, async () => undefined)
+    ).rejects.toThrow("Invalid Neo4j transaction context: operation")
+    try {
+      await database.read({ operation: unsafe }, async () => undefined)
+    } catch (error) {
+      expect(String(error)).not.toContain(unsafe)
+    }
+    expect(fake.driver.session).not.toHaveBeenCalled()
   })
 
   it("closes sessions after transaction failures", async () => {

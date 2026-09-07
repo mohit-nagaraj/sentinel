@@ -8,6 +8,8 @@ const allowedNeo4jProtocols = new Set([
   "bolt+s:",
   "bolt+ssc:",
 ])
+const verifiedTlsProtocols = new Set(["neo4j+s:", "bolt+s:"])
+const loopbackHosts = new Set(["localhost", "127.0.0.1", "[::1]"])
 
 const neo4jUriSchema = z
   .string()
@@ -26,6 +28,15 @@ const neo4jUriSchema = z
       context.addIssue({
         code: "custom",
         message: "Unsupported Neo4j protocol",
+      })
+    }
+    if (
+      !loopbackHosts.has(parsed.hostname.toLowerCase()) &&
+      !verifiedTlsProtocols.has(parsed.protocol)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Remote Neo4j connections require verified TLS",
       })
     }
     if (

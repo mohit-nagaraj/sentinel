@@ -3,6 +3,8 @@ import {
   entityKindSchema,
   evidenceIdSchema,
   hashCanonical,
+  persistedTextSchema,
+  runIdSchema,
   stableEntityIdSchema,
   type EntityKind,
   type ApplicationId,
@@ -20,7 +22,10 @@ import {
 import { toNativeGraphValue, type NativeGraphValue } from "./values.ts"
 
 const graphRevisionSchema = z.number().int().nonnegative()
-const propertyKeySchema = z.string().regex(/^[a-z][a-z0-9_]*$/)
+const propertyKeySchema = z
+  .string()
+  .max(128)
+  .regex(/^[a-z][a-z0-9_]*$/)
 const reservedNodeProperties = new Set([
   "application_id",
   "stable_key",
@@ -28,6 +33,51 @@ const reservedNodeProperties = new Set([
   "created_at",
   "updated_at",
 ])
+const sensitivePropertySegments = new Set([
+  "auth",
+  "authorization",
+  "cookie",
+  "credential",
+  "password",
+  "secret",
+  "session",
+  "sid",
+  "signature",
+  "token",
+])
+const sensitiveNormalizedProperties = new Set([
+  "accesskey",
+  "accesskeyid",
+  "accesstoken",
+  "apikey",
+  "clientsecret",
+  "connectsid",
+  "idtoken",
+  "oauthtoken",
+  "phpsessid",
+  "privatekey",
+  "refreshtoken",
+  "sessionid",
+  "xamzsignature",
+  "xgoogsignature",
+])
+
+function isSensitivePropertyKey(key: string): boolean {
+  const segments = key.split("_")
+  const normalized = segments.join("")
+  return (
+    segments.some((segment) => sensitivePropertySegments.has(segment)) ||
+    sensitiveNormalizedProperties.has(normalized) ||
+    /(?:accesskey|apikey|clientsecret|privatekey|sessionid)$/.test(normalized)
+  )
+}
+
+function parseOptionalRunId(input: string | undefined): string | undefined {
+  if (input === undefined) return undefined
+  const result = runIdSchema.safeParse(input)
+  if (!result.success) throw new Error("Invalid graph run identifier")
+  return result.data
+}
 
 function isNativeGraphRecord(
   value: NativeGraphValue
@@ -40,9 +90,15 @@ export type GraphPropertyValue =
 export type GraphProperties = Readonly<Record<string, GraphPropertyValue>>
 
 function parseProperties(input: GraphProperties): GraphProperties {
+  if (Object.keys(input).length > 128) {
+    throw new Error("Graph facts are limited to 128 properties")
+  }
   const output: Record<string, GraphPropertyValue> = {}
   for (const [key, value] of Object.entries(input)) {
     propertyKeySchema.parse(key)
+    if (isSensitivePropertyKey(key)) {
+      throw new Error("Graph properties cannot contain sensitive fields")
+    }
     if (reservedNodeProperties.has(key)) {
       throw new Error(`Graph property ${key} is reserved`)
     }
@@ -58,19 +114,44 @@ function parseProperties(input: GraphProperties): GraphProperties {
     if (typeof value === "number" && !Number.isFinite(value)) {
       throw new Error(`Graph property ${key} must be finite`)
     }
-    if (
-      Array.isArray(value) &&
-      (value.some(
-        (item) => !["boolean", "number", "string"].includes(typeof item)
-      ) ||
+    if (typeof value === "string") {
+      const result = persistedTextSchema.safeParse(value)
+      if (!result.success) {
+        throw new Error("Graph properties contain unsafe persisted text")
+      }
+      output[key] = result.data
+      continue
+    }
+    if (Array.isArray(value)) {
+      if (
+        value.length > 256 ||
+        value.some(
+          (item) => !["boolean", "number", "string"].includes(typeof item)
+        ) ||
         value.some(
           (item) => typeof item === "number" && !Number.isFinite(item)
         ) ||
-        new Set(value.map((item) => typeof item)).size > 1)
-    ) {
-      throw new Error(`Graph property ${key} has an unsupported array`)
+        new Set(value.map((item) => typeof item)).size > 1
+      ) {
+        throw new Error(`Graph property ${key} has an unsupported array`)
+      }
+      if (value.every((item): item is string => typeof item === "string")) {
+        const parsed: string[] = []
+        for (const item of value) {
+          const result = persistedTextSchema.safeParse(item)
+          if (!result.success) {
+            throw new Error("Graph properties contain unsafe persisted text")
+          }
+          parsed.push(result.data)
+        }
+        output[key] = parsed
+        continue
+      }
     }
     output[key] = value
+  }
+  if (new TextEncoder().encode(JSON.stringify(output)).byteLength > 65_536) {
+    throw new Error("Graph properties exceed the 64 KiB persistence limit")
   }
   return output
 }
@@ -116,6 +197,8 @@ function nodeMergeStatement(kind: EntityKind): string {
   const label = resolveNodeLabel(kind)
   return `MERGE (n:${label} {application_id: $applicationId, stable_key: $stableKey})
 ON CREATE SET n.created_at = datetime()
+WITH n
+WHERE n.graph_revision IS NULL OR n.graph_revision <= $graphRevision
 SET n += $properties,
     n.graph_revision = $graphRevision,
     n.updated_at = datetime()
@@ -128,6 +211,8 @@ function relationshipMergeStatement(typeInput: unknown): string {
 MATCH (to {application_id: $applicationId, stable_key: $toStableKey})
 MERGE (from)-[r:${type} {application_id: $applicationId, stable_key: $stableKey}]->(to)
 ON CREATE SET r.created_at = datetime()
+WITH r
+WHERE r.graph_revision IS NULL OR r.graph_revision <= $graphRevision
 SET r += $properties,
     r.graph_revision = $graphRevision,
     r.updated_at = datetime()
@@ -153,10 +238,11 @@ export class Neo4jFactRepository {
 
   async mergeNode(input: GraphNodeFact, runId?: string): Promise<void> {
     const fact = parseNodeFact(input)
+    const parsedRunId = parseOptionalRunId(runId)
     await this.database.write(
       {
         applicationId: fact.applicationId,
-        ...(runId === undefined ? {} : { runId }),
+        ...(parsedRunId === undefined ? {} : { runId: parsedRunId }),
         operation: "merge_graph_node",
       },
       (transaction) => this.mergeNodeInTransaction(transaction, fact)
@@ -175,7 +261,7 @@ export class Neo4jFactRepository {
       properties: fact.properties,
     })
     if (result.records.length !== 1) {
-      throw new Error("Neo4j node merge returned no record")
+      throw new Error("Neo4j node merge rejected a stale graph revision")
     }
   }
 
@@ -199,10 +285,11 @@ export class Neo4jFactRepository {
     }
     const graphRevision = graphRevisionSchema.parse(input.graphRevision)
     const properties = parseProperties(input.properties)
+    const parsedRunId = parseOptionalRunId(runId)
     await this.database.write(
       {
         applicationId,
-        ...(runId === undefined ? {} : { runId }),
+        ...(parsedRunId === undefined ? {} : { runId: parsedRunId }),
         operation: "merge_graph_relationship",
       },
       async (transaction) => {
@@ -215,7 +302,9 @@ export class Neo4jFactRepository {
           properties,
         })
         if (result.records.length !== 1) {
-          throw new Error("Neo4j relationship merge endpoints were not found")
+          throw new Error(
+            "Neo4j relationship merge endpoints were not found or graph revision is stale"
+          )
         }
       }
     )
@@ -226,6 +315,7 @@ export class Neo4jFactRepository {
     context: { readonly applicationId: string; readonly runId?: string }
   ): Promise<void> {
     const applicationId = applicationIdSchema.parse(context.applicationId)
+    const runId = parseOptionalRunId(context.runId)
     const facts = inputs.map(parseNodeFact)
     if (facts.some((fact) => fact.applicationId !== applicationId)) {
       throw new Error("Atomic graph writes cannot cross application namespaces")
@@ -233,7 +323,7 @@ export class Neo4jFactRepository {
     await this.database.write(
       {
         applicationId,
-        ...(context.runId === undefined ? {} : { runId: context.runId }),
+        ...(runId === undefined ? {} : { runId }),
         operation: "merge_graph_nodes_atomically",
       },
       async (transaction) => {
@@ -278,6 +368,11 @@ export class Neo4jFactRepository {
       .string()
       .regex(/^sentinel-test-[a-f0-9]{8,32}$/)
       .parse(testPrefixInput)
+    const expectedApplicationId =
+      createTestGraphNamespace(testPrefix).applicationId
+    if (String(applicationId) !== String(expectedApplicationId)) {
+      throw new Error("Test graph namespace identity does not match its prefix")
+    }
     return this.database.write(
       { applicationId, operation: "cleanup_test_graph_namespace" },
       async (transaction) => {

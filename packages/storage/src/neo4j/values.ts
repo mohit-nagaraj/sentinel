@@ -22,7 +22,7 @@ export function toNativeGraphValue(value: unknown): NativeGraphValue {
   }
   if (Array.isArray(value)) return value.map(toNativeGraphValue)
   if (typeof value === "object") {
-    if ("properties" in value) {
+    if (neo4j.isNode(value) || neo4j.isRelationship(value)) {
       return toNativeGraphValue(value.properties)
     }
     if (

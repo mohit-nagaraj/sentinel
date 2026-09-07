@@ -19,17 +19,29 @@ describe("Neo4j value mapping", () => {
     }
 
     expect(
-      toNativeGraphValue({
-        properties: {
-          count: neo4j.int(3),
-          optional: null,
-          nested: [neo4j.int(4), { at: new TemporalValue() }],
-        },
-      })
+      toNativeGraphValue(
+        new neo4j.types.Node(
+          neo4j.int(1),
+          ["Requirement"],
+          {
+            count: neo4j.int(3),
+            optional: null,
+            nested: [neo4j.int(4), { at: new TemporalValue() }],
+          },
+          "test-node"
+        )
+      )
     ).toEqual({
       count: 3,
       optional: null,
       nested: [4, { at: "2026-09-07T12:00:00Z" }],
+    })
+  })
+
+  it("does not confuse an ordinary properties field with a graph entity", () => {
+    expect(toNativeGraphValue({ properties: "literal", score: 7 })).toEqual({
+      properties: "literal",
+      score: 7,
     })
   })
 

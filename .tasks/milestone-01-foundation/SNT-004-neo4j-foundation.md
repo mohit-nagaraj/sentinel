@@ -65,4 +65,4 @@ The configured Aura instance is shared infrastructure. Integration tests must re
 - Schema bootstrap installs composite application/stable-key uniqueness constraints for all 17 node labels and 22 relationship types.
 - All caller-controlled identifiers, revisions, and properties are Cypher parameters; labels and relationship types resolve only through contract-backed allowlists.
 - Shared Aura verification on 2026-09-07 passed bootstrap idempotency, duplicate merge, relationship round-trip, failed-transaction rollback, and two-namespace cleanup isolation.
-- Default verification: formatting, lint, TypeScript build, 103 repository tests, 19 focused Neo4j tests, and the skipped-by-default graph project all passed.
+- Default verification: formatting, lint, TypeScript build, 108 repository tests, 23 focused Neo4j tests, and the skipped-by-default graph project all passed.
