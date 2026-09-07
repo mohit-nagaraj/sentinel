@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest"
 import {
   browserActionCandidateSchema,
   browserObservationSchema,
+  browserPolicyDecisionSchema,
   browserRecoveryRecipeSchema,
+  browserTransitionEvidenceSchema,
 } from "./browser-runtime.ts"
 
 const ids = {
@@ -66,6 +68,50 @@ describe("browser runtime contracts", () => {
     }
   )
 
+  it("rejects contradictory policy decisions", () => {
+    expect(() =>
+      browserPolicyDecisionSchema.parse({
+        category: "destructive",
+        allowed: true,
+        reason: "safe_read",
+        replaySafe: true,
+      })
+    ).toThrow()
+  })
+
+  it("rejects transitions whose action or run is not in the before state", () => {
+    const before = browserObservationSchema.parse({
+      schemaVersion: 1,
+      evidenceId: ids.evidence,
+      applicationId: ids.application,
+      runId: ids.run,
+      url: "https://example.test/checkout",
+      normalizedRoute: "/checkout",
+      title: "Checkout",
+      headings: ["Checkout"],
+      controls: [],
+      dialogs: [],
+      selectedText: [],
+      candidates: [candidate],
+      stateFingerprint: ids.fingerprint,
+      errors: [],
+      observedAt: "2026-09-07T10:00:00.000Z",
+    })
+    expect(() =>
+      browserTransitionEvidenceSchema.parse({
+        schemaVersion: 1,
+        evidenceId: `evidence:v1:${"e".repeat(64)}`,
+        runId: "run:22222222-2222-4222-8222-222222222222",
+        action: { ...candidate, signature: `sha256:${"f".repeat(64)}` },
+        before,
+        after: before,
+        network: [],
+        errors: [],
+        observedAt: "2026-09-07T10:00:01.000Z",
+      })
+    ).toThrow()
+  })
+
   it("rejects unbounded observations", () => {
     expect(() =>
       browserObservationSchema.parse({
@@ -77,6 +123,28 @@ describe("browser runtime contracts", () => {
         normalizedRoute: "/",
         title: "Example",
         headings: Array.from({ length: 51 }, (_, index) => `Heading ${index}`),
+        controls: [],
+        dialogs: [],
+        selectedText: [],
+        candidates: [],
+        stateFingerprint: ids.fingerprint,
+        errors: [],
+        observedAt: "2026-09-07T10:00:00.000Z",
+      })
+    ).toThrow()
+  })
+
+  it("rejects browser URLs beyond the public observation limit", () => {
+    expect(() =>
+      browserObservationSchema.parse({
+        schemaVersion: 1,
+        evidenceId: ids.evidence,
+        applicationId: ids.application,
+        runId: ids.run,
+        url: `https://example.test/${"x".repeat(2_100)}`,
+        normalizedRoute: "/",
+        title: "Example",
+        headings: [],
         controls: [],
         dialogs: [],
         selectedText: [],

@@ -17,6 +17,10 @@ import {
   timestampSchema,
 } from "./primitives.ts"
 
+export const boundedBrowserUrlSchema = publicHttpUrlSchema.pipe(
+  z.string().max(2_048)
+)
+
 export const browserActionKindSchema = z.enum([
   "click",
   "fill",
@@ -42,12 +46,41 @@ export const browserPolicyCategorySchema = z.enum([
   "external_navigation",
 ])
 
-export const browserPolicyDecisionSchema = z.strictObject({
-  category: browserPolicyCategorySchema,
-  allowed: z.boolean(),
-  reason: reasonCodeSchema,
-  replaySafe: z.boolean(),
-})
+export const browserPolicyDecisionSchema = z
+  .strictObject({
+    category: browserPolicyCategorySchema,
+    allowed: z.boolean(),
+    reason: reasonCodeSchema,
+    replaySafe: z.boolean(),
+  })
+  .superRefine((decision, context) => {
+    const expectedReason = decision.allowed
+      ? decision.category
+      : `${decision.category}_denied`
+    if (decision.reason !== expectedReason) {
+      context.addIssue({
+        code: "custom",
+        path: ["reason"],
+        message: "Policy reason must match its category and decision",
+      })
+    }
+    if (
+      decision.replaySafe &&
+      (!decision.allowed ||
+        ![
+          "safe_read",
+          "safe_navigation",
+          "safe_form_progress",
+          "credential_entry",
+        ].includes(decision.category))
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["replaySafe"],
+        message: "Only allowed safe categories may be replay-safe",
+      })
+    }
+  })
 
 export const browserActionCandidateSchema = z.strictObject({
   actionId: actionIdSchema,
@@ -97,7 +130,7 @@ export const browserObservationSchema = z.strictObject({
   evidenceId: evidenceIdSchema,
   applicationId: applicationIdSchema,
   runId: runIdSchema,
-  url: publicHttpUrlSchema,
+  url: boundedBrowserUrlSchema,
   normalizedRoute: normalizedPathSchema,
   title: shortTextSchema,
   headings: z.array(shortTextSchema).max(50),
@@ -112,17 +145,51 @@ export const browserObservationSchema = z.strictObject({
   observedAt: timestampSchema,
 })
 
-export const browserTransitionEvidenceSchema = z.strictObject({
-  schemaVersion: schemaVersionSchema,
-  evidenceId: evidenceIdSchema,
-  runId: runIdSchema,
-  action: browserActionCandidateSchema,
-  before: browserObservationSchema,
-  after: browserObservationSchema,
-  network: z.array(browserNetworkEvidenceSchema).max(200),
-  errors: z.array(browserRuntimeErrorEvidenceSchema).max(100),
-  observedAt: timestampSchema,
-})
+export const browserTransitionEvidenceSchema = z
+  .strictObject({
+    schemaVersion: schemaVersionSchema,
+    evidenceId: evidenceIdSchema,
+    runId: runIdSchema,
+    action: browserActionCandidateSchema,
+    before: browserObservationSchema,
+    after: browserObservationSchema,
+    network: z.array(browserNetworkEvidenceSchema).max(200),
+    errors: z.array(browserRuntimeErrorEvidenceSchema).max(100),
+    observedAt: timestampSchema,
+  })
+  .superRefine((transition, context) => {
+    if (
+      transition.runId !== transition.before.runId ||
+      transition.runId !== transition.after.runId
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["runId"],
+        message: "Transition observations must belong to its run",
+      })
+    }
+    if (transition.before.applicationId !== transition.after.applicationId) {
+      context.addIssue({
+        code: "custom",
+        path: ["after", "applicationId"],
+        message: "Transition observations must belong to one application",
+      })
+    }
+    const observed = transition.before.candidates.find(
+      (candidate) => candidate.actionId === transition.action.actionId
+    )
+    if (
+      observed === undefined ||
+      observed.signature !== transition.action.signature ||
+      observed.kind !== transition.action.kind
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["action"],
+        message: "Transition action must come from the before observation",
+      })
+    }
+  })
 
 export const browserRuntimeFailureCodeSchema = z.enum([
   "run_not_found",
@@ -175,7 +242,7 @@ export const browserRecoveryRecipeSchema = z.strictObject({
   schemaVersion: schemaVersionSchema,
   applicationId: applicationIdSchema,
   sourceRunId: runIdSchema,
-  entryUrl: publicHttpUrlSchema,
+  entryUrl: boundedBrowserUrlSchema,
   steps: z.array(browserReplayStepSchema).max(100),
   createdAt: timestampSchema,
 })

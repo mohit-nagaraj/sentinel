@@ -29,6 +29,27 @@ describe("browser evidence redaction", () => {
         "https://user:pass@app.example.test/users/slot-secret%40example.test?token=abc#secret"
       )
     ).toBe("https://app.example.test/users/redacted")
+    expect(
+      redactor.redactUrl(
+        "https://app.example.test/reset/xYzOpaqueValue?token=abc"
+      )
+    ).toBe("https://app.example.test/reset/redacted")
+    expect(
+      redactor.redactUrl(
+        `https://app.example.test/callback/${"aB3".repeat(12)}`
+      )
+    ).toBe("https://app.example.test/callback/redacted")
+    expect(
+      redactor.redactUrl("https://app.example.test/t/xYzOpaqueValue")
+    ).toBe("https://app.example.test/t/redacted")
+    expect(
+      redactor.redactUrl(
+        "https://app.example.test/magic-link/AbCdEfGhIjKlMnOpQrStUvWx"
+      )
+    ).toBe("https://app.example.test/magic-link/redacted")
+    expect(
+      redactor.redactUrl("https://app.example.test/login/AbCdEfGhIjKlMnOp")
+    ).toBe("https://app.example.test/login/redacted")
   })
 
   it("bounds and normalizes observed text", () => {
@@ -41,7 +62,7 @@ describe("browser evidence redaction", () => {
       redactor.errorMessage(
         new Error("locator('form > button:nth-child(2)') timed out")
       )
-    ).toBe("[INTERNAL_TARGET] timed out")
+    ).toBe("[INTERNAL_TARGET]")
   })
 
   it("masks every editable control in screenshots", () => {

@@ -3,8 +3,10 @@ import {
   browserTransitionEvidenceSchema,
 } from "@sentinel/contracts"
 import { describe, expect, it } from "vitest"
+import type { Browser, BrowserContextOptions } from "playwright"
 
 import { FakeBrowserEvidenceRuntime } from "./fake.ts"
+import { createPlaywrightBrowserEvidenceRuntime } from "./runtime.ts"
 
 const ids = {
   action: `action:v1:${"a".repeat(64)}`,
@@ -148,5 +150,107 @@ describe("fake browser evidence runtime", () => {
     await expect(runtime.performAction(ids.run, ids.action)).rejects.toThrow(
       /stale/
     )
+  })
+})
+
+describe("Playwright browser setup cleanup", () => {
+  it("closes a launched browser when context creation fails", async () => {
+    let closed = 0
+    let contextOptions: BrowserContextOptions | undefined
+    const browser = {
+      async newContext(options?: BrowserContextOptions) {
+        contextOptions = options
+        throw new Error("context setup failed")
+      },
+      async close() {
+        closed += 1
+      },
+    } as unknown as Browser
+    const runtime = createPlaywrightBrowserEvidenceRuntime({
+      artifacts: {
+        async persist() {
+          throw new Error("not reached")
+        },
+      },
+      inputResolver: {
+        async resolve() {
+          return "not reached"
+        },
+      },
+      launcher: {
+        async launch() {
+          return browser
+        },
+      },
+    })
+
+    await expect(
+      runtime.startRun({
+        applicationId: ids.application,
+        runId: ids.run,
+        entryUrl: "https://example.test/",
+        policy: { allowedOrigins: ["https://example.test"] },
+      })
+    ).rejects.toMatchObject({
+      failure: {
+        code: "browser_error",
+        message: "Browser setup failed during context_creation: browser_error",
+      },
+    })
+    expect(closed).toBe(1)
+    expect(contextOptions).toMatchObject({
+      acceptDownloads: false,
+      serviceWorkers: "block",
+    })
+    expect(runtime.isActive(ids.run)).toBe(false)
+  })
+
+  it("reserves a run ID before asynchronous browser setup", async () => {
+    let resolveLaunch: ((browser: Browser) => void) | undefined
+    const launchGate = new Promise<Browser>((resolve) => {
+      resolveLaunch = resolve
+    })
+    let launches = 0
+    const runtime = createPlaywrightBrowserEvidenceRuntime({
+      artifacts: {
+        async persist() {
+          throw new Error("not reached")
+        },
+      },
+      inputResolver: {
+        async resolve() {
+          return "not reached"
+        },
+      },
+      launcher: {
+        async launch() {
+          launches += 1
+          return launchGate
+        },
+      },
+    })
+    const options = {
+      applicationId: ids.application,
+      runId: ids.run,
+      entryUrl: "https://example.test/",
+      policy: { allowedOrigins: ["https://example.test"] },
+    }
+
+    const firstStart = runtime.startRun(options)
+    await expect(runtime.startRun(options)).rejects.toMatchObject({
+      failure: { code: "run_already_exists" },
+    })
+    if (resolveLaunch === undefined)
+      throw new Error("Launch gate was not ready")
+    resolveLaunch({
+      async newContext() {
+        throw new Error("context setup failed")
+      },
+      async close() {},
+    } as unknown as Browser)
+    await expect(firstStart).rejects.toMatchObject({
+      failure: { code: "browser_error" },
+    })
+    expect(launches).toBe(1)
   })
 })

@@ -8,6 +8,7 @@ import {
 } from "@sentinel/adapters"
 import {
   artifactIdSchema,
+  contentHashSchema,
   type ApplicationId,
   type ArtifactId,
   type RunId,
@@ -31,6 +32,9 @@ const runIds = {
   cleanup: "run:77777777-7777-4777-8777-777777777777",
   callback: "run:88888888-8888-4888-8888-888888888888",
   redirect: "run:99999999-9999-4999-8999-999999999999",
+  mediaLimits: "run:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  mismatch: "run:cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  abort: "run:dddddddd-dddd-4ddd-8ddd-dddddddddddd",
 } as const
 
 class MemoryArtifacts implements BrowserArtifactSink {
@@ -39,15 +43,20 @@ class MemoryArtifacts implements BrowserArtifactSink {
     retention: "report" | "failure"
     body: Uint8Array
   }> = []
+  failNext = false
 
   async persist(input: {
     readonly applicationId: ApplicationId
     readonly runId: RunId
     readonly artifactType: "screenshot" | "trace"
-    readonly mimeType: "image/png" | "application/zip"
+    readonly mimeType: "image/png" | "application/json"
     readonly body: Uint8Array
     readonly retention: "report" | "failure"
   }): Promise<ArtifactId> {
+    if (this.failNext) {
+      this.failNext = false
+      throw new Error("artifact persistence failed with token=private")
+    }
     this.records.push({
       artifactType: input.artifactType,
       retention: input.retention,
@@ -94,11 +103,11 @@ describe("Playwright browser evidence runtime", () => {
 
   beforeAll(async () => {
     fixture = await startBrowserFixtureApplication()
-  })
+  }, 30_000)
 
   afterAll(async () => {
     await fixture.close()
-  })
+  }, 30_000)
 
   function options(
     runId: string,
@@ -153,7 +162,7 @@ describe("Playwright browser evidence runtime", () => {
             cookies: [
               {
                 name: "fixture_auth",
-                value: "yes",
+                value: "browser-storage-secret-value",
                 domain: "127.0.0.1",
                 path: "/",
                 expires: -1,
@@ -173,7 +182,9 @@ describe("Playwright browser evidence runtime", () => {
       storageStateReference: secretReference,
     })
     expect(storageReferences).toStrictEqual([secretReference])
-    expect(observation.selectedText).toContain("Authenticated session")
+    expect(observation.selectedText).toContain(
+      "Authenticated session [REDACTED]"
+    )
     expect(observation.screenshotArtifactId).toMatch(/^artifact:v1:/)
 
     for (const [name, slot] of [
@@ -192,19 +203,22 @@ describe("Playwright browser evidence runtime", () => {
       observation = transition.after
     }
 
+    expect(
+      observation.candidates.find((value) => value.name === "Continue")?.policy
+    ).toMatchObject({ category: "unknown_submission", allowed: false })
     const continueAction = observation.candidates.find(
-      (value) => value.name === "Continue"
+      (value) => value.name === "Load attendee details"
     )
     const transition = await runtime.performAction(
       runIds.primary,
       continueAction?.actionId ?? "missing"
     )
     const serialized = JSON.stringify(transition)
-    expect(transition.after.normalizedRoute).toBe("/details/{id}")
+    expect(transition.after.normalizedRoute).toBe("/details/redacted")
     expect(transition.network).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          method: "POST",
+          method: "GET",
           normalizedPath: "/api/step",
           status: 201,
           outcome: "response",
@@ -217,13 +231,13 @@ describe("Playwright browser evidence runtime", () => {
     expect(
       runtime
         .createRecoveryRecipe(runIds.primary)
-        .steps.some((step) => step.name === "Continue")
-    ).toBe(false)
+        .steps.some((step) => step.name === "Load attendee details")
+    ).toBe(true)
     expect(
       artifacts.records.every((record) => record.body.byteLength > 0)
     ).toBe(true)
     await runtime.completeRun(runIds.primary)
-  })
+  }, 30_000)
 
   it("keeps duplicate semantic states stable and distinguishes modal state", async () => {
     const runtime = createPlaywrightBrowserEvidenceRuntime({
@@ -235,6 +249,21 @@ describe("Playwright browser evidence runtime", () => {
       },
     })
     let observation = await runtime.startRun(options(runIds.primary))
+    const sameState = await runtime.startRun(options(runIds.secondary))
+    expect(
+      sameState.candidates.map(({ signature, kind, name }) => ({
+        signature,
+        kind,
+        name,
+      }))
+    ).toStrictEqual(
+      observation.candidates.map(({ signature, kind, name }) => ({
+        signature,
+        kind,
+        name,
+      }))
+    )
+    await runtime.completeRun(runIds.secondary)
     const refresh = observation.candidates.find(
       (value) => value.name === "Refresh state"
     )
@@ -262,7 +291,7 @@ describe("Playwright browser evidence runtime", () => {
       text: "Confirm [EMAIL_REDACTED]",
     })
     await runtime.completeRun(runIds.primary)
-  })
+  }, 30_000)
 
   it("fails closed for forged, cross-run, reused, stale, expired, and concurrent actions", async () => {
     const artifacts = new MemoryArtifacts()
@@ -297,7 +326,9 @@ describe("Playwright browser evidence runtime", () => {
       (error: unknown) => failureCode(error) === "action_reused"
     )
 
-    const slow = second.candidates.find((value) => value.name === "Slow action")
+    const slow = second.candidates.find(
+      (value) => value.name === "Load slow response"
+    )
     const inFlight = runtime.performAction(
       runIds.secondary,
       slow?.actionId ?? "missing"
@@ -373,6 +404,10 @@ describe("Playwright browser evidence runtime", () => {
         observation.candidates.find((value) => value.name === name)?.policy
       ).toMatchObject({ allowed: false, category })
     }
+    expect(
+      observation.candidates.find((value) => value.name === "Close account")
+        ?.policy
+    ).toMatchObject({ allowed: false, category: "destructive" })
     const denied = observation.candidates.find(
       (value) => value.name === "Delete account"
     )
@@ -389,6 +424,17 @@ describe("Playwright browser evidence runtime", () => {
         (error: unknown) => failureCode(error) === "policy_denied"
       )
     }
+    const externalSocket = observation.candidates.find(
+      (value) => value.name === "Open external socket"
+    )
+    await expect(
+      runtime.performAction(
+        runIds.failure,
+        externalSocket?.actionId ?? "missing"
+      )
+    ).rejects.toSatisfy(
+      (error: unknown) => failureCode(error) === "host_denied"
+    )
 
     const redirect = observation.candidates.find(
       (value) => value.name === "Redirect outside"
@@ -431,6 +477,17 @@ describe("Playwright browser evidence runtime", () => {
         }),
       ])
     )
+    const trace = artifacts.records.find(
+      (record) => record.artifactType === "trace"
+    )
+    const traceText = new TextDecoder().decode(trace?.body)
+    expect(JSON.parse(traceText)).toMatchObject({
+      kind: "sanitized_browser_failure_trace",
+      runId: runIds.failure,
+    })
+    expect(traceText).not.toMatch(
+      /must-not-appear|buyer@example|correct horse|authorization|cookie|locator|selector/
+    )
     await runtime.completeRun(runIds.failure)
 
     const redirectObservation = await runtime.startRun(
@@ -454,6 +511,47 @@ describe("Playwright browser evidence runtime", () => {
       (error: unknown) => failureCode(error) === "redirect_limit_reached"
     )
     await runtime.completeRun(runIds.redirect)
+
+    const mediaObservation = await runtime.startRun(
+      options(runIds.mediaLimits, "/", {
+        policy: {
+          allowedOrigins: [fixture.origin],
+          allowedCategories: [
+            "safe_read",
+            "safe_navigation",
+            "safe_form_progress",
+            "credential_entry",
+            "download",
+          ],
+          allowInsecureLocalhost: true,
+          budgets: { maxDownloads: 0, maxTabs: 1 },
+        },
+      })
+    )
+    const unexpectedPopup = mediaObservation.candidates.find(
+      (value) => value.name === "Open unexpected window"
+    )
+    await expect(
+      runtime.performAction(
+        runIds.mediaLimits,
+        unexpectedPopup?.actionId ?? "missing"
+      )
+    ).rejects.toSatisfy(
+      (error: unknown) => failureCode(error) === "tab_limit_reached"
+    )
+    const allowedDownload = mediaObservation.candidates.find(
+      (value) => value.name === "Download invoice"
+    )
+    expect(allowedDownload?.policy.allowed).toBe(true)
+    await expect(
+      runtime.performAction(
+        runIds.mediaLimits,
+        allowedDownload?.actionId ?? "missing"
+      )
+    ).rejects.toSatisfy(
+      (error: unknown) => failureCode(error) === "download_denied"
+    )
+    await runtime.completeRun(runIds.mediaLimits)
   }, 30_000)
 
   it("correlates only action-window network and redacts console errors", async () => {
@@ -476,7 +574,7 @@ describe("Playwright browser evidence runtime", () => {
     expect(transition.network).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          normalizedPath: "/api/summary",
+          normalizedPath: "/api/users/redacted",
           status: 200,
         }),
       ])
@@ -489,7 +587,7 @@ describe("Playwright browser evidence runtime", () => {
       "Summary failed for [EMAIL_REDACTED]"
     )
     const pageErrorAction = transition.after.candidates.find(
-      (value) => value.name === "Throw page error"
+      (value) => value.name === "Show page error"
     )
     const pageErrorTransition = await runtime.performAction(
       runIds.primary,
@@ -504,7 +602,7 @@ describe("Playwright browser evidence runtime", () => {
       ])
     )
     await runtime.completeRun(runIds.primary)
-  })
+  }, 30_000)
 
   it("enforces action, screen, and time budgets", async () => {
     const clock = new MutableClock()
@@ -556,7 +654,68 @@ describe("Playwright browser evidence runtime", () => {
       (error: unknown) => failureCode(error) === "run_expired"
     )
     await runtime.completeRun(runIds.primary)
-  })
+
+    const screenOnlyRuntime = createPlaywrightBrowserEvidenceRuntime({
+      artifacts: new MemoryArtifacts(),
+      inputResolver: {
+        async resolve() {
+          return "unused"
+        },
+      },
+    })
+    const screenOnly = await screenOnlyRuntime.startRun(
+      options(runIds.secondary, "/", {
+        policy: {
+          allowedOrigins: [fixture.origin],
+          allowInsecureLocalhost: true,
+          budgets: { maxScreens: 1 },
+        },
+      })
+    )
+    const blockedRefresh = screenOnly.candidates.find(
+      (value) => value.name === "Refresh state"
+    )
+    await expect(
+      screenOnlyRuntime.performAction(
+        runIds.secondary,
+        blockedRefresh?.actionId ?? "missing"
+      )
+    ).rejects.toSatisfy(
+      (error: unknown) => failureCode(error) === "screen_limit_reached"
+    )
+    await screenOnlyRuntime.completeRun(runIds.secondary)
+
+    const advancingClock = new MutableClock()
+    const midActionRuntime = createPlaywrightBrowserEvidenceRuntime({
+      artifacts: new MemoryArtifacts(),
+      inputResolver: {
+        async resolve() {
+          advancingClock.advance(1_001)
+          return "buyer@example.test"
+        },
+      },
+      clock: advancingClock,
+    })
+    const midAction = await midActionRuntime.startRun(
+      options(runIds.expired, "/", {
+        policy: {
+          allowedOrigins: [fixture.origin],
+          allowInsecureLocalhost: true,
+          budgets: { maxDurationMs: 1_000 },
+        },
+      })
+    )
+    const email = midAction.candidates.find((value) => value.name === "Email")
+    await expect(
+      midActionRuntime.performAction(
+        runIds.expired,
+        email?.actionId ?? "missing"
+      )
+    ).rejects.toSatisfy(
+      (error: unknown) => failureCode(error) === "run_expired"
+    )
+    await midActionRuntime.completeRun(runIds.expired)
+  }, 30_000)
 
   it("replays only safe history with fingerprint checks", async () => {
     const runtime = createPlaywrightBrowserEvidenceRuntime({
@@ -585,12 +744,28 @@ describe("Playwright browser evidence runtime", () => {
       original.after.stateFingerprint
     )
     await runtime.completeRun(runIds.recovery)
-  })
+
+    await expect(
+      runtime.replay(options(runIds.mismatch), {
+        ...recipe,
+        steps: recipe.steps.map((step) => ({
+          ...step,
+          expectedBeforeFingerprint: contentHashSchema.parse(
+            `sha256:${"0".repeat(64)}`
+          ),
+        })),
+      })
+    ).rejects.toSatisfy(
+      (error: unknown) => failureCode(error) === "recovery_mismatch"
+    )
+    expect(runtime.isActive(runIds.mismatch)).toBe(false)
+  }, 30_000)
 
   it("closes contexts on completion, cancellation, and callback exceptions", async () => {
     const launcher = new TrackingLauncher()
+    const artifacts = new MemoryArtifacts()
     const runtime = createPlaywrightBrowserEvidenceRuntime({
-      artifacts: new MemoryArtifacts(),
+      artifacts,
       inputResolver: {
         async resolve() {
           return "unused"
@@ -598,16 +773,52 @@ describe("Playwright browser evidence runtime", () => {
       },
       launcher,
     })
-    await runtime.startRun(options(runIds.cleanup))
+    artifacts.failNext = true
+    await expect(
+      runtime.startRun(options(runIds.cleanup))
+    ).rejects.toMatchObject({
+      failure: { code: "browser_error" },
+    })
+    expect(
+      (Reflect.get(runtime, "actionOwners") as Map<unknown, unknown>).size
+    ).toBe(0)
+    expect(runtime.isActive(runIds.cleanup)).toBe(false)
+    const first = await runtime.startRun(options(runIds.cleanup))
+    const oldAction = first.candidates.find(
+      (value) => value.name === "Refresh state"
+    )
     await runtime.completeRun(runIds.cleanup)
     await runtime.startRun(options(runIds.cleanup))
+    await expect(
+      runtime.performAction(runIds.cleanup, oldAction?.actionId ?? "missing")
+    ).rejects.toSatisfy(
+      (error: unknown) => failureCode(error) === "action_not_found"
+    )
     await runtime.cancelRun(runIds.cleanup)
+    const abortController = new AbortController()
+    await expect(
+      runtime.executeRun(
+        options(runIds.abort),
+        async (activeRuntime, observation) => {
+          const slow = observation.candidates.find(
+            (value) => value.name === "Load slow response"
+          )
+          setTimeout(() => abortController.abort(), 10)
+          return activeRuntime.performAction(
+            runIds.abort,
+            slow?.actionId ?? "missing"
+          )
+        },
+        abortController.signal
+      )
+    ).rejects.toBeDefined()
+    expect(runtime.isActive(runIds.abort)).toBe(false)
     await expect(
       runtime.executeRun(options(runIds.callback), async () => {
         throw new Error("fixture callback failure")
       })
     ).rejects.toThrow("fixture callback failure")
     expect(runtime.isActive(runIds.callback)).toBe(false)
-    expect(launcher.disconnected).toBe(3)
-  })
+    expect(launcher.disconnected).toBe(5)
+  }, 30_000)
 })

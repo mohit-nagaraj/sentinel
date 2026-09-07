@@ -34,6 +34,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: composer validate --strict --working-dir tools/php-indexer
       - run: composer install --working-dir tools/php-indexer --no-interaction --no-plugins --no-scripts --prefer-dist
+      - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck

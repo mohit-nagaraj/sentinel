@@ -320,6 +320,7 @@ describe("canonical identity", () => {
     const actionId = createActionId({
       applicationId: appId,
       runId,
+      sessionNonce: hash,
       stateFingerprint: hash,
       actionType: "click",
       ordinal: 1,

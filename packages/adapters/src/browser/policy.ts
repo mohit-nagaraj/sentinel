@@ -126,6 +126,21 @@ export function isAllowedBrowserUrl(
   }
 }
 
+export function isAllowedBrowserWebSocketUrl(
+  input: string,
+  policy: BrowserPolicy
+): boolean {
+  try {
+    const url = new URL(input)
+    if (url.protocol === "wss:") url.protocol = "https:"
+    else if (url.protocol === "ws:") url.protocol = "http:"
+    else return false
+    return isAllowedBrowserUrl(url.toString(), policy)
+  } catch {
+    return false
+  }
+}
+
 export function normalizeRoute(input: string): string {
   const pathname = new URL(input, "https://sentinel.invalid").pathname
   const normalized = pathname
@@ -152,7 +167,9 @@ export function toPublicBrowserUrl(input: string): string {
 
 function classifyUnsafeName(name: string): BrowserPolicyCategory | undefined {
   if (
-    /\b(delete|destroy|erase|remove|terminate|cancel account)\b/i.test(name)
+    /\b(delete|destroy|erase|remove|terminate|cancel account|close account|refund|revoke|disable|archive)\b/i.test(
+      name
+    )
   ) {
     return "destructive"
   }
@@ -164,11 +181,17 @@ function classifyUnsafeName(name: string): BrowserPolicyCategory | undefined {
     return "payment"
   }
   if (
-    /\b(admin|administrator|permission|privilege|change role)\b/i.test(name)
+    /\b(admin|administrator|permission|privilege|change role|promote|demote|grant)\b/i.test(
+      name
+    )
   ) {
     return "account_privilege"
   }
-  if (/\b(send|email|message|notify|publish|broadcast|invite)\b/i.test(name)) {
+  if (
+    /\b(send|email|message|notify|publish|broadcast|invite|post|comment|reply)\b/i.test(
+      name
+    )
+  ) {
     return "external_message"
   }
   if (
@@ -205,30 +228,33 @@ export function classifyBrowserAction(
     if (unsafe !== undefined) {
       category = unsafe
     } else if (input.submit) {
-      category = /\b(continue|next|sign in|log in|search|apply)\b/i.test(name)
-        ? "safe_form_progress"
-        : "unknown_submission"
+      category = "unknown_submission"
     } else if (input.kind === "navigate" || input.kind === "back") {
       category = "safe_navigation"
     } else if (input.kind === "reload") {
       category = "safe_read"
     } else if (input.kind === "check") {
       category = "safe_form_progress"
-    } else {
+    } else if (
+      /\b(open|view|show|load|refresh|inspect|preview|expand|collapse|dismiss|close)\b/i.test(
+        name
+      )
+    ) {
       category = "safe_read"
+    } else {
+      category = "unknown_submission"
     }
   }
 
   const allowed = policy.allowedCategories.has(category)
+  const replaySafeCategory = safeCategories.has(category)
   return browserPolicyDecisionSchema.parse({
     category,
     allowed,
     reason: allowed ? category : `${category}_denied`,
     replaySafe:
       allowed &&
-      category !== "unknown_submission" &&
-      category !== "payment" &&
-      category !== "destructive" &&
+      replaySafeCategory &&
       input.kind !== "check" &&
       input.kind !== "back" &&
       input.submit !== true,

@@ -5,6 +5,7 @@ import {
   classifyBrowserAction,
   createBrowserPolicy,
   isAllowedBrowserUrl,
+  isAllowedBrowserWebSocketUrl,
   normalizeRoute,
   toPublicBrowserUrl,
 } from "./policy.ts"
@@ -50,6 +51,10 @@ describe("browser policy", () => {
     ["Place order", "payment"],
     ["Send invitation", "external_message"],
     ["Make administrator", "account_privilege"],
+    ["Refund customer", "destructive"],
+    ["Promote user", "account_privilege"],
+    ["Post comment", "external_message"],
+    ["Close account", "destructive"],
   ] as const)("denies %s as %s", (name, category) => {
     expect(
       classifyBrowserAction({ kind: "click", name }, policy)
@@ -76,14 +81,21 @@ describe("browser policy", () => {
     expect(
       classifyBrowserAction({ kind: "click", name: "Save profile" }, policy)
     ).toMatchObject({ category: "unknown_submission", allowed: false })
+    expect(
+      classifyBrowserAction({ kind: "click", name: "Do something" }, policy)
+    ).toMatchObject({ category: "unknown_submission", allowed: false })
   })
 
-  it("allows bounded semantic navigation, progress, and named inputs", () => {
+  it("allows bounded semantic navigation and named inputs", () => {
     const progress = classifyBrowserAction(
       { kind: "click", name: "Continue", submit: true },
       policy
     )
-    expect(progress).toMatchObject({ allowed: true, replaySafe: false })
+    expect(progress).toMatchObject({
+      category: "unknown_submission",
+      allowed: false,
+      replaySafe: false,
+    })
     expect(
       classifyBrowserAction(
         { kind: "fill", name: "Email", inputSlot: "account_email" },
@@ -93,6 +105,28 @@ describe("browser policy", () => {
     expect(classifyBrowserAction({ kind: "back" }, policy).replaySafe).toBe(
       false
     )
+    const downloadPolicy = createBrowserPolicy({
+      allowedOrigins: ["https://app.example.test"],
+      allowedCategories: [...policy.allowedCategories, "download"],
+    })
+    expect(
+      classifyBrowserAction(
+        { kind: "navigate", name: "Download", download: true },
+        downloadPolicy
+      )
+    ).toMatchObject({ category: "download", allowed: true, replaySafe: false })
+  })
+
+  it("maps WebSocket protocols onto the exact HTTP origin allowlist", () => {
+    expect(
+      isAllowedBrowserWebSocketUrl("wss://app.example.test/events", policy)
+    ).toBe(true)
+    expect(
+      isAllowedBrowserWebSocketUrl("wss://other.example.test/events", policy)
+    ).toBe(false)
+    expect(
+      isAllowedBrowserWebSocketUrl("ws://app.example.test/events", policy)
+    ).toBe(false)
   })
 
   it("normalizes dynamic routes and strips public URL queries", () => {
