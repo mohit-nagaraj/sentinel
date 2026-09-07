@@ -315,3 +315,37 @@ configuration:
 RUN_LIVE_TESTS=1 RUN_CODE_EXPLORER_HI_EVENTS=1 \
   pnpm vitest run --project live tests/live/code-explorer-hi-events.live.test.ts
 ```
+
+## Application Explorer
+
+`@sentinel/contracts` exports strict Application Explorer schemas and inferred
+types for planner decisions, bounded context and checkpoint state, frontier and
+replay metadata, terminal classifications, blockers, evidence claims, and
+mission output. `@sentinel/orchestration` exports `ApplicationExplorer`,
+`ApplicationExplorerTools`, `createApplicationExplorer`,
+`buildApplicationExplorerPlannerContext`, and the browser, planner, and event
+ports used to compose the explorer.
+
+The planner can select only `observe_page`, `perform_observed_action`,
+`navigate_history`, or `finish_application_mission`. Observed action IDs remain
+bound to the latest sanitized observation, while the browser runtime retains
+policy, stale-state, host, reuse, and budget authority. Mission hints affect
+candidate relevance only. Executed transitions produce contract-validated
+screen, workflow, flow-step, UI-element, and runtime-request claims. Recovery
+replays only fingerprint-confirmed safe history and requests human review at an
+uncertain mutable boundary.
+
+The deterministic unit, agent, and integration suites require no live target.
+The Hi.Events smoke remains disabled unless explicitly enabled against a trusted
+deployment:
+
+```sh
+RUN_HIEVENTS_APPLICATION_EXPLORER=1 \
+HIEVENTS_APPLICATION_EXPLORER_URL=https://events.example.test \
+pnpm test:live -- tests/live/application-explorer.live.test.ts
+```
+
+`HIEVENTS_APPLICATION_EXPLORER_ALLOWED_ORIGINS` optionally supplies additional
+comma-separated exact origins; the entry URL origin is always included.
+`pnpm test:live` sets the general `RUN_LIVE_TESTS=1` gate. The smoke selects at
+most one replay-safe public action and does not enter form values.
