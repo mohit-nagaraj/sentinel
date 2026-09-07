@@ -46,6 +46,7 @@ export interface SideEffectPort {
   execute(input: {
     readonly runId: string
     readonly effectId: string
+    readonly signal: AbortSignal
   }): Promise<void>
 }
 
@@ -178,6 +179,7 @@ async function emit(
 }
 
 export interface NodeRuntime {
+  readonly signal: AbortSignal
   checkActive(): Promise<void>
   emitTool(input: {
     readonly toolName: string
@@ -225,10 +227,12 @@ export function wrapNode<
     }
     const now = dependencies.now ?? (() => new Date())
     const started = now().getTime()
+    const abortController = new AbortController()
+    const elapsed = () => Math.max(0, now().getTime() - state.startedAtMs)
     const checkActive = async () => {
       if (
-        Math.max(0, now().getTime() - state.startedAtMs) >
-        state.budget.elapsedMs
+        abortController.signal.aborted ||
+        elapsed() >= state.budget.elapsedMs
       ) {
         throw new BudgetExhaustedError()
       }
@@ -238,6 +242,7 @@ export function wrapNode<
       })
     }
     const runtime: NodeRuntime = {
+      signal: abortController.signal,
       checkActive,
       emitTool: async ({ toolName, phase }) => {
         await emit(dependencies, {
@@ -266,7 +271,23 @@ export function wrapNode<
         summary: "Node execution started",
         reasonCode: "node_started",
       })
-      const update = await handler(state, runtime)
+      const remainingMs = Math.max(1, state.budget.elapsedMs - elapsed())
+      let timeout: ReturnType<typeof setTimeout> | undefined
+      const timeoutPromise = new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => {
+          abortController.abort()
+          reject(new BudgetExhaustedError())
+        }, remainingMs)
+      })
+      let update: Update
+      try {
+        update = await Promise.race([
+          Promise.resolve(handler(state, runtime)),
+          timeoutPromise,
+        ])
+      } finally {
+        if (timeout !== undefined) clearTimeout(timeout)
+      }
       assertCompactCheckpointState(update)
       await checkActive()
       return update

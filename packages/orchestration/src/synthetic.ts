@@ -112,6 +112,7 @@ export function buildSyntheticGraph(
       await dependencies.effects.execute({
         runId: state.runId,
         effectId: "deterministic_branch",
+        signal: runtime.signal,
       })
       return {
         branchResults: "deterministic_complete",
@@ -129,6 +130,7 @@ export function buildSyntheticGraph(
       await dependencies.effects.execute({
         runId: state.runId,
         effectId: "transient_branch",
+        signal: runtime.signal,
       })
       return {
         branchResults: "transient_complete",
@@ -161,6 +163,7 @@ export function buildSyntheticGraph(
       await dependencies.effects.execute({
         runId: state.runId,
         effectId: "model_tool",
+        signal: runtime.signal,
       })
       await runtime.emitTool({ toolName: "synthetic_tool", phase: "completed" })
       return {
@@ -234,6 +237,7 @@ export function buildSyntheticGraph(
       await dependencies.effects.execute({
         runId: state.runId,
         effectId: "finalize",
+        signal: runtime.signal,
       })
       return {
         effectIds: "finalize",
@@ -244,17 +248,20 @@ export function buildSyntheticGraph(
     }
   )
 
-  const committedNode =
-    (
-      nodeName: string,
-      afterCommit?: (state: SyntheticStateValue) => Promise<void>
-    ) =>
-    async (stateInput: SyntheticStateValue) => {
-      const state = parseSyntheticState(stateInput)
-      await emitCommittedNodeEvent(dependencies, state, nodeName)
-      await afterCommit?.(state)
-      return {}
-    }
+  const committedNode = (
+    nodeName: string,
+    afterCommit?: (state: SyntheticStateValue) => Promise<void>
+  ) =>
+    wrapNode(
+      `${nodeName}_committed`,
+      dependencies,
+      parseSyntheticState,
+      async (state) => {
+        await emitCommittedNodeEvent(dependencies, state, nodeName)
+        await afterCommit?.(state)
+        return {}
+      }
+    )
 
   return new StateGraph(SyntheticState)
     .addNode("initialize", initialize)
@@ -324,6 +331,8 @@ export interface SyntheticRunResult {
     | "lease_lost"
     | "blocked"
     | "budget_exhausted"
+    | "failed"
+    | "in_progress"
   readonly state: SyntheticStateValue
   readonly interruptValues: readonly unknown[]
   readonly idempotent: boolean
@@ -365,7 +374,11 @@ export class SyntheticOrchestrationService {
             ? "budget_exhausted"
             : state.terminalStatus === "blocked"
               ? "blocked"
-              : "completed",
+              : state.terminalStatus === "complete"
+                ? "completed"
+                : state.terminalStatus === "failed"
+                  ? "failed"
+                  : "in_progress",
       state,
       interruptValues,
       idempotent,
@@ -507,7 +520,16 @@ export class SyntheticOrchestrationService {
           ) {
             throw new ResumeConflictError()
           }
-          return this.toResult(state, true)
+          if (
+            state.terminalStatus === "complete" ||
+            state.terminalStatus === "blocked" ||
+            state.terminalStatus === "budget_exhausted" ||
+            state.terminalStatus === "failed"
+          ) {
+            return this.toResult(state, true)
+          }
+          const continued = await this.invoke(null, parsed.runId)
+          return { ...continued, idempotent: true }
         }
         if (state.pendingReview?.decisionId !== parsed.decisionId) {
           throw new ResumeAuthorizationError()

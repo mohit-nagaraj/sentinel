@@ -6,6 +6,7 @@ import {
 } from "./event-projection.ts"
 import { InMemoryResumeCoordinator } from "./resume-coordinator.ts"
 import {
+  BudgetExhaustedError,
   CancelledOrchestrationError,
   LeaseOwnershipError,
   wrapNode,
@@ -186,6 +187,37 @@ describe("orchestration runtime boundaries", () => {
     await expect(
       node({ ...state, missionId: "mission-reference" })
     ).resolves.toEqual({ missionId: "mission-reference" })
+  })
+
+  it("actively aborts a handler when its remaining elapsed budget expires", async () => {
+    let aborted = false
+    const dependencies: RuntimeDependencies = {
+      owner: "worker-a",
+      control: { assertActive: async () => undefined },
+      events: { append: async () => undefined },
+      effects: { execute: async () => undefined },
+      resumeAuthorization: { authorize: async () => true },
+      resumeCoordinator: new InMemoryResumeCoordinator(),
+    }
+    const timedState = createSyntheticInitialState({
+      runId: state.runId,
+      applicationId: state.applicationId,
+      budget: { ...state.budget, elapsedMs: 100 },
+      startedAtMs: Date.now(),
+    })
+    const node = wrapNode(
+      "timed_node",
+      dependencies,
+      parseSyntheticState,
+      async (_state, runtime) =>
+        new Promise<never>(() => {
+          runtime.signal.addEventListener("abort", () => {
+            aborted = true
+          })
+        })
+    )
+    await expect(node(timedState)).rejects.toBeInstanceOf(BudgetExhaustedError)
+    expect(aborted).toBe(true)
   })
 
   it("projects updates and custom emissions without checkpoint payloads", () => {

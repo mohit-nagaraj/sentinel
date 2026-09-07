@@ -1,4 +1,4 @@
-import { MemorySaver } from "@langchain/langgraph"
+import { Command, MemorySaver } from "@langchain/langgraph"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -185,6 +185,35 @@ describe("synthetic LangGraph runtime", () => {
           event.kind === "node_completed"
       )
     ).toBe(true)
+  })
+
+  it("continues pending finalization after a decision checkpoint crash", async () => {
+    const memory = new MemorySaver()
+    const test = harness()
+    const graph = buildSyntheticGraph(test.dependencies, memory)
+    const service = new SyntheticOrchestrationService(graph, test.dependencies)
+    const initial = createSyntheticInitialState({
+      runId,
+      applicationId,
+      budget: normalBudget,
+    })
+    await service.start(initial)
+    const decision = {
+      runId,
+      actorId: "reviewer-1",
+      decisionId: "synthetic_review",
+      approved: true,
+    } as const
+    await graph.invoke(new Command({ resume: decision }), {
+      configurable: { thread_id: runId },
+      interruptAfter: ["human_review"],
+    })
+    expect(test.attempts.has("finalize")).toBe(false)
+
+    const recovered = await service.resume(decision)
+    expect(recovered.idempotent).toBe(true)
+    expect(recovered.status).toBe("completed")
+    expect(test.attempts.get("finalize")).toBe(1)
   })
 
   it("rejects unauthorized resumes without final side effects", async () => {
