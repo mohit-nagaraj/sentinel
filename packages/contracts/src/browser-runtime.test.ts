@@ -110,6 +110,19 @@ describe("browser runtime contracts", () => {
         observedAt: "2026-09-07T10:00:01.000Z",
       })
     ).toThrow()
+    expect(() =>
+      browserTransitionEvidenceSchema.parse({
+        schemaVersion: 1,
+        evidenceId: `evidence:v1:${"e".repeat(64)}`,
+        runId: ids.run,
+        action: { ...candidate, name: "Different action" },
+        before,
+        after: before,
+        network: [],
+        errors: [],
+        observedAt: "2026-09-07T10:00:01.000Z",
+      })
+    ).toThrow()
   })
 
   it("rejects unbounded observations", () => {

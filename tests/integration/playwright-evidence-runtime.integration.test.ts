@@ -185,6 +185,8 @@ describe("Playwright browser evidence runtime", () => {
     expect(observation.selectedText).toContain(
       "Authenticated session [REDACTED]"
     )
+    expect(observation.selectedText).toContain("Peer connection blocked")
+    expect(JSON.stringify(observation)).not.toContain("raw-private-note")
     expect(observation.screenshotArtifactId).toMatch(/^artifact:v1:/)
 
     for (const [name, slot] of [
@@ -237,6 +239,16 @@ describe("Playwright browser evidence runtime", () => {
       artifacts.records.every((record) => record.body.byteLength > 0)
     ).toBe(true)
     await runtime.completeRun(runIds.primary)
+
+    const volatileFirst = await runtime.startRun(
+      options(runIds.primary, "/volatile")
+    )
+    await runtime.completeRun(runIds.primary)
+    const volatileSecond = await runtime.startRun(
+      options(runIds.secondary, "/volatile")
+    )
+    expect(volatileSecond.stateFingerprint).toBe(volatileFirst.stateFingerprint)
+    await runtime.completeRun(runIds.secondary)
   }, 30_000)
 
   it("keeps duplicate semantic states stable and distinguishes modal state", async () => {
@@ -336,6 +348,9 @@ describe("Playwright browser evidence runtime", () => {
     await expect(
       runtime.performAction(runIds.secondary, slow?.actionId ?? "missing")
     ).rejects.toSatisfy((error: unknown) => failureCode(error) === "run_busy")
+    await expect(runtime.observe(runIds.secondary)).rejects.toSatisfy(
+      (error: unknown) => failureCode(error) === "run_busy"
+    )
     await inFlight
     await runtime.completeRun(runIds.primary)
     await runtime.completeRun(runIds.secondary)
@@ -372,6 +387,50 @@ describe("Playwright browser evidence runtime", () => {
       )
     ).rejects.toSatisfy(
       (error: unknown) => failureCode(error) === "action_expired"
+    )
+    await runtime.completeRun(runIds.expired)
+
+    const positionObservation = await runtime.startRun(
+      options(runIds.expired, "/stale-position")
+    )
+    const positioned = positionObservation.candidates.find(
+      (value) => value.name === "Show position state"
+    )
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    const positionedTransition = await runtime.performAction(
+      runIds.expired,
+      positioned?.actionId ?? "missing"
+    )
+    expect(positionedTransition.after.selectedText).toContain(
+      "Position target selected"
+    )
+    await runtime.completeRun(runIds.expired)
+
+    const piiObservation = await runtime.startRun(
+      options(runIds.expired, "/stale-pii")
+    )
+    const piiAction = piiObservation.candidates.find(
+      (value) => value.name === "View [EMAIL_REDACTED]"
+    )
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    await expect(
+      runtime.performAction(runIds.expired, piiAction?.actionId ?? "missing")
+    ).rejects.toSatisfy(
+      (error: unknown) => failureCode(error) === "action_stale"
+    )
+    await runtime.completeRun(runIds.expired)
+
+    const attributeObservation = await runtime.startRun(
+      options(runIds.expired, "/stale-attributes")
+    )
+    const mutable = attributeObservation.candidates.find(
+      (value) => value.name === "Load mutable state"
+    )
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    await expect(
+      runtime.performAction(runIds.expired, mutable?.actionId ?? "missing")
+    ).rejects.toSatisfy(
+      (error: unknown) => failureCode(error) === "action_stale"
     )
     await runtime.completeRun(runIds.expired)
   }, 30_000)
@@ -425,16 +484,21 @@ describe("Playwright browser evidence runtime", () => {
       )
     }
     const externalSocket = observation.candidates.find(
-      (value) => value.name === "Open external socket"
+      (value) => value.name === "Show external socket"
     )
+    artifacts.failNext = true
     await expect(
       runtime.performAction(
         runIds.failure,
         externalSocket?.actionId ?? "missing"
       )
-    ).rejects.toSatisfy(
-      (error: unknown) => failureCode(error) === "host_denied"
-    )
+    ).rejects.toSatisfy((error: unknown) => {
+      return (
+        error instanceof BrowserRuntimeError &&
+        error.failure.code === "host_denied" &&
+        !error.failure.message.includes("private")
+      )
+    })
 
     const redirect = observation.candidates.find(
       (value) => value.name === "Redirect outside"
@@ -488,7 +552,7 @@ describe("Playwright browser evidence runtime", () => {
     expect(traceText).not.toMatch(
       /must-not-appear|buyer@example|correct horse|authorization|cookie|locator|selector/
     )
-    await runtime.completeRun(runIds.failure)
+    await runtime.cancelRun(runIds.failure)
 
     const redirectObservation = await runtime.startRun(
       options(runIds.redirect, "/", {
@@ -510,7 +574,7 @@ describe("Playwright browser evidence runtime", () => {
     ).rejects.toSatisfy(
       (error: unknown) => failureCode(error) === "redirect_limit_reached"
     )
-    await runtime.completeRun(runIds.redirect)
+    await runtime.cancelRun(runIds.redirect)
 
     const mediaObservation = await runtime.startRun(
       options(runIds.mediaLimits, "/", {
@@ -529,7 +593,7 @@ describe("Playwright browser evidence runtime", () => {
       })
     )
     const unexpectedPopup = mediaObservation.candidates.find(
-      (value) => value.name === "Open unexpected window"
+      (value) => value.name === "Open window"
     )
     await expect(
       runtime.performAction(
@@ -539,7 +603,46 @@ describe("Playwright browser evidence runtime", () => {
     ).rejects.toSatisfy(
       (error: unknown) => failureCode(error) === "tab_limit_reached"
     )
-    const allowedDownload = mediaObservation.candidates.find(
+    await runtime.cancelRun(runIds.mediaLimits)
+
+    const delayed = await runtime.startRun(
+      options(runIds.secondary, "/", {
+        policy: {
+          allowedOrigins: [fixture.origin],
+          allowInsecureLocalhost: true,
+          budgets: { observationSettleMs: 0 },
+        },
+      })
+    )
+    const delayedSocket = delayed.candidates.find(
+      (value) => value.name === "Show delayed connection"
+    )
+    await runtime.performAction(
+      runIds.secondary,
+      delayedSocket?.actionId ?? "missing"
+    )
+    await new Promise((resolve) => setTimeout(resolve, 1_100))
+    await expect(runtime.completeRun(runIds.secondary)).rejects.toSatisfy(
+      (error: unknown) => failureCode(error) === "host_denied"
+    )
+    expect(runtime.isActive(runIds.secondary)).toBe(false)
+    const downloadObservation = await runtime.startRun(
+      options(runIds.mediaLimits, "/", {
+        policy: {
+          allowedOrigins: [fixture.origin],
+          allowedCategories: [
+            "safe_read",
+            "safe_navigation",
+            "safe_form_progress",
+            "credential_entry",
+            "download",
+          ],
+          allowInsecureLocalhost: true,
+          budgets: { maxDownloads: 0, maxTabs: 1 },
+        },
+      })
+    )
+    const allowedDownload = downloadObservation.candidates.find(
       (value) => value.name === "Download invoice"
     )
     expect(allowedDownload?.policy.allowed).toBe(true)
@@ -620,7 +723,7 @@ describe("Playwright browser evidence runtime", () => {
         policy: {
           allowedOrigins: [fixture.origin],
           allowInsecureLocalhost: true,
-          budgets: { maxActions: 1, maxScreens: 2, maxDurationMs: 1_000 },
+          budgets: { maxActions: 1, maxScreens: 2, maxDurationMs: 5_000 },
         },
       })
     )
@@ -644,7 +747,7 @@ describe("Playwright browser evidence runtime", () => {
     )
     const latest = await runtime.observe(runIds.primary).catch((error) => error)
     expect(failureCode(latest)).toBe("screen_limit_reached")
-    clock.advance(2_000)
+    clock.advance(6_000)
     await expect(
       runtime.performAction(
         runIds.primary,
@@ -690,7 +793,7 @@ describe("Playwright browser evidence runtime", () => {
       artifacts: new MemoryArtifacts(),
       inputResolver: {
         async resolve() {
-          advancingClock.advance(1_001)
+          advancingClock.advance(5_001)
           return "buyer@example.test"
         },
       },
@@ -701,7 +804,7 @@ describe("Playwright browser evidence runtime", () => {
         policy: {
           allowedOrigins: [fixture.origin],
           allowInsecureLocalhost: true,
-          budgets: { maxDurationMs: 1_000 },
+          budgets: { maxDurationMs: 5_000 },
         },
       })
     )
@@ -784,10 +887,27 @@ describe("Playwright browser evidence runtime", () => {
     ).toBe(0)
     expect(runtime.isActive(runIds.cleanup)).toBe(false)
     const first = await runtime.startRun(options(runIds.cleanup))
+    const ownerCount = (
+      Reflect.get(runtime, "actionOwners") as Map<unknown, unknown>
+    ).size
+    artifacts.failNext = true
+    await expect(runtime.observe(runIds.cleanup)).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof BrowserRuntimeError &&
+        error.failure.code === "browser_error" &&
+        !error.failure.message.includes("private")
+    )
+    expect(
+      (Reflect.get(runtime, "actionOwners") as Map<unknown, unknown>).size
+    ).toBe(ownerCount)
     const oldAction = first.candidates.find(
       (value) => value.name === "Refresh state"
     )
-    await runtime.completeRun(runIds.cleanup)
+    const completion = runtime.completeRun(runIds.cleanup)
+    await expect(runtime.observe(runIds.cleanup)).rejects.toSatisfy(
+      (error: unknown) => failureCode(error) === "run_busy"
+    )
+    await completion
     await runtime.startRun(options(runIds.cleanup))
     await expect(
       runtime.performAction(runIds.cleanup, oldAction?.actionId ?? "missing")
@@ -819,6 +939,78 @@ describe("Playwright browser evidence runtime", () => {
       })
     ).rejects.toThrow("fixture callback failure")
     expect(runtime.isActive(runIds.callback)).toBe(false)
-    expect(launcher.disconnected).toBe(5)
+    const neverCompletes = new Promise<never>(() => undefined)
+    await expect(
+      runtime.executeRun(
+        options(runIds.expired, "/", {
+          policy: {
+            allowedOrigins: [fixture.origin],
+            allowInsecureLocalhost: true,
+            budgets: { maxDurationMs: 2_000 },
+          },
+        }),
+        async () => neverCompletes
+      )
+    ).rejects.toSatisfy(
+      (error: unknown) => failureCode(error) === "run_expired"
+    )
+    expect(runtime.isActive(runIds.expired)).toBe(false)
+    expect(launcher.disconnected).toBe(6)
+  }, 30_000)
+
+  it("settles hanging artifact and input providers at the run deadline", async () => {
+    const artifactRuntime = createPlaywrightBrowserEvidenceRuntime({
+      artifacts: {
+        async persist() {
+          return new Promise<never>(() => undefined)
+        },
+      },
+      inputResolver: {
+        async resolve() {
+          return "unused"
+        },
+      },
+    })
+    await expect(
+      artifactRuntime.startRun(
+        options(runIds.primary, "/", {
+          policy: {
+            allowedOrigins: [fixture.origin],
+            allowInsecureLocalhost: true,
+            budgets: { maxDurationMs: 2_000 },
+          },
+        })
+      )
+    ).rejects.toSatisfy(
+      (error: unknown) => failureCode(error) === "run_expired"
+    )
+    expect(artifactRuntime.isActive(runIds.primary)).toBe(false)
+
+    const inputRuntime = createPlaywrightBrowserEvidenceRuntime({
+      artifacts: new MemoryArtifacts(),
+      inputResolver: {
+        async resolve() {
+          return new Promise<never>(() => undefined)
+        },
+      },
+    })
+    const inputObservation = await inputRuntime.startRun(
+      options(runIds.secondary, "/", {
+        policy: {
+          allowedOrigins: [fixture.origin],
+          allowInsecureLocalhost: true,
+          budgets: { maxDurationMs: 3_000 },
+        },
+      })
+    )
+    const email = inputObservation.candidates.find(
+      (value) => value.name === "Email"
+    )
+    await expect(
+      inputRuntime.performAction(runIds.secondary, email?.actionId ?? "missing")
+    ).rejects.toSatisfy(
+      (error: unknown) => failureCode(error) === "run_expired"
+    )
+    expect(inputRuntime.isActive(runIds.secondary)).toBe(false)
   }, 30_000)
 })

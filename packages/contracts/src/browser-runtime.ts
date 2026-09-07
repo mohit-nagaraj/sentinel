@@ -181,7 +181,16 @@ export const browserTransitionEvidenceSchema = z
     if (
       observed === undefined ||
       observed.signature !== transition.action.signature ||
-      observed.kind !== transition.action.kind
+      observed.kind !== transition.action.kind ||
+      observed.role !== transition.action.role ||
+      observed.name !== transition.action.name ||
+      observed.inputSlot !== transition.action.inputSlot ||
+      observed.disabled !== transition.action.disabled ||
+      observed.expiresAt !== transition.action.expiresAt ||
+      observed.policy.category !== transition.action.policy.category ||
+      observed.policy.allowed !== transition.action.policy.allowed ||
+      observed.policy.reason !== transition.action.policy.reason ||
+      observed.policy.replaySafe !== transition.action.policy.replaySafe
     ) {
       context.addIssue({
         code: "custom",

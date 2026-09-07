@@ -1,5 +1,6 @@
 import {
   browserObservationSchema,
+  browserRecoveryRecipeSchema,
   browserTransitionEvidenceSchema,
 } from "@sentinel/contracts"
 import { describe, expect, it } from "vitest"
@@ -11,6 +12,7 @@ import { createPlaywrightBrowserEvidenceRuntime } from "./runtime.ts"
 const ids = {
   action: `action:v1:${"a".repeat(64)}`,
   application: `application:v1:${"b".repeat(64)}`,
+  otherApplication: `application:v1:${"9".repeat(64)}`,
   beforeEvidence: `evidence:v1:${"c".repeat(64)}`,
   beforeFingerprint: `sha256:${"d".repeat(64)}`,
   afterEvidence: `evidence:v1:${"e".repeat(64)}`,
@@ -77,7 +79,29 @@ describe("fake browser evidence runtime", () => {
       errors: [],
       observedAt: "2026-09-07T10:00:01.000Z",
     })
-    runtime.enqueue(ids.run, { initial: before, transitions: [transition] })
+    const recovery = browserRecoveryRecipeSchema.parse({
+      schemaVersion: 1,
+      applicationId: ids.application,
+      sourceRunId: ids.run,
+      entryUrl: before.url,
+      steps: [
+        {
+          ordinal: 0,
+          signature: candidate.signature,
+          kind: candidate.kind,
+          name: candidate.name,
+          expectedBeforeFingerprint: ids.beforeFingerprint,
+          expectedAfterFingerprint: ids.afterFingerprint,
+          replaySafe: true,
+        },
+      ],
+      createdAt: "2026-09-07T10:00:02.000Z",
+    })
+    runtime.enqueue(ids.run, {
+      initial: before,
+      transitions: [transition],
+      recovery,
+    })
 
     await expect(
       runtime.startRun({
@@ -96,6 +120,21 @@ describe("fake browser evidence runtime", () => {
     await runtime.completeRun(ids.run)
     expect(runtime.isActive(ids.run)).toBe(false)
     expect(runtime.completedRuns).toStrictEqual([ids.run])
+    await expect(
+      runtime.replay(
+        {
+          applicationId: ids.application,
+          runId: ids.run,
+          entryUrl: before.url,
+          policy: { allowedOrigins: ["https://example.test"] },
+        },
+        recovery
+      )
+    ).resolves.toStrictEqual({
+      finalObservation: after,
+      transitions: [transition],
+    })
+    await runtime.completeRun(ids.run)
   })
 
   it("records cancellation and rejects unknown scripts", async () => {
@@ -150,6 +189,36 @@ describe("fake browser evidence runtime", () => {
     await expect(runtime.performAction(ids.run, ids.action)).rejects.toThrow(
       /stale/
     )
+  })
+
+  it("rejects fake transitions from another application", () => {
+    const runtime = new FakeBrowserEvidenceRuntime()
+    const initial = observation(ids.beforeEvidence, ids.beforeFingerprint, [
+      candidate,
+    ])
+    const foreignBefore = browserObservationSchema.parse({
+      ...initial,
+      applicationId: ids.otherApplication,
+    })
+    const foreignAfter = browserObservationSchema.parse({
+      ...observation(ids.afterEvidence, ids.afterFingerprint, []),
+      applicationId: ids.otherApplication,
+    })
+    const transition = browserTransitionEvidenceSchema.parse({
+      schemaVersion: 1,
+      evidenceId: ids.transitionEvidence,
+      runId: ids.run,
+      action: candidate,
+      before: foreignBefore,
+      after: foreignAfter,
+      network: [],
+      errors: [],
+      observedAt: "2026-09-07T10:00:01.000Z",
+    })
+
+    expect(() =>
+      runtime.enqueue(ids.run, { initial, transitions: [transition] })
+    ).toThrow(/applications/)
   })
 })
 
@@ -236,21 +305,75 @@ describe("Playwright browser setup cleanup", () => {
       policy: { allowedOrigins: ["https://example.test"] },
     }
 
-    const firstStart = runtime.startRun(options)
+    const abortController = new AbortController()
+    const firstStart = runtime.executeRun(
+      options,
+      async () => "not reached",
+      abortController.signal
+    )
     await expect(runtime.startRun(options)).rejects.toMatchObject({
       failure: { code: "run_already_exists" },
     })
+    const firstFailure = expect(firstStart).rejects.toMatchObject({
+      failure: { code: "run_cancelled" },
+    })
+    abortController.abort()
+    await firstFailure
     if (resolveLaunch === undefined)
       throw new Error("Launch gate was not ready")
+    let closed = 0
     resolveLaunch({
       async newContext() {
-        throw new Error("context setup failed")
+        throw new Error("not reached")
       },
-      async close() {},
+      async close() {
+        closed += 1
+      },
     } as unknown as Browser)
-    await expect(firstStart).rejects.toMatchObject({
-      failure: { code: "browser_error" },
-    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
     expect(launches).toBe(1)
+    expect(closed).toBe(1)
+  })
+
+  it("applies the run deadline to storage-state resolution", async () => {
+    let launches = 0
+    const runtime = createPlaywrightBrowserEvidenceRuntime({
+      artifacts: {
+        async persist() {
+          throw new Error("not reached")
+        },
+      },
+      inputResolver: {
+        async resolve() {
+          return "not reached"
+        },
+      },
+      storageStateProvider: {
+        async resolve() {
+          return new Promise(() => undefined)
+        },
+      },
+      launcher: {
+        async launch() {
+          launches += 1
+          throw new Error("not reached")
+        },
+      },
+    })
+
+    await expect(
+      runtime.startRun({
+        applicationId: ids.application,
+        runId: ids.run,
+        entryUrl: "https://example.test/",
+        storageStateReference: `secret-ref:v1:${"8".repeat(64)}`,
+        policy: {
+          allowedOrigins: ["https://example.test"],
+          budgets: { maxDurationMs: 1_000 },
+        },
+      })
+    ).rejects.toMatchObject({ failure: { code: "run_expired" } })
+    expect(launches).toBe(0)
+    expect(runtime.isActive(ids.run)).toBe(false)
   })
 })

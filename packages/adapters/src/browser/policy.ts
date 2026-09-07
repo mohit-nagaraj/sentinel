@@ -167,7 +167,7 @@ export function toPublicBrowserUrl(input: string): string {
 
 function classifyUnsafeName(name: string): BrowserPolicyCategory | undefined {
   if (
-    /\b(delete|destroy|erase|remove|terminate|cancel account|close account|refund|revoke|disable|archive)\b/i.test(
+    /\b(delete|destroy|erase|remove|terminate|cancel account|close account|close registration|refund|revoke|disable|archive)\b/i.test(
       name
     )
   ) {
@@ -204,6 +204,20 @@ function classifyUnsafeName(name: string): BrowserPolicyCategory | undefined {
   return undefined
 }
 
+function isSafeReadName(name: string): boolean {
+  return (
+    /^(?:view|show|inspect|preview)\b/i.test(name) ||
+    /^(?:open|dismiss|close)\s+(?:modal|dialog|menu|panel|popover|drawer|section|details?|preview|window)$/i.test(
+      name
+    ) ||
+    /^(?:expand|collapse)\b/i.test(name) ||
+    /^refresh\s+(?:state|status|view|page|preview)$/i.test(name) ||
+    /^load\s+(?:[a-z0-9_-]+\s+){0,3}(?:details?|summary|status|preview|page|response|state)$/i.test(
+      name
+    )
+  )
+}
+
 export function classifyBrowserAction(
   input: ActionClassificationInput,
   policy: BrowserPolicy
@@ -235,11 +249,7 @@ export function classifyBrowserAction(
       category = "safe_read"
     } else if (input.kind === "check") {
       category = "safe_form_progress"
-    } else if (
-      /\b(open|view|show|load|refresh|inspect|preview|expand|collapse|dismiss|close)\b/i.test(
-        name
-      )
-    ) {
+    } else if (isSafeReadName(name)) {
       category = "safe_read"
     } else {
       category = "unknown_submission"

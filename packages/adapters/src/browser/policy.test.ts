@@ -55,6 +55,7 @@ describe("browser policy", () => {
     ["Promote user", "account_privilege"],
     ["Post comment", "external_message"],
     ["Close account", "destructive"],
+    ["Close registration", "destructive"],
   ] as const)("denies %s as %s", (name, category) => {
     expect(
       classifyBrowserAction({ kind: "click", name }, policy)
@@ -84,6 +85,15 @@ describe("browser policy", () => {
     expect(
       classifyBrowserAction({ kind: "click", name: "Do something" }, policy)
     ).toMatchObject({ category: "unknown_submission", allowed: false })
+    for (const name of [
+      "Open sales",
+      "Refresh subscription",
+      "Dismiss invoice",
+    ]) {
+      expect(
+        classifyBrowserAction({ kind: "click", name }, policy)
+      ).toMatchObject({ category: "unknown_submission", allowed: false })
+    }
   })
 
   it("allows bounded semantic navigation and named inputs", () => {

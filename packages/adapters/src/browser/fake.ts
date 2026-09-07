@@ -44,6 +44,21 @@ export class FakeBrowserEvidenceRuntime implements BrowserEvidenceRuntime {
           ? undefined
           : browserRecoveryRecipeSchema.parse(scriptInput.recovery),
     }
+    if (
+      script.initial.runId !== parsedRunId ||
+      script.transitions.some((transition) => transition.runId !== parsedRunId)
+    ) {
+      throw new Error("Fake browser script run IDs must match the queue key")
+    }
+    if (
+      script.transitions.some(
+        (transition) =>
+          transition.before.applicationId !== script.initial.applicationId ||
+          transition.after.applicationId !== script.initial.applicationId
+      )
+    ) {
+      throw new Error("Fake browser script applications must match")
+    }
     this.scripts.set(parsedRunId, script)
   }
 
@@ -59,6 +74,9 @@ export class FakeBrowserEvidenceRuntime implements BrowserEvidenceRuntime {
       throw new Error(`No fake browser script for ${runId}`)
     if (this.active.has(runId))
       throw new Error(`Fake browser run already active`)
+    if (script.initial.applicationId !== options.applicationId) {
+      throw new Error("Fake browser script belongs to a different application")
+    }
     const recovery =
       script.recovery ??
       browserRecoveryRecipeSchema.parse({
@@ -97,6 +115,12 @@ export class FakeBrowserEvidenceRuntime implements BrowserEvidenceRuntime {
     ) {
       throw new Error("Fake transition is stale for the active observation")
     }
+    if (
+      transition.before.applicationId !== active.observation.applicationId ||
+      transition.after.applicationId !== active.observation.applicationId
+    ) {
+      throw new Error("Fake transition belongs to a different application")
+    }
     active.observation = transition.after
     return transition
   }
@@ -107,11 +131,44 @@ export class FakeBrowserEvidenceRuntime implements BrowserEvidenceRuntime {
 
   async replay(
     options: BrowserRunOptions,
-    _recipe: BrowserRecoveryRecipe
+    recipeInput: BrowserRecoveryRecipe
   ): Promise<BrowserReplayResult> {
-    void _recipe
-    const finalObservation = await this.startRun(options)
-    return { finalObservation, transitions: [] }
+    const recipe = browserRecoveryRecipeSchema.parse(recipeInput)
+    if (options.applicationId !== recipe.applicationId) {
+      throw new Error("Fake recovery recipe belongs to a different application")
+    }
+    let observation = await this.startRun(options)
+    const transitions: BrowserTransitionEvidence[] = []
+    try {
+      for (const step of recipe.steps) {
+        if (observation.stateFingerprint !== step.expectedBeforeFingerprint) {
+          throw new Error("Fake recovery state did not match the recipe")
+        }
+        const active = this.requireActive(options.runId)
+        const transition = active.remaining.find(
+          (candidate) =>
+            candidate.action.signature === step.signature &&
+            candidate.action.kind === step.kind &&
+            candidate.action.policy.replaySafe
+        )
+        if (transition === undefined) {
+          throw new Error("Fake recovery action was not scripted")
+        }
+        const result = await this.performAction(
+          options.runId,
+          transition.action.actionId
+        )
+        if (result.after.stateFingerprint !== step.expectedAfterFingerprint) {
+          throw new Error("Fake recovery action reached an unexpected state")
+        }
+        transitions.push(result)
+        observation = result.after
+      }
+      return { finalObservation: observation, transitions }
+    } catch (error) {
+      await this.cancelRun(options.runId)
+      throw error
+    }
   }
 
   async completeRun(runIdInput: string): Promise<void> {

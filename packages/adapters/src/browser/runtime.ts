@@ -40,6 +40,7 @@ import {
   type BrowserContext,
   type BrowserContextOptions,
   type BrowserType,
+  type Frame,
   type Locator,
   type Page,
   type Request,
@@ -161,6 +162,7 @@ interface ElementDescriptor {
   readonly tag: string
   readonly role: string
   readonly name: string
+  readonly nameFingerprint: ContentHash
   readonly disabled: boolean
   readonly checked?: boolean | undefined
   readonly inputType?: string | undefined
@@ -177,6 +179,7 @@ interface PreparedCandidate {
   readonly inputSlot?: string | undefined
   readonly disabled: boolean
   readonly signature: ContentHash
+  readonly behaviorFingerprint: ContentHash
   readonly policy: BrowserPolicyDecision
   readonly locator?: Locator | undefined
   readonly descriptor?: ElementDescriptor | undefined
@@ -187,6 +190,7 @@ interface ActionRecord {
   readonly locator?: Locator | undefined
   readonly descriptor?: ElementDescriptor | undefined
   readonly observation: BrowserObservation
+  readonly behaviorFingerprint: ContentHash
   used: boolean
 }
 
@@ -243,6 +247,8 @@ interface RunSession {
   readonly violations: BrowserRuntimeFailureCode[]
   readonly history: BrowserReplayStep[]
   readonly secretValues: Set<string>
+  readonly expiration: Promise<never>
+  readonly rejectExpiration: (error: BrowserRuntimeError) => void
   actionCount: number
   screenCount: number
   redirectCount: number
@@ -251,9 +257,15 @@ interface RunSession {
   actionOrdinal: number
   requestOrdinal: number
   transitionOrdinal: number
+  deadline: ReturnType<typeof setTimeout> | undefined
   busy: boolean
   cancelled: boolean
   closed: boolean
+}
+
+interface StartControl {
+  readonly controller: AbortController
+  timedOut: boolean
 }
 
 class SystemClock implements BrowserClock {
@@ -266,7 +278,10 @@ class ChromiumLauncher implements BrowserLauncher {
   constructor(private readonly browserType: BrowserType = chromium) {}
 
   launch(): Promise<Browser> {
-    return this.browserType.launch({ headless: true })
+    return this.browserType.launch({
+      headless: true,
+      args: ["--disable-webrtc", "--disable-background-networking"],
+    })
   }
 }
 
@@ -291,6 +306,16 @@ function normalizeReasonCode(input: string): string {
 
 function iso(date: Date): string {
   return date.toISOString()
+}
+
+function normalizeVolatileText(input: string): string {
+  return input
+    .replace(
+      /\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})?)?\b/g,
+      "{timestamp}"
+    )
+    .replace(/\b\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AP]M)?\b/gi, "{time}")
+    .replace(/\b\d{10,13}\b/g, "{timestamp}")
 }
 
 function roleForElement(
@@ -327,7 +352,8 @@ function kindForElement(descriptor: ElementDescriptor): BrowserActionKind {
 
 export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime {
   private readonly sessions = new Map<RunId, RunSession>()
-  private readonly startingRuns = new Set<RunId>()
+  private readonly startControls = new Map<RunId, StartControl>()
+  private readonly terminalFailures = new Map<RunId, "run_expired">()
   private readonly actionOwners = new Map<ActionId, RunId>()
 
   constructor(
@@ -346,15 +372,26 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
   async startRun(options: BrowserRunOptions): Promise<BrowserObservation> {
     const applicationId = applicationIdSchema.parse(options.applicationId)
     const runId = runIdSchema.parse(options.runId)
-    if (this.sessions.has(runId) || this.startingRuns.has(runId)) {
+    if (this.sessions.has(runId) || this.startControls.has(runId)) {
       throw this.publicError(runId, "run_already_exists", "Run already exists")
     }
-    this.startingRuns.add(runId)
+    this.terminalFailures.delete(runId)
+    const startedAt = this.clock.now()
+    const startControl: StartControl = {
+      controller: new AbortController(),
+      timedOut: false,
+    }
+    this.startControls.set(runId, startControl)
     let browser: Browser | undefined
     let context: BrowserContext | undefined
+    let startDeadline: ReturnType<typeof setTimeout> | undefined
     let setupStage = "policy_validation"
     try {
       const policy = createBrowserPolicy(options.policy)
+      startDeadline = setTimeout(() => {
+        startControl.timedOut = true
+        startControl.controller.abort()
+      }, policy.budgets.maxDurationMs)
       if (!isAllowedBrowserUrl(options.entryUrl, policy)) {
         throw this.publicError(
           runId,
@@ -366,19 +403,50 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
       const storageState =
         options.storageStateReference === undefined
           ? undefined
-          : await this.resolveStorageState(options.storageStateReference)
+          : await this.awaitStart(
+              runId,
+              this.resolveStorageState(options.storageStateReference)
+            )
       setupStage = "browser_launch"
-      browser = await this.launcher.launch()
+      browser = await this.awaitStart(
+        runId,
+        this.launcher.launch(),
+        async (lateBrowser) => lateBrowser.close().catch(() => undefined)
+      )
       setupStage = "context_creation"
-      context = await browser.newContext({
-        acceptDownloads: false,
-        serviceWorkers: "block",
-        ...(storageState === undefined ? {} : { storageState }),
-      })
+      context = await this.awaitStart(
+        runId,
+        browser.newContext({
+          acceptDownloads: false,
+          serviceWorkers: "block",
+          ...(storageState === undefined ? {} : { storageState }),
+        }),
+        async (lateContext) => lateContext.close().catch(() => undefined)
+      )
+      setupStage = "context_hardening"
+      await this.awaitStart(
+        runId,
+        context.addInitScript(() => {
+          Object.defineProperty(globalThis, "RTCPeerConnection", {
+            configurable: false,
+            value: undefined,
+            writable: false,
+          })
+        })
+      )
       setupStage = "page_creation"
-      const page = await context.newPage()
+      const page = await this.awaitStart(
+        runId,
+        context.newPage(),
+        async (latePage) => latePage.close().catch(() => undefined)
+      )
       page.setDefaultTimeout(policy.budgets.actionTimeoutMs)
       page.setDefaultNavigationTimeout(policy.budgets.navigationTimeoutMs)
+      let rejectExpiration: ((error: BrowserRuntimeError) => void) | undefined
+      const expiration = new Promise<never>((_resolve, reject) => {
+        rejectExpiration = reject
+      })
+      void expiration.catch(() => undefined)
       const session: RunSession = {
         applicationId,
         runId,
@@ -388,7 +456,7 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         browser,
         context,
         page,
-        startedAt: this.clock.now(),
+        startedAt,
         sessionNonce: contentHashSchema.parse(
           `sha256:${randomBytes(32).toString("hex")}`
         ),
@@ -409,6 +477,8 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
                 ),
               ]
         ),
+        expiration,
+        rejectExpiration: (error) => rejectExpiration?.(error),
         actionCount: 0,
         screenCount: 0,
         redirectCount: 0,
@@ -417,24 +487,36 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         actionOrdinal: 0,
         requestOrdinal: 0,
         transitionOrdinal: 0,
+        deadline: undefined,
         busy: false,
         cancelled: false,
         closed: false,
       }
       this.sessions.set(runId, session)
+      session.deadline = setTimeout(() => {
+        void this.expireSession(session)
+      }, this.remainingRunDurationMs(session))
       setupStage = "policy_guards"
-      await this.attachGuards(session)
+      await this.awaitSessionOperation(session, this.attachGuards(session))
       setupStage = "entry_navigation"
-      await page.goto(options.entryUrl, {
-        waitUntil: "domcontentloaded",
-        timeout: this.boundedTimeout(
-          session,
-          policy.budgets.navigationTimeoutMs
-        ),
-      })
+      await this.awaitSessionOperation(
+        session,
+        page.goto(options.entryUrl, {
+          waitUntil: "domcontentloaded",
+          timeout: this.boundedTimeout(
+            session,
+            policy.budgets.navigationTimeoutMs
+          ),
+        })
+      )
+      await this.throwPendingViolation(session)
       this.assertRunDuration(session)
       setupStage = "initial_observation"
-      const observation = await this.captureObservation(session)
+      const observation = await this.awaitSessionOperation(
+        session,
+        this.captureObservation(session)
+      )
+      await this.throwPendingViolation(session)
       this.assertRunDuration(session)
       return observation
     } catch (error) {
@@ -447,18 +529,50 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         await browser?.close().catch(() => undefined)
       }
       if (error instanceof BrowserRuntimeError) throw error
+      if (startControl.timedOut) {
+        throw this.publicError(
+          runId,
+          "run_expired",
+          "Run time limit was reached"
+        )
+      }
       throw this.publicError(
         runId,
         "browser_error",
         `Browser setup failed during ${setupStage}: ${this.safeSetupDiagnostic(error)}`
       )
     } finally {
-      this.startingRuns.delete(runId)
+      if (startDeadline !== undefined) clearTimeout(startDeadline)
+      this.startControls.delete(runId)
     }
   }
 
   async observe(runIdInput: string): Promise<BrowserObservation> {
-    return this.captureObservation(this.requireSession(runIdInput))
+    const session = this.requireSession(runIdInput)
+    if (session.busy) {
+      throw this.publicError(session.runId, "run_busy", "Run is busy")
+    }
+    session.busy = true
+    try {
+      this.assertRunDuration(session)
+      await this.throwPendingViolation(session)
+      const observation = await this.awaitSessionOperation(
+        session,
+        this.captureObservation(session)
+      )
+      await this.throwPendingViolation(session)
+      this.assertRunDuration(session)
+      return observation
+    } catch (error) {
+      if (error instanceof BrowserRuntimeError) throw error
+      throw await this.failureWithArtifacts(
+        session,
+        "browser_error",
+        "Browser observation failed"
+      )
+    } finally {
+      session.busy = false
+    }
   }
 
   async performAction(
@@ -472,6 +586,7 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
     }
     session.busy = true
     try {
+      await this.throwPendingViolation(session, actionId)
       this.assertRunBudgets(session, actionId)
       const owner = this.actionOwners.get(actionId)
       if (owner !== undefined && owner !== session.runId) {
@@ -517,7 +632,13 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
       }
 
       const current = await this.inspectPage(session)
-      if (current.stateFingerprint !== record.observation.stateFingerprint) {
+      const currentCandidate = current.preparedCandidates.find(
+        (candidate) => candidate.signature === record.candidate.signature
+      )
+      if (
+        current.stateFingerprint !== record.observation.stateFingerprint ||
+        currentCandidate?.behaviorFingerprint !== record.behaviorFingerprint
+      ) {
         throw this.publicError(
           session.runId,
           "action_stale",
@@ -525,7 +646,12 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
           actionId
         )
       }
-      const decision = this.reclassify(record, session.policy)
+      const currentRecord: ActionRecord = {
+        ...record,
+        locator: currentCandidate.locator,
+        descriptor: currentCandidate.descriptor,
+      }
+      const decision = this.reclassify(currentRecord, session.policy)
       if (!decision.allowed) {
         throw this.publicError(
           session.runId,
@@ -534,25 +660,30 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
           actionId
         )
       }
-      this.assertActionSideEffectBudgets(session, record, actionId)
+      this.assertActionSideEffectBudgets(session, currentRecord, actionId)
 
       record.used = true
       session.actionCount += 1
       const networkStart = session.requestOrdinal
       const errorStart = session.errors.length
-      const violationStart = session.violations.length
       try {
-        await this.executeCandidate(session, record)
+        await this.awaitSessionOperation(
+          session,
+          this.executeCandidate(session, currentRecord)
+        )
         if (session.policy.budgets.observationSettleMs > 0) {
-          await session.page.waitForTimeout(
-            Math.min(
-              session.policy.budgets.observationSettleMs,
-              this.remainingRunDurationMs(session)
+          await this.awaitSessionOperation(
+            session,
+            session.page.waitForTimeout(
+              Math.min(
+                session.policy.budgets.observationSettleMs,
+                this.remainingRunDurationMs(session)
+              )
             )
           )
         }
         this.assertRunDuration(session, actionId)
-        const violation = session.violations[violationStart]
+        const violation = session.violations[0]
         if (violation !== undefined) {
           throw await this.failureWithArtifacts(
             session,
@@ -561,7 +692,11 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
             actionId
           )
         }
-        const after = await this.captureObservation(session, actionId)
+        const after = await this.awaitSessionOperation(
+          session,
+          this.captureObservation(session, actionId)
+        )
+        await this.throwPendingViolation(session, actionId)
         const afterScreenId = createStableKey({
           kind: "screen",
           applicationId: session.applicationId,
@@ -613,13 +748,18 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
             actionId
           )
         }
-        const violation = session.violations[violationStart]
+        const violation = session.violations[0]
+        const expired =
+          this.terminalFailures.get(session.runId) === "run_expired" ||
+          this.remainingRunDurationMs(session) <= 0
         throw await this.failureWithArtifacts(
           session,
-          violation ?? "browser_error",
-          violation === undefined
-            ? "Browser action failed"
-            : "Browser action triggered a denied side effect",
+          violation ?? (expired ? "run_expired" : "browser_error"),
+          violation !== undefined
+            ? "Browser action triggered a denied side effect"
+            : expired
+              ? "Run time limit was reached"
+              : "Browser action failed",
           actionId
         )
       }
@@ -702,12 +842,32 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
 
   async completeRun(runIdInput: string): Promise<void> {
     const session = this.requireSession(runIdInput)
-    await this.cleanup(session)
-    this.sessions.delete(session.runId)
+    if (session.busy) {
+      throw this.publicError(session.runId, "run_busy", "Run is busy")
+    }
+    session.busy = true
+    try {
+      if (session.policy.budgets.observationSettleMs > 0) {
+        await this.awaitSessionOperation(
+          session,
+          session.page.waitForTimeout(
+            Math.min(
+              session.policy.budgets.observationSettleMs,
+              this.remainingRunDurationMs(session)
+            )
+          )
+        )
+      }
+      await this.throwPendingViolation(session)
+    } finally {
+      await this.cleanup(session)
+      this.sessions.delete(session.runId)
+    }
   }
 
   async cancelRun(runIdInput: string): Promise<void> {
     const parsed = runIdSchema.parse(runIdInput)
+    this.startControls.get(parsed)?.controller.abort()
     const session = this.sessions.get(parsed)
     if (session === undefined) return
     session.cancelled = true
@@ -723,29 +883,36 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
     ) => Promise<T>,
     signal?: AbortSignal
   ): Promise<T> {
-    let abortHandler: (() => void) | undefined
-    try {
-      const observation = await this.startRun(options)
-      if (signal?.aborted === true) {
-        await this.cancelRun(options.runId)
-        throw this.publicError(
-          observation.runId,
-          "run_cancelled",
-          "Run was cancelled"
+    const runId = runIdSchema.parse(options.runId)
+    let rejectCancellation: ((error: BrowserRuntimeError) => void) | undefined
+    const cancellation = new Promise<never>((_resolve, reject) => {
+      rejectCancellation = reject
+    })
+    const abortHandler = () => {
+      void this.cancelRun(runId).finally(() => {
+        rejectCancellation?.(
+          this.publicError(runId, "run_cancelled", "Run was cancelled")
         )
+      })
+    }
+    signal?.addEventListener("abort", abortHandler, { once: true })
+    try {
+      if (signal?.aborted === true) {
+        abortHandler()
       }
-      if (signal !== undefined) {
-        abortHandler = () => {
-          void this.cancelRun(options.runId)
-        }
-        signal.addEventListener("abort", abortHandler, { once: true })
-      }
-      return await callback(this, observation)
+      const observation = await Promise.race([
+        this.startRun(options),
+        cancellation,
+      ])
+      const session = this.requireSession(runId)
+      return await Promise.race([
+        callback(this, observation),
+        cancellation,
+        session.expiration,
+      ])
     } finally {
-      if (abortHandler !== undefined) {
-        signal?.removeEventListener("abort", abortHandler)
-      }
-      await this.cancelRun(options.runId)
+      signal?.removeEventListener("abort", abortHandler)
+      await this.cancelRun(runId)
     }
   }
 
@@ -765,6 +932,13 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
     const runId = runIdSchema.parse(runIdInput)
     const session = this.sessions.get(runId)
     if (session === undefined || session.closed) {
+      if (this.terminalFailures.get(runId) === "run_expired") {
+        throw this.publicError(
+          runId,
+          "run_expired",
+          "Run time limit was reached"
+        )
+      }
       throw this.publicError(runId, "run_not_found", "Run was not found")
     }
     if (session.cancelled) {
@@ -816,7 +990,7 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
     const screenshotArtifactId = await this.captureScreenshot(
       session,
       "failure"
-    )
+    ).catch(() => undefined)
     const traceArtifactId = await this.captureFailureTrace(session).catch(
       () => undefined
     )
@@ -832,6 +1006,94 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         observedAt: iso(this.clock.now()),
       })
     )
+  }
+
+  private async awaitStart<T>(
+    runId: RunId,
+    operation: Promise<T>,
+    disposeLateValue?: (value: T) => void | Promise<void>
+  ): Promise<T> {
+    const control = this.startControls.get(runId)
+    if (control === undefined) return operation
+    return new Promise<T>((resolve, reject) => {
+      let settled = false
+      const dispose = (value: T): void => {
+        if (disposeLateValue !== undefined) {
+          void Promise.resolve(disposeLateValue(value)).catch(() => undefined)
+        }
+      }
+      const abort = (): void => {
+        if (settled) return
+        settled = true
+        void operation.then(dispose, () => undefined)
+        reject(
+          this.publicError(
+            runId,
+            control.timedOut ? "run_expired" : "run_cancelled",
+            control.timedOut
+              ? "Run time limit was reached"
+              : "Run was cancelled"
+          )
+        )
+      }
+      control.controller.signal.addEventListener("abort", abort, { once: true })
+      if (control.controller.signal.aborted) abort()
+      void operation.then(
+        (value) => {
+          control.controller.signal.removeEventListener("abort", abort)
+          if (settled) return
+          settled = true
+          resolve(value)
+        },
+        (error: unknown) => {
+          control.controller.signal.removeEventListener("abort", abort)
+          if (settled) return
+          settled = true
+          reject(error)
+        }
+      )
+    })
+  }
+
+  private async expireSession(session: RunSession): Promise<void> {
+    if (session.closed) return
+    this.terminalFailures.set(session.runId, "run_expired")
+    await this.cleanup(session)
+    this.sessions.delete(session.runId)
+    session.rejectExpiration(
+      this.publicError(
+        session.runId,
+        "run_expired",
+        "Run time limit was reached"
+      )
+    )
+    while (this.terminalFailures.size > 1_000) {
+      const oldest = this.terminalFailures.keys().next().value as
+        RunId | undefined
+      if (oldest === undefined) break
+      this.terminalFailures.delete(oldest)
+    }
+  }
+
+  private async throwPendingViolation(
+    session: RunSession,
+    actionId?: ActionId
+  ): Promise<void> {
+    const violation = session.violations[0]
+    if (violation === undefined) return
+    throw await this.failureWithArtifacts(
+      session,
+      violation,
+      "Browser activity triggered a denied side effect",
+      actionId
+    )
+  }
+
+  private async awaitSessionOperation<T>(
+    session: RunSession,
+    operation: Promise<T>
+  ): Promise<T> {
+    return Promise.race([operation, session.expiration])
   }
 
   private assertRunBudgets(session: RunSession, actionId: ActionId): void {
@@ -1070,10 +1332,24 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
     const normalizedRoute = normalizeRoute(url)
     const stateFingerprint = hashCanonical({
       normalizedRoute,
-      title,
-      headings,
-      controls,
-      dialogs,
+      title: normalizeVolatileText(title),
+      headings: headings.map(normalizeVolatileText),
+      controls: controls.map((control) => ({
+        ...control,
+        name: normalizeVolatileText(control.name),
+      })),
+      dialogs: dialogs.map((dialog) => ({
+        ...dialog,
+        name: normalizeVolatileText(dialog.name),
+        text: normalizeVolatileText(dialog.text),
+      })),
+      actions: preparedCandidates
+        .filter((candidate) => candidate.descriptor !== undefined)
+        .map((candidate) => ({
+          signature: candidate.signature,
+          disabled: candidate.disabled,
+          policy: candidate.policy,
+        })),
     })
     return {
       url,
@@ -1132,7 +1408,6 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         policy: prepared.policy,
         expiresAt: iso(expiresAt),
       }
-      this.actionOwners.set(actionId, session.runId)
       return { candidate, prepared }
     })
     const screenshotArtifactId = await this.captureScreenshot(session, "report")
@@ -1167,8 +1442,10 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         locator: prepared.locator,
         descriptor: prepared.descriptor,
         observation,
+        behaviorFingerprint: prepared.behaviorFingerprint,
         used: false,
       })
+      this.actionOwners.set(candidate.actionId, session.runId)
     }
     session.screenCount += 1
     return observation
@@ -1211,10 +1488,16 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         )
           ? (input?.value ?? "")
           : ""
+        const valueBearingControl =
+          labelledControl !== undefined ||
+          html.isContentEditable ||
+          ["textbox", "combobox"].includes(
+            html.getAttribute("role")?.toLowerCase() ?? ""
+          )
         const name =
           html.getAttribute("aria-label") ||
           labels ||
-          html.innerText ||
+          (valueBearingControl ? "" : html.innerText) ||
           html.getAttribute("placeholder") ||
           html.getAttribute("title") ||
           inputButtonName ||
@@ -1249,6 +1532,7 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         tag: raw.tag,
         role,
         name: redactor.redactText(raw.name, 512),
+        nameFingerprint: hashCanonical({ accessibleName: raw.name }),
         disabled: raw.disabled,
         checked: raw.checked,
         inputType: raw.inputType,
@@ -1259,10 +1543,11 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
       }
       const kind = kindForElement(descriptor)
       const inputSlot = this.matchInputSlot(session, kind, descriptor.name)
+      const semanticName = normalizeVolatileText(descriptor.name)
       const semanticKey = JSON.stringify({
         kind,
         role,
-        name: descriptor.name,
+        name: semanticName,
         inputSlot,
       })
       const occurrence = occurrences.get(semanticKey) ?? 0
@@ -1270,9 +1555,31 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
       const signature = hashCanonical({
         kind,
         role,
-        name: descriptor.name,
+        name: semanticName,
         ...(inputSlot === undefined ? {} : { inputSlot }),
+        tag: descriptor.tag,
+        ...(descriptor.inputType === undefined
+          ? {}
+          : { inputType: descriptor.inputType }),
+        ...(descriptor.href === undefined
+          ? {}
+          : { targetUrl: redactor.redactUrl(descriptor.href) }),
+        submit: descriptor.submit,
+        download: descriptor.download,
+        opensNewTab: descriptor.opensNewTab,
         occurrence,
+      })
+      const behaviorFingerprint = hashCanonical({
+        tag: descriptor.tag,
+        role: descriptor.role,
+        nameFingerprint: descriptor.nameFingerprint,
+        ...(descriptor.inputType === undefined
+          ? {}
+          : { inputType: descriptor.inputType }),
+        ...(descriptor.href === undefined ? {} : { href: descriptor.href }),
+        submit: descriptor.submit,
+        download: descriptor.download,
+        opensNewTab: descriptor.opensNewTab,
       })
       result.push({
         kind,
@@ -1281,6 +1588,7 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         inputSlot,
         disabled: descriptor.disabled,
         signature,
+        behaviorFingerprint,
         policy: classifyBrowserAction(
           {
             kind,
@@ -1307,6 +1615,7 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         name,
         disabled: kind === "back" && session.actionCount === 0,
         signature: hashCanonical({ kind, role: "navigation", name }),
+        behaviorFingerprint: hashCanonical({ kind, role: "navigation" }),
         policy: classifyBrowserAction(
           { kind, role: "navigation", name },
           session.policy
@@ -1430,9 +1739,9 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
             candidate.actionId
           )
         }
-        const value = await this.inputResolver.resolve(
-          session.runId,
-          candidate.inputSlot
+        const value = await this.awaitSessionOperation(
+          session,
+          this.inputResolver.resolve(session.runId, candidate.inputSlot)
         )
         if (value.length > session.policy.budgets.maxInputLength) {
           throw this.publicError(
@@ -1516,31 +1825,46 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
     session: RunSession,
     retention: "report" | "failure"
   ): Promise<ArtifactId> {
-    const body = await session.page.screenshot({
-      type: "png",
-      animations: "disabled",
-      caret: "hide",
-      mask: [
-        session.page.locator(SCREENSHOT_MASK_SELECTOR),
-        ...SCREENSHOT_PII_PATTERNS.map((pattern) =>
-          session.page.getByText(pattern)
-        ),
-        ...[...session.secretValues].map((secret) =>
-          session.page.getByText(secret, { exact: false })
-        ),
-      ],
-      maskColor: "#000000",
-    })
-    return artifactIdSchema.parse(
-      await this.artifacts.persist({
-        applicationId: session.applicationId,
-        runId: session.runId,
-        artifactType: "screenshot",
-        mimeType: "image/png",
-        body,
-        retention,
+    const body = await this.awaitSessionOperation(
+      session,
+      session.page.screenshot({
+        type: "png",
+        animations: "disabled",
+        caret: "hide",
+        mask: session.page
+          .frames()
+          .flatMap((frame) =>
+            this.screenshotMasks(frame, session.secretValues)
+          ),
+        maskColor: "#000000",
       })
     )
+    return artifactIdSchema.parse(
+      await this.awaitSessionOperation(
+        session,
+        this.artifacts.persist({
+          applicationId: session.applicationId,
+          runId: session.runId,
+          artifactType: "screenshot",
+          mimeType: "image/png",
+          body,
+          retention,
+        })
+      )
+    )
+  }
+
+  private screenshotMasks(
+    frame: Frame,
+    secrets: ReadonlySet<string>
+  ): Locator[] {
+    return [
+      frame.locator(SCREENSHOT_MASK_SELECTOR),
+      ...SCREENSHOT_PII_PATTERNS.map((pattern) => frame.getByText(pattern)),
+      ...[...secrets]
+        .filter((secret) => secret.length > 0)
+        .map((secret) => frame.getByText(secret, { exact: false })),
+    ]
   }
 
   private async captureFailureTrace(
@@ -1560,20 +1884,27 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
       })
     )
     return artifactIdSchema.parse(
-      await this.artifacts.persist({
-        applicationId: session.applicationId,
-        runId: session.runId,
-        artifactType: "trace",
-        mimeType: "application/json",
-        body,
-        retention: "failure",
-      })
+      await this.awaitSessionOperation(
+        session,
+        this.artifacts.persist({
+          applicationId: session.applicationId,
+          runId: session.runId,
+          artifactType: "trace",
+          mimeType: "application/json",
+          body,
+          retention: "failure",
+        })
+      )
     )
   }
 
   private async cleanup(session: RunSession): Promise<void> {
     if (session.closed) return
     session.closed = true
+    if (session.deadline !== undefined) {
+      clearTimeout(session.deadline)
+      session.deadline = undefined
+    }
     await session.context.close().catch(() => undefined)
     await session.browser.close().catch(() => undefined)
     for (const [actionId, owner] of this.actionOwners) {
