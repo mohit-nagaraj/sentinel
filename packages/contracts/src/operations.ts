@@ -1,5 +1,7 @@
 import { z } from "zod"
 
+import { hashCanonical } from "./identity.ts"
+
 import {
   agentKindSchema,
   applicationIdSchema,
@@ -68,6 +70,416 @@ export const sourceSchema = z.strictObject({
   contentHash: contentHashSchema.optional(),
   secretReference: secretReferenceSchema.optional(),
   checkedAt: timestampSchema.optional(),
+})
+
+export const githubRepositoryUrlSchema = publicHttpUrlSchema.refine((value) => {
+  const url = new URL(value)
+  const parts = url.pathname
+    .replace(/\.git$/, "")
+    .split("/")
+    .filter(Boolean)
+  return (
+    url.protocol === "https:" &&
+    url.hostname === "github.com" &&
+    url.search.length === 0 &&
+    parts.length === 2 &&
+    parts.every((part) => /^[A-Za-z0-9_.-]{1,100}$/.test(part))
+  )
+}, "Repository URL must identify one GitHub owner/repository over HTTPS")
+
+export const repositoryRefSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(255)
+  .refine(
+    (value) =>
+      !value.startsWith("-") &&
+      !value.startsWith("/") &&
+      !value.endsWith("/") &&
+      !value.endsWith(".") &&
+      !value.includes("..") &&
+      !value.includes("@{") &&
+      !/[\\\s~^:?*[\]\u0000-\u001f\u007f]/.test(value),
+    "Repository ref contains unsafe Git ref syntax"
+  )
+
+const previewUrlPatternSchema = z
+  .string()
+  .trim()
+  .max(2_048)
+  .refine(
+    (value) =>
+      value.length === 0 ||
+      (value.split("{branch}").length <= 2 &&
+        publicHttpUrlSchema.safeParse(value.replace("{branch}", "preview"))
+          .success),
+    "Preview URL pattern must be a public HTTP URL with at most one {branch} token"
+  )
+  .transform((value) => (value.length === 0 ? undefined : value))
+
+export const onboardingRepositoryInputSchema = z
+  .strictObject({
+    url: githubRepositoryUrlSchema,
+    ref: repositoryRefSchema,
+    accessMode: z.enum(["manual", "github_app"]),
+    installationId: z
+      .string()
+      .regex(/^[1-9][0-9]{0,19}$/)
+      .optional(),
+  })
+  .superRefine((repository, context) => {
+    if (
+      repository.accessMode === "github_app" &&
+      repository.installationId === undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "GitHub App mode requires an installation identifier",
+        path: ["installationId"],
+      })
+    }
+    if (
+      repository.accessMode === "manual" &&
+      repository.installationId !== undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Manual mode cannot include an installation identifier",
+        path: ["installationId"],
+      })
+    }
+  })
+
+export const onboardingRepositoryConfigurationSchema =
+  onboardingRepositoryInputSchema.and(
+    z.strictObject({ resolvedCommitSha: commitShaSchema.optional() })
+  )
+
+const storageStateJsonSchema = z
+  .string()
+  .min(2)
+  .max(256 * 1_024)
+  .superRefine((value, context) => {
+    try {
+      const parsed = JSON.parse(value) as unknown
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        !Array.isArray((parsed as { cookies?: unknown }).cookies) ||
+        !Array.isArray((parsed as { origins?: unknown }).origins)
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Storage state must contain cookies and origins arrays",
+        })
+      }
+    } catch {
+      context.addIssue({
+        code: "custom",
+        message: "Storage state must be valid JSON",
+      })
+    }
+  })
+
+const credentialFieldKeySchema = reasonCodeSchema
+const credentialLabelSchema = z.string().trim().min(1).max(80)
+
+export const onboardingAuthenticationInputSchema = z.discriminatedUnion(
+  "method",
+  [
+    z.strictObject({ method: z.literal("none") }),
+    z.strictObject({
+      method: z.literal("credentials"),
+      fields: z
+        .array(
+          z.strictObject({
+            key: credentialFieldKeySchema,
+            label: credentialLabelSchema,
+            value: z.string().min(1).max(16_384),
+          })
+        )
+        .min(1)
+        .max(10)
+        .refine(
+          (fields) =>
+            new Set(fields.map((field) => field.key)).size === fields.length,
+          "Credential field keys must be unique"
+        ),
+    }),
+    z.strictObject({
+      method: z.literal("storage_state"),
+      value: storageStateJsonSchema,
+    }),
+  ]
+)
+
+export const onboardingAuthenticationConfigurationSchema = z.discriminatedUnion(
+  "method",
+  [
+    z.strictObject({ method: z.literal("none"), revision: z.literal(0) }),
+    z.strictObject({
+      method: z.literal("credentials"),
+      revision: z.number().int().positive(),
+      fields: z
+        .array(
+          z.strictObject({
+            key: credentialFieldKeySchema,
+            label: credentialLabelSchema,
+            reference: secretReferenceSchema,
+          })
+        )
+        .min(1)
+        .max(10)
+        .refine(
+          (fields) =>
+            new Set(fields.map((field) => field.key)).size === fields.length,
+          "Credential field keys must be unique"
+        ),
+    }),
+    z.strictObject({
+      method: z.literal("storage_state"),
+      revision: z.number().int().positive(),
+      reference: secretReferenceSchema,
+    }),
+  ]
+)
+
+export const onboardingCrawlPolicySchema = z.strictObject({
+  allowedHosts: z
+    .array(hostnameSchema)
+    .min(1)
+    .max(20)
+    .transform((hosts) => [...new Set(hosts)].sort()),
+  maxActions: z.number().int().min(1).max(500),
+  maxScreens: z.number().int().min(1).max(500),
+  maxDurationSeconds: z.number().int().min(10).max(3_600),
+  allowFormSubmission: z.boolean(),
+  denyDestructiveActions: z.literal(true),
+  denyRealPayments: z.literal(true),
+  denyExternalMessaging: z.literal(true),
+  denyPrivilegeChanges: z.literal(true),
+})
+
+const onboardingBaseShape = {
+  schemaVersion: schemaVersionSchema,
+  recordId: z.uuid().optional(),
+  name: shortTextSchema,
+  deploymentUrl: publicHttpUrlSchema,
+  documentationSources: z
+    .array(sourceUriSchema)
+    .min(1)
+    .max(20)
+    .transform((sources) => [...new Set(sources)].sort()),
+  previewUrlPattern: previewUrlPatternSchema.optional(),
+  crawl: onboardingCrawlPolicySchema,
+  capabilityHints: z.array(shortTextSchema).max(20),
+  testDataSetupReference: persistedTextSchema.optional(),
+  testDataResetReference: persistedTextSchema.optional(),
+} as const
+
+function requireDeploymentHost(
+  value: {
+    readonly deploymentUrl: string
+    readonly crawl: { readonly allowedHosts: readonly string[] }
+  },
+  context: z.RefinementCtx
+): void {
+  const deploymentHost = new URL(value.deploymentUrl).hostname.toLowerCase()
+  if (!value.crawl.allowedHosts.includes(deploymentHost)) {
+    context.addIssue({
+      code: "custom",
+      message: "Allowed hosts must include the application deployment host",
+      path: ["crawl", "allowedHosts"],
+    })
+  }
+}
+
+export const onboardingSubmissionSchema = z
+  .strictObject({
+    ...onboardingBaseShape,
+    repository: onboardingRepositoryInputSchema,
+    authentication: onboardingAuthenticationInputSchema,
+  })
+  .superRefine(requireDeploymentHost)
+
+export const onboardingConfigurationSchema = z
+  .strictObject({
+    ...onboardingBaseShape,
+    repository: onboardingRepositoryConfigurationSchema,
+    authentication: onboardingAuthenticationConfigurationSchema,
+  })
+  .superRefine(requireDeploymentHost)
+
+export function createOnboardingInputFingerprint(
+  configurationInput: OnboardingConfiguration
+) {
+  const configuration = onboardingConfigurationSchema.parse(configurationInput)
+  const { recordId: _recordId, repository, ...rest } = configuration
+  const { resolvedCommitSha: _resolvedCommitSha, ...repositoryInput } =
+    repository
+  return hashCanonical({ ...rest, repository: repositoryInput })
+}
+
+export const compatibilityCapabilitySchema = z.enum([
+  "repository_resolved",
+  "application_reachable",
+  "documentation_reachable",
+  "typescript_react",
+  "php_laravel",
+  "laravel_routes",
+  "openapi_scramble",
+  "playwright_assets",
+  "authentication_automatable",
+  "safe_action_policy",
+])
+
+export const compatibilityEvidenceSchema = z.strictObject({
+  capability: compatibilityCapabilitySchema,
+  status: z.enum(["detected", "missing", "blocked"]),
+  code: reasonCodeSchema,
+  summary: persistedTextSchema,
+  source: z.enum([
+    "repository",
+    "documentation",
+    "application",
+    "configuration",
+  ]),
+  references: z.array(z.string().min(1).max(2_048)).max(20),
+})
+
+export const compatibilityFindingSchema = z.strictObject({
+  severity: z.enum(["warning", "blocker"]),
+  code: reasonCodeSchema,
+  summary: persistedTextSchema,
+  humanAction: persistedTextSchema,
+})
+
+export const onboardingProposedScopeSchema = z.strictObject({
+  repositoryPaths: z.array(repositoryPathSchema).max(100),
+  documentationSources: z.array(sourceUriSchema).max(20),
+  applicationOrigins: z.array(publicHttpUrlSchema).max(20),
+  allowedActionCategories: z
+    .array(
+      z.enum([
+        "safe_read",
+        "safe_navigation",
+        "safe_form_progress",
+        "credential_entry",
+        "unknown_submission",
+      ])
+    )
+    .max(5),
+  maxActions: z.number().int().min(1).max(500),
+  maxScreens: z.number().int().min(1).max(500),
+  maxDurationSeconds: z.number().int().min(10).max(3_600),
+})
+
+export const compatibilityReportSchema = z
+  .strictObject({
+    schemaVersion: schemaVersionSchema,
+    inputFingerprint: contentHashSchema,
+    status: z.enum(["supported", "partial", "blocked"]),
+    resolvedCommitSha: commitShaSchema.optional(),
+    selectedAdapters: z.array(reasonCodeSchema).max(20),
+    evidence: z.array(compatibilityEvidenceSchema).min(1).max(100),
+    findings: z.array(compatibilityFindingSchema).max(100),
+    humanActions: z.array(persistedTextSchema).max(100),
+    proposedScope: onboardingProposedScopeSchema,
+    inspectedAt: timestampSchema,
+  })
+  .superRefine((report, context) => {
+    const blockerCount = report.findings.filter(
+      (finding) => finding.severity === "blocker"
+    ).length
+    const warningCount = report.findings.length - blockerCount
+    const expected =
+      blockerCount > 0 ? "blocked" : warningCount > 0 ? "partial" : "supported"
+    if (report.status !== expected) {
+      context.addIssue({
+        code: "custom",
+        message: `Compatibility status must be ${expected} for its findings`,
+        path: ["status"],
+      })
+    }
+    if (blockerCount === 0 && report.resolvedCommitSha === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Non-blocked reports require an immutable commit",
+        path: ["resolvedCommitSha"],
+      })
+    }
+  })
+
+export const publicOnboardingConfigurationSchema = z.strictObject({
+  repository: onboardingRepositoryConfigurationSchema,
+  documentationSources: z.array(sourceUriSchema).max(20),
+  previewUrlPattern: z.string().max(2_048).optional(),
+  authentication: z.strictObject({
+    method: z.enum(["none", "credentials", "storage_state"]),
+    configuredFields: z.array(credentialLabelSchema).max(10),
+    revision: z.number().int().nonnegative(),
+  }),
+  crawl: onboardingCrawlPolicySchema,
+  capabilityHints: z.array(shortTextSchema).max(20),
+  testDataSetupReference: persistedTextSchema.optional(),
+  testDataResetReference: persistedTextSchema.optional(),
+})
+
+export const publicOnboardingApplicationSchema = z.strictObject({
+  id: z.uuid(),
+  name: shortTextSchema,
+  deploymentUrl: publicHttpUrlSchema,
+  status: applicationStatusSchema,
+  indexedCommitSha: commitShaSchema.optional(),
+  graphRevision: z.number().int().nonnegative(),
+  refreshedAt: timestampSchema.optional(),
+  knowledgeStale: z.boolean(),
+  configuration: publicOnboardingConfigurationSchema,
+  compatibility: compatibilityReportSchema.optional(),
+  confirmed: z.boolean(),
+  updatedAt: timestampSchema,
+})
+
+export const onboardingFormValuesSchema = z.strictObject({
+  recordId: z.uuid().optional(),
+  name: z.string().max(512),
+  deploymentUrl: z.string().max(2_048),
+  repositoryUrl: z.string().max(2_048),
+  repositoryRef: z.string().max(255),
+  repositoryAccessMode: z.enum(["manual", "github_app"]),
+  githubInstallationId: z.string().max(20),
+  documentationSources: z.string().max(16_384),
+  previewUrlPattern: z.string().max(2_048),
+  authenticationMethod: z.enum(["none", "credentials", "storage_state"]),
+  credentialFieldName: z.string().max(96),
+  credentialFieldLabel: z.string().max(80),
+  allowedHosts: z.string().max(4_096),
+  maxActions: z.string().max(8),
+  maxScreens: z.string().max(8),
+  maxDurationSeconds: z.string().max(8),
+  allowFormSubmission: z.boolean(),
+  denyDestructiveActions: z.boolean(),
+  denyRealPayments: z.boolean(),
+  denyExternalMessaging: z.boolean(),
+  denyPrivilegeChanges: z.boolean(),
+  capabilityHints: z.string().max(8_192),
+  testDataSetupReference: z.string().max(4_096),
+  testDataResetReference: z.string().max(4_096),
+})
+
+export const onboardingActionStateSchema = z.strictObject({
+  status: z.enum([
+    "idle",
+    "validation_error",
+    "inspected",
+    "confirmed",
+    "error",
+  ]),
+  message: persistedTextSchema.optional(),
+  fieldErrors: z.record(z.string(), z.array(z.string().max(512)).max(10)),
+  values: onboardingFormValuesSchema,
+  application: publicOnboardingApplicationSchema.optional(),
 })
 
 export const commitReferenceSchema = z.strictObject({
@@ -209,6 +621,30 @@ export const missionResultSchema = z.strictObject({
 
 export type Application = z.infer<typeof applicationSchema>
 export type Source = z.infer<typeof sourceSchema>
+export type OnboardingSubmission = z.infer<typeof onboardingSubmissionSchema>
+export type OnboardingConfiguration = z.infer<
+  typeof onboardingConfigurationSchema
+>
+export type OnboardingAuthenticationConfiguration = z.infer<
+  typeof onboardingAuthenticationConfigurationSchema
+>
+export type CompatibilityCapability = z.infer<
+  typeof compatibilityCapabilitySchema
+>
+export type CompatibilityEvidence = z.infer<typeof compatibilityEvidenceSchema>
+export type CompatibilityFinding = z.infer<typeof compatibilityFindingSchema>
+export type CompatibilityReport = z.infer<typeof compatibilityReportSchema>
+export type OnboardingProposedScope = z.infer<
+  typeof onboardingProposedScopeSchema
+>
+export type PublicOnboardingConfiguration = z.infer<
+  typeof publicOnboardingConfigurationSchema
+>
+export type PublicOnboardingApplication = z.infer<
+  typeof publicOnboardingApplicationSchema
+>
+export type OnboardingFormValues = z.infer<typeof onboardingFormValuesSchema>
+export type OnboardingActionState = z.infer<typeof onboardingActionStateSchema>
 export type CommitReference = z.infer<typeof commitReferenceSchema>
 export type Run = z.infer<typeof runSchema>
 export type MissionBudget = z.infer<typeof missionBudgetSchema>
