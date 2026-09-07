@@ -3,7 +3,7 @@
 ## SNT-014 Shared Specialist Agent Kernel
 
 - [x] Define compact specialist state and decisions.
-- [ ] Build the deterministic tool registry and budget gate.
+- [x] Build the deterministic tool registry and budget gate.
 - [ ] Implement the reusable specialist LangGraph kernel.
 - [ ] Add scripted trajectories and durable boundary tests.
 
@@ -14,3 +14,4 @@
 | 2026-09-08 | Reuse the existing mission/result contracts and durable orchestration runtime.         | The kernel should specialize proven wire, checkpoint, lease, cancellation, and interrupt boundaries rather than create parallel ones. |
 | 2026-09-08 | Compile specialist subgraphs for per-invocation persistence inherited from the parent. | Missions remain isolated while parent workflows retain durable checkpoints and human interrupts.                                      |
 | 2026-09-08 | Track budget consumption in an identity-keyed model/tool ledger.                       | Replay deduplication and conflict checks keep checkpoint usage atomic and prevent duplicate charges.                                  |
+| 2026-09-08 | Coordinate tool execution by mission, call ID, and request hash.                       | Concurrent identical calls share one result, conflicts fail closed, and uncertain failures become durable charged observations.       |

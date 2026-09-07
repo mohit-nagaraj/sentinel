@@ -196,6 +196,7 @@ export const completedToolCallSchema = z.strictObject({
   requestHash: contentHashSchema,
   resultHash: contentHashSchema,
   outcome: z.enum(["succeeded", "failed"]),
+  preflightUsage: executionBudgetSchema.optional(),
   usage: executionBudgetSchema,
 })
 
@@ -650,6 +651,7 @@ export const SpecialistState = new StateSchema({
 })
 
 export type SpecialistDecision = z.infer<typeof specialistDecisionSchema>
+export type SpecialistAgent = z.infer<typeof specialistAgentSchema>
 export type PendingToolCall = z.infer<typeof pendingToolCallSchema>
 export type CompactObservation = z.infer<typeof compactObservationSchema>
 export type CompletedToolCall = z.infer<typeof completedToolCallSchema>
@@ -808,6 +810,21 @@ function assertSpecialistStateConsistency(
   ) {
     throw new Error("Specialist budget ledger is not deterministically derived")
   }
+  const reservedBudget = state.pendingToolCalls.reduce<MissionBudget>(
+    (total, call) => addBudgetUsage(total, call.preflightUsage),
+    EMPTY_BUDGET_USAGE
+  )
+  if (
+    budgetKeys.some(
+      (key) =>
+        state.budgetLedger.total[key] + reservedBudget[key] >
+        state.mission.budget[key]
+    )
+  ) {
+    throw new Error(
+      "Specialist budget usage and reservations exceed the mission budget"
+    )
+  }
   if (
     canonicalStringify(deriveSpecialistProgress(state.progress.evaluations)) !==
     canonicalStringify(state.progress)
@@ -874,6 +891,11 @@ function assertSpecialistStateConsistency(
       throw new Error("A completed tool call cannot remain pending")
     }
   }
+  if (
+    state.pendingToolCalls.some((call) => call.preflightUsage.toolCalls !== 1)
+  ) {
+    throw new Error("Pending tool estimates must contain exactly one tool call")
+  }
 
   for (const observation of state.observations) {
     const completed = completedById.get(observation.callId)
@@ -892,6 +914,24 @@ function assertSpecialistStateConsistency(
   }
 
   for (const completed of state.completedCalls) {
+    if (completed.usage.toolCalls !== 1) {
+      throw new Error("Completed tool usage must contain exactly one tool call")
+    }
+    if (
+      completed.preflightUsage !== undefined &&
+      budgetKeys.some(
+        (key) => completed.usage[key] > completed.preflightUsage![key]
+      )
+    ) {
+      throw new Error("Completed tool usage exceeds its preflight estimate")
+    }
+    if (
+      !state.observations.some(
+        (observation) => observation.callId === completed.callId
+      )
+    ) {
+      throw new Error("Completed tool call is missing its compact observation")
+    }
     const entry = toolUsageByCall.get(completed.callId)
     if (
       entry === undefined ||
