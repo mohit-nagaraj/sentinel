@@ -46,7 +46,7 @@ export interface ReferenceExtraction {
 
 const MAX_UNRESOLVED_TARGET_LENGTH = 256
 
-function rangeOf(node: Node): SourceRange {
+export function rangeOf(node: Node): SourceRange {
   return {
     startLine: node.getStartLineNumber(),
     endLine: node.getEndLineNumber(),
@@ -81,7 +81,7 @@ function unwrapAlias(symbol: TsSymbol | undefined): TsSymbol | undefined {
   return current
 }
 
-function resolveToIndexedSymbol(
+export function resolveToIndexedSymbol(
   symbol: TsSymbol | undefined,
   byDeclaration: ReadonlyMap<Node, SymbolRecord>
 ): SymbolRecord | undefined {
@@ -101,7 +101,7 @@ function resolveToIndexedSymbol(
   return undefined
 }
 
-function isInTypePosition(node: Node): boolean {
+export function isInTypePosition(node: Node): boolean {
   let current: Node | undefined = node
   for (let depth = 0; depth < 24 && current !== undefined; depth += 1) {
     if (Node.isTypeNode(current) || Node.isTypeAliasDeclaration(current)) {
@@ -119,7 +119,7 @@ function isInTypePosition(node: Node): boolean {
   return false
 }
 
-function enclosingSymbol(
+export function enclosingSymbol(
   node: Node,
   byDeclaration: ReadonlyMap<Node, SymbolRecord>,
   fallback: SymbolRecord

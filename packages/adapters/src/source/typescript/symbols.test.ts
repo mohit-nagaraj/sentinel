@@ -88,6 +88,7 @@ describe("symbol extraction", () => {
       "src/Login.tsx": "module",
       "src/Login.tsx#plainFunction": "function",
       "src/Login.tsx#Login": "component",
+      "src/Login.tsx#Login.handleSubmit": "handler",
       "src/Login.tsx#OrderService": "class",
       "src/Login.tsx#OrderService.charge": "method",
       "src/Login.tsx#OrderService.refund": "method",
@@ -170,6 +171,91 @@ describe("symbol extraction", () => {
       ["src/api/event.client.ts#eventsClient.create", "method"],
       ["src/api/event.client.ts#eventsClient.findByID", "method"],
     ])
+  })
+
+  it("indexes handlers declared inside a component body", async () => {
+    const symbols = await symbolsOf(
+      {
+        "tsconfig.json": tsconfig,
+        "src/Login.tsx": [
+          "export const Login = () => {",
+          "  const handleTicketLookup = (email: string) => email",
+          "  function handleReset() { return 1 }",
+          "  const nested = () => {",
+          "    const handleInner = () => 2",
+          "    return handleInner",
+          "  }",
+          "  const notAFunction = 3",
+          "  return <form onSubmit={handleTicketLookup} />",
+          "}",
+        ].join("\n"),
+      },
+      "src/Login.tsx"
+    )
+
+    expect(symbols.map(({ qualifiedName }) => qualifiedName)).toStrictEqual([
+      "src/Login.tsx",
+      "src/Login.tsx#Login",
+      "src/Login.tsx#Login.handleTicketLookup",
+      "src/Login.tsx#Login.handleReset",
+      "src/Login.tsx#Login.nested",
+      "src/Login.tsx#Login.nested.handleInner",
+    ])
+  })
+
+  it("stops nesting at the declared depth limit", async () => {
+    const symbols = await symbolsOf(
+      {
+        "tsconfig.json": tsconfig,
+        "src/deep.ts": [
+          "export const a = () => {",
+          "  const b = () => {",
+          "    const c = () => {",
+          "      const d = () => {",
+          "        const e = () => 1",
+          "        return e",
+          "      }",
+          "      return d",
+          "    }",
+          "    return c",
+          "  }",
+          "  return b",
+          "}",
+        ].join("\n"),
+      },
+      "src/deep.ts"
+    )
+
+    expect(symbols.map(({ qualifiedName }) => qualifiedName)).toStrictEqual([
+      "src/deep.ts",
+      "src/deep.ts#a",
+      "src/deep.ts#a.b",
+      "src/deep.ts#a.b.c",
+      "src/deep.ts#a.b.c.d",
+      "src/deep.ts#a.b.c.d.e",
+    ])
+  })
+
+  it("does not descend past the nesting limit", async () => {
+    const open = Array.from(
+      { length: 7 },
+      (_unused, index) =>
+        `${"  ".repeat(index + 1)}const level${index} = () => {`
+    ).join("\n")
+    const close = Array.from(
+      { length: 7 },
+      (_unused, index) => `${"  ".repeat(7 - index)}}`
+    ).join("\n")
+    const symbols = await symbolsOf(
+      {
+        "tsconfig.json": tsconfig,
+        "src/deeper.ts": `export const root = () => {\n${open}\n${close}\n}\n`,
+      },
+      "src/deeper.ts"
+    )
+
+    const deepest = symbols.at(-1)?.qualifiedName ?? ""
+    expect(deepest.split(".")).toHaveLength(6)
   })
 
   it("treats a non-client object literal as a module binding", async () => {

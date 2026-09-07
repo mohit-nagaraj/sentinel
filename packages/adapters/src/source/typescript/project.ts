@@ -59,6 +59,27 @@ export function toRepositoryPath(mountedPath: string): string | undefined {
     : undefined
 }
 
+/**
+ * Resolves a module specifier the way the compiler host would.
+ *
+ * Route `lazy()` bodies reach their component through a dynamic `import(...)`,
+ * whose specifier is a plain string literal with no `ImportDeclaration` to hang
+ * ts-morph's own resolution off, so the resolver is invoked directly.
+ */
+export function resolveModuleSpecifier(
+  project: Project,
+  fromRepositoryPath: string,
+  specifier: string
+): string | undefined {
+  const resolved = ts.resolveModuleName(
+    specifier,
+    toMountedPath(fromRepositoryPath),
+    project.getCompilerOptions(),
+    project.getModuleResolutionHost()
+  ).resolvedModule?.resolvedFileName
+  return resolved === undefined ? undefined : toRepositoryPath(resolved)
+}
+
 export interface DetectedProjectConfig {
   /** Repository-relative path of the `tsconfig.json` that was honoured. */
   readonly tsconfigPath: string

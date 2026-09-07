@@ -35,6 +35,9 @@ export interface SymbolExtraction {
   readonly nodeCount: number
 }
 
+/** Nesting depth for locally declared functions inside another declaration. */
+const MAX_NESTED_DECLARATION_DEPTH = 4
+
 const handlerNamePattern = /^(?:handle|on)[A-Z]/
 const componentNamePattern = /^[A-Z][A-Za-z0-9]*$/
 const apiClientFilePattern = /\.client\.tsx?$/
@@ -222,6 +225,80 @@ export function extractSymbols(
     return draft
   }
 
+  /**
+   * Direct statements of a function body, without descending into nested
+   * functions. Used to find locally declared handlers.
+   */
+  const bodyStatements = (node: Node | undefined): readonly Node[] => {
+    if (node === undefined) return []
+    if (Node.isBlock(node)) return node.getStatements()
+    if (
+      Node.isArrowFunction(node) ||
+      Node.isFunctionExpression(node) ||
+      Node.isFunctionDeclaration(node) ||
+      Node.isMethodDeclaration(node)
+    ) {
+      const body = node.getBody()
+      return body !== undefined && Node.isBlock(body)
+        ? body.getStatements()
+        : []
+    }
+    return []
+  }
+
+  /**
+   * Records function-like declarations nested inside another declaration's body.
+   *
+   * React components declare their handlers as body locals — Hi.Events'
+   * `handleTicketLookup` lives inside `Login` — so a top-level-only walk would
+   * leave every JSX handler binding unresolved. Nesting is bounded because the
+   * value of deeply nested closures to a Code Explorer drops off quickly.
+   */
+  const recordNested = (
+    body: Node | undefined,
+    chain: readonly string[],
+    depth: number
+  ): void => {
+    if (depth > MAX_NESTED_DECLARATION_DEPTH) return
+    for (const statement of bodyStatements(body)) {
+      if (Node.isFunctionDeclaration(statement)) {
+        const name = statement.getName()
+        if (name === undefined) continue
+        record({
+          declaration: statement,
+          name,
+          chain: [...chain, name],
+          body: statement.getBody(),
+          member: false,
+          isClass: false,
+          isObjectLiteral: false,
+          exported: false,
+          exportName: undefined,
+        })
+        recordNested(statement.getBody(), [...chain, name], depth + 1)
+        continue
+      }
+      if (!Node.isVariableStatement(statement)) continue
+      for (const declaration of statement.getDeclarations()) {
+        const initializer = declaration.getInitializer()
+        if (!isFunctionLike(initializer)) continue
+        const name = declaration.getName()
+        record({
+          declaration,
+          name,
+          chain: [...chain, name],
+          body: initializer,
+          member: false,
+          isClass: false,
+          isObjectLiteral: false,
+          exported: false,
+          exportName: undefined,
+        })
+        recordNested(initializer, [...chain, name], depth + 1)
+      }
+    }
+  }
+
   const recordObjectMembers = (
     objectLiteral: Node,
     chain: readonly string[]
@@ -240,6 +317,7 @@ export function extractSymbols(
           exported: false,
           exportName: undefined,
         })
+        recordNested(property.getBody(), [...chain, property.getName()], 1)
         continue
       }
       if (!Node.isPropertyAssignment(property)) continue
@@ -257,6 +335,7 @@ export function extractSymbols(
         exported: false,
         exportName: undefined,
       })
+      recordNested(initializer, [...chain, name], 1)
     }
   }
 
@@ -277,6 +356,7 @@ export function extractSymbols(
         exported: false,
         exportName: undefined,
       })
+      recordNested(method.getBody(), [...chain, method.getName()], 1)
     }
     for (const property of declaration.getProperties()) {
       const initializer = property.getInitializer()
@@ -292,6 +372,7 @@ export function extractSymbols(
         exported: false,
         exportName: undefined,
       })
+      recordNested(initializer, [...chain, property.getName()], 1)
     }
   }
 
@@ -332,6 +413,7 @@ export function extractSymbols(
         exported: statement.isExported(),
         exportName: statement.isDefaultExport() ? "default" : name,
       })
+      recordNested(statement.getBody(), [name], 1)
       continue
     }
 
@@ -369,6 +451,7 @@ export function extractSymbols(
             exported,
             exportName: exported ? name : undefined,
           })
+          recordNested(initializer, [name], 1)
           continue
         }
         if (
