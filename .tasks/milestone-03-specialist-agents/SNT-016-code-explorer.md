@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M3 — Specialist discovery agents |
-| Status | `not-started` |
+| Status | `done` |
 | Depends on | SNT-009, SNT-010, SNT-011, SNT-014 |
 | Blocks | Evidence linking, PR investigation, Curator, evaluation |
 | PRD references | §13.7–13.11, §15, FR-006–FR-008 |
@@ -39,16 +39,16 @@ Implement shared-kernel tools:
 
 ## Implementation tasks
 
-- [ ] Add tool adapters over normalized TS/PHP/OpenAPI indexes.
-- [ ] Enforce repository path/language/source-line/hop/result budgets.
-- [ ] Construct context from bounded source slices and structural edges, not whole files.
-- [ ] Define code claim/path schemas requiring source-range evidence.
-- [ ] Support endpoint-first, frontend-first, backend-first, capability-first, and changed-symbol missions.
-- [ ] Track visited symbol/edge/query combinations and detect no-progress loops.
-- [ ] Prefer definitions/references/calls/routes over name similarity.
-- [ ] Use focused tests as corroboration, never as proof of runtime behavior by themselves.
-- [ ] Represent reflection, magic methods, computed URLs, DI ambiguity, and unresolved references explicitly.
-- [ ] Return candidate frontend/backend/domain paths and suggested Documentation/Application follow-ups.
+- [x] Add tool adapters over normalized TS/PHP/OpenAPI indexes.
+- [x] Enforce repository path/language/source-line/hop/result budgets.
+- [x] Construct context from bounded source slices and structural edges, not whole files.
+- [x] Define code claim/path schemas requiring source-range evidence.
+- [x] Support endpoint-first, frontend-first, backend-first, capability-first, and changed-symbol missions.
+- [x] Track visited symbol/edge/query combinations and detect no-progress loops.
+- [x] Prefer definitions/references/calls/routes over name similarity.
+- [x] Use focused tests as corroboration, never as proof of runtime behavior by themselves.
+- [x] Represent reflection, magic methods, computed URLs, DI ambiguity, and unresolved references explicitly.
+- [x] Return candidate frontend/backend/domain paths and suggested Documentation/Application follow-ups.
 
 ## Acceptance criteria
 
@@ -76,4 +76,36 @@ AST extraction itself, arbitrary code execution, semantic requirement acceptance
 
 ## Implementation notes
 
-_Populate during implementation with final paths, commands, decisions, test evidence, and any explicitly deferred acceptance item._
+### Paths
+
+- Wire contracts and parsers: `packages/contracts/src/code-explorer.ts`, re-exported by `@sentinel/contracts`.
+- Composite normalized repository and all thirteen tools: `packages/adapters/src/code-explorer/`, re-exported by `@sentinel/adapters`.
+- Bounded model/tool loop: `packages/orchestration/src/code-explorer.ts`, re-exported by `@sentinel/orchestration`.
+- Cross-stack fixture and scripted missions: `tests/fixtures/code-explorer.ts` and `tests/agent/code-explorer.test.ts`.
+- Opt-in pinned public evaluation: `tests/live/code-explorer-hi-events.live.test.ts`.
+
+### Decisions
+
+- `CodeExplorerRepository` composes prepared TypeScript query, PHP relationship/source-slice, Laravel route, frontend API-call, and OpenAPI evidence. It never parses syntax itself and never receives an unrestricted filesystem handle.
+- `CodeExplorerTools` exposes exactly the task's thirteen operations. Mission path/language/tool scope is checked before execution; per-tool result, hop, line, and character limits are applied again below the model gateway.
+- Symbol and text searches return candidates without structural claim evidence. `submit_code_claim` accepts only evidence IDs previously observed in the mission, and at least one structural source-to-target edge must exactly support the proposed relationship.
+- Focused test evidence is always `corroborating` with `corroboratesOnly: true`; it cannot satisfy the structural-edge rule alone.
+- The service stores compact observation history plus only the latest bounded source slices in model context. Tool arguments are hashed into visit keys before execution, so exact repeats terminate as `no_progress` without duplicate reads.
+- The service requires one strict tool call per model decision. Tool/source/content/repository/model/token/elapsed budgets, total traversal hops/results, and a final iteration limit all terminate with typed status/reason codes.
+- Claims and connected paths are sorted deterministically. Dynamic calls and unresolved references are retained with reason codes and optional Documentation/Application follow-up targets.
+- The Azure gateway's validated default tool ceiling is 16 so the complete thirteen-tool surface fits while remaining below the contract maximum of 32.
+- SNT-014 is absent from the `origin/main` baseline used for this work. SNT-016 provides its feature-specific bounded execution loop and ports but does not mark the broader shared-kernel checkpoint/interrupt/cross-agent milestone complete.
+
+### Verification (2026-09-08)
+
+- `pnpm typecheck`, `pnpm lint`, and `pnpm build` pass.
+- `pnpm test` passes 671 tests across 70 files, including 30 new contract/adapter/orchestration unit tests.
+- `pnpm test:agent` passes 9 Code Explorer mission tests: the golden cross-stack trace, endpoint-first and changed-symbol paths, frontend/backend/capability entry modes, distractors, dynamic/unmapped partial results, and five equivalent repeated runs.
+- `php-laravel-indexer.integration.test.ts` passes all 13 tests after installing the lockfile-pinned ignored Composer dependency. The other integration projects passed or remained gated by their documented external-service flags.
+- With `RUN_LIVE_TESTS=1` alone, the Hi.Events Code Explorer evaluation is discovered and skipped; it runs only when `RUN_CODE_EXPLORER_HI_EVENTS=1` and the existing GitHub/Azure configuration are also present.
+
+### Deferred
+
+- The paid Hi.Events mission was not executed during default verification; the runnable harness is intentionally opt-in.
+- Shared specialist checkpoint/resume, human interrupts, cross-agent privilege isolation, and reusable subgraph construction remain SNT-014 scope.
+- Neo4j mutation, semantic requirement acceptance, Curator reconciliation, and final risk scoring remain out of scope as declared.
