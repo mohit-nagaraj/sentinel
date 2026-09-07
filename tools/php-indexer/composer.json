@@ -1,0 +1,27 @@
+{
+  "name": "sentinel/php-indexer",
+  "description": "Source-only PHP and Laravel structural extractor for Sentinel",
+  "type": "project",
+  "license": "proprietary",
+  "require": {
+    "php": ">=8.3 <8.5",
+    "ext-json": "*",
+    "ext-tokenizer": "*",
+    "nikic/php-parser": "^5.8.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "Sentinel\\PhpIndexer\\": "src/"
+    }
+  },
+  "bin": [
+    "bin/index.php"
+  ],
+  "config": {
+    "allow-plugins": false,
+    "platform": {
+      "php": "8.3.0"
+    },
+    "sort-packages": true
+  }
+}

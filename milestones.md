@@ -72,7 +72,7 @@ graph LR
 | SNT-007 | [Read-only GitHub source connector and ephemeral checkout](./.tasks/milestone-02-source-evidence/SNT-007-github-source-connector.md) | SNT-002, SNT-003 | done |
 | SNT-008 | [Documentation discovery, parsing, and provenance map](./.tasks/milestone-02-source-evidence/SNT-008-documentation-source-map.md) | SNT-002, SNT-003, SNT-007 | not-started |
 | SNT-009 | [TypeScript and React structural indexer](./.tasks/milestone-02-source-evidence/SNT-009-typescript-react-indexer.md) | SNT-002, SNT-007 | not-started |
-| SNT-010 | [PHP and Laravel structural indexer](./.tasks/milestone-02-source-evidence/SNT-010-php-laravel-indexer.md) | SNT-002, SNT-007 | not-started |
+| SNT-010 | [PHP and Laravel structural indexer](./.tasks/milestone-02-source-evidence/SNT-010-php-laravel-indexer.md) | SNT-002, SNT-007 | review |
 | SNT-011 | [OpenAPI and cross-stack endpoint normalization](./.tasks/milestone-02-source-evidence/SNT-011-openapi-endpoint-normalization.md) | SNT-009, SNT-010 | not-started |
 | SNT-012 | [Playwright observation, safe actions, and evidence capture](./.tasks/milestone-02-source-evidence/SNT-012-playwright-evidence-runtime.md) | SNT-002, SNT-003 | not-started |
 | SNT-013 | [PR diff to base/head symbol mapping](./.tasks/milestone-02-source-evidence/SNT-013-pr-diff-symbol-mapping.md) | SNT-007, SNT-009, SNT-010 | not-started |
@@ -184,14 +184,14 @@ graph LR
 | Milestone | Done | Total | Status |
 |---|---:|---:|---|
 | M1 Foundation and durable execution | 5 | 6 | in-progress |
-| M2 Deterministic source evidence | 1 | 7 | in-progress |
+| M2 Deterministic source evidence | 1 | 7 | review: SNT-010 |
 | M3 Specialist discovery agents | 0 | 4 | not-started |
 | M4 Graph construction and reconciliation | 0 | 4 | not-started |
 | M5 Onboarding and control plane | 0 | 4 | not-started |
 | M6 PR blast-radius loop | 0 | 4 | not-started |
 | M7 Verification and refresh | 0 | 3 | blocked on deployment decision |
 | M8 Evaluation and delivery | 0 | 3 | not-started |
-| **Overall** | **6** | **35** | **review: SNT-006** |
+| **Overall** | **6** | **35** | **review: SNT-006, SNT-010** |
 
 ## Active front
 

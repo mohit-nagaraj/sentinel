@@ -1,4 +1,5 @@
 node_modules/
+tools/php-indexer/vendor/
 .pnpm-store/
 .turbo/
 .next/

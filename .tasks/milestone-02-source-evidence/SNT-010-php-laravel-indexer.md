@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M2 — Deterministic source evidence |
-| Status | `not-started` |
+| Status | `review` |
 | Depends on | SNT-002, SNT-007 |
 | Blocks | Endpoint normalization, Code Explorer, PR mapping |
 | PRD references | §10.2, §13.8, FR-007 |
@@ -28,16 +28,16 @@ PHP is the majority of Hi.Events. Accurate namespaces and source positions justi
 
 ## Implementation tasks
 
-- [ ] Create isolated Composer package/lockfile and CLI entry point.
-- [ ] Define safe CLI arguments and prevent arbitrary output/file writes.
-- [ ] Parse configured files without autoloading or executing target code.
-- [ ] Run NameResolver and emit fully qualified plus original names.
-- [ ] Extract facts/relationships/source ranges into versioned contract.
-- [ ] Implement Laravel route expression/group normalization for target fixture patterns.
-- [ ] Extract constructor dependencies and method/static calls.
-- [ ] Map repository/model usage conservatively and emit unresolved dynamics.
-- [ ] Validate all output in TypeScript and reject malformed/oversized streams.
-- [ ] Add bounded source-slice/query preparation for Code Explorer.
+- [x] Create isolated Composer package/lockfile and CLI entry point.
+- [x] Define safe CLI arguments and prevent arbitrary output/file writes.
+- [x] Parse configured files without autoloading or executing target code.
+- [x] Run NameResolver and emit fully qualified plus original names.
+- [x] Extract facts/relationships/source ranges into versioned contract.
+- [x] Implement Laravel route expression/group normalization for target fixture patterns.
+- [x] Extract constructor dependencies and method/static calls.
+- [x] Map repository/model usage conservatively and emit unresolved dynamics.
+- [x] Validate all output in TypeScript and reject malformed/oversized streams.
+- [x] Add bounded source-slice/query preparation for Code Explorer.
 
 ## Acceptance criteria
 
@@ -63,4 +63,18 @@ Executing `artisan`, runtime container resolution, whole-program data flow, Code
 
 ## Implementation notes
 
-A trusted baseline may later provide `route:list --json` as corroboration through SNT-011, but this extractor remains source-only and safe for untrusted PR trees.
+- Composer package: `tools/php-indexer/composer.json` and `composer.lock` pin `nikic/php-parser` v5.8.0 (`044a6a392ff8ad0d61f14370a5fbbd0a0107152f`). The package declares no Composer scripts or plugins and exposes only `bin/index.php`.
+- Runtime boundary: `PhpLaravelIndexer` in `packages/adapters/src/php-laravel/process.ts` spawns a configured PHP executable without a shell, passes exactly one bounded JSON request on stdin, accepts output only on stdout, clears PHP configuration discovery and unrelated environment values, and applies timeout/stdout/stderr limits. Child stderr and raw source are never reflected in errors.
+- Source safety: the TypeScript host and PHP CLI both validate unique portable relative `.php` paths, path depth, root/file containment, and symlink components. `indexCheckout` hashes canonical SNT-007 blob text and rejects output unless PHP parsed identical bytes. The CLI requires its own fixed Composer autoloader and never includes target files, boots Laravel, invokes Artisan, runs migrations, or writes into the target repository.
+- Versioned contract: `schema.ts` strictly validates parser identity, content hashes, symbols, roles, routes, relationships, unresolved dynamics, six-position source ranges, unique IDs, linked IDs, and summary counts. Validated responses are recursively frozen before exposure.
+- Structural extraction: PHP-Parser's v5 `NameResolver` runs with original-name preservation. The visitor emits namespaces, imports, classes, interfaces, traits, enums, functions, methods, properties, attributes, inheritance, trait use, constructor dependencies, parameter/return/property types, instance/static/function calls, instantiation, selected domain/model references, and explicit unresolved dynamic calls.
+- Laravel extraction: grouped prefixes/middleware and GET/POST/PUT/PATCH/DELETE/OPTIONS/ANY/match routes are normalized for both `Route` facade chains and Hi.Events' structurally bootstrapped or typed `Illuminate\\Routing\\Router $router` chains. Class-constant and `[Controller::class, method]` actions resolve; computed paths, closures, strings, containers, reflection, magic, and other dynamic calls remain unresolved rather than guessed.
+- FormRequest/JsonResource labels are emitted only when inheritance reaches the exact Laravel base type; suffix matching alone does not create those associations.
+- Deterministic IDs are SHA-256 hashes over versioned path/kind/name/range evidence. Files and facts are byte-order/range sorted, and repeat extraction with reversed request order produces identical output.
+- Code Explorer preparation: `PhpCodeIndex` provides bounded symbol search, smallest-enclosing-symbol lookup, relationship neighborhoods capped by depth/symbol/relationship counts, and source slices capped by context lines, total lines, and characters.
+- Default limits: 2,000 files, 2 MiB per file, 64 MiB total source, path depth 40, 100,000 facts, 4,096-character strings, 1 MiB request, 32 MiB stdout, 64 KiB stderr, and 120 seconds.
+- Fixture coverage: `tests/fixtures/php-laravel` traces grouped route → Action → Handler → Service → Repository → model and covers aliases, attributes, traits, interfaces, promoted constructor properties, FormRequest, JsonResource, malformed source, inert top-level code, and dynamic negatives. Golden expectations are consumed through the TypeScript schema.
+- Verification on 2026-09-07: Composer strict validation and PHP syntax checks passed; `pnpm test` passed 240 tests; `pnpm test:integration` passed 22 tests with 11 environment-gated Supabase/LangGraph tests skipped; `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, and `pnpm build` passed.
+- Live verification on 2026-09-07: the opt-in test checked out Hi.Events commit `2064f88ff7590e93c738efb8becaa7d732063619`, parsed five selected backend files, and resolved `/public/events/{event_id}/order` to `CreateOrderActionPublic` without booting Laravel. A first Git pack transfer was reset by the network; the clean retry passed in about 12 seconds.
+- Run the live smoke with `RUN_LIVE_TESTS=1 RUN_PHP_INDEXER_SMOKE=1 pnpm vitest run --project live tests/live/php-laravel-indexer.live.test.ts` after Composer install (PowerShell environment syntax differs).
+- A trusted baseline may later provide `route:list --json` as SNT-011 corroboration, but no SNT-010 acceptance item is deferred and this extractor remains source-only for untrusted PR trees.

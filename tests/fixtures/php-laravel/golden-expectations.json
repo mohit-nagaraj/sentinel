@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "parser": "nikic/php-parser@5.8.0",
+  "route": {
+    "methods": ["POST"],
+    "path": "/api/v1/events/{event}/orders",
+    "action": "Fixture\\Actions\\CreateOrderAction"
+  },
+  "symbols": [
+    "Fixture\\Actions\\CreateOrderAction::__invoke",
+    "Fixture\\Handlers\\CreateOrderHandler::handle",
+    "Fixture\\Services\\OrderService::create",
+    "Fixture\\Repositories\\OrderRepository::save",
+    "Fixture\\Models\\Order"
+  ]
+}

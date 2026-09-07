@@ -25,9 +25,18 @@ jobs:
           node-version: 22.17.0
           cache: pnpm
 
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          tools: composer:2.10.3
+          coverage: none
+
       - run: pnpm install --frozen-lockfile
+      - run: composer validate --strict --working-dir tools/php-indexer
+      - run: composer install --working-dir tools/php-indexer --no-interaction --no-plugins --no-scripts --prefer-dist
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm test:integration
       - run: pnpm build
