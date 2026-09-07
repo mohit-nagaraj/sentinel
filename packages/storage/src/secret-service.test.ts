@@ -79,4 +79,76 @@ describe("target secret service", () => {
     expect(database.calls[0]?.statement).toContain("vault.decrypted_secrets")
     expect(database.calls[0]?.statement).not.toContain("resolved-value")
   })
+
+  it("rotates a Vault value without changing or exposing its opaque reference", async () => {
+    const reference =
+      "secret-ref:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    const mapping = {
+      id: mappingId,
+      application_id: applicationId,
+      secret_name: "organizer_password",
+      vault_secret_id: vaultSecretId,
+      opaque_reference: reference,
+      rotated_at: null,
+    }
+    const database = new ScriptedDatabase([
+      [mapping],
+      [],
+      [{ ...mapping, rotated_at: "2026-09-08T00:00:00.000Z" }],
+    ])
+    const service = new TargetSecretService(database)
+
+    const result = await service.rotate({
+      applicationId,
+      reference,
+      value: "replacement-value",
+    })
+
+    expect(result).toMatchObject({ reference, name: "organizer_password" })
+    expect(result.rotatedAt?.toISOString()).toBe("2026-09-08T00:00:00.000Z")
+    expect(database.calls[1]?.statement).toContain("vault.update_secret")
+    expect(database.calls[1]?.parameters).toEqual([
+      vaultSecretId,
+      "replacement-value",
+    ])
+    expect(JSON.stringify(result)).not.toContain("replacement-value")
+  })
+
+  it("deletes the mapping that triggers deletion of its encrypted Vault value", async () => {
+    const reference =
+      "secret-ref:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    const database = new ScriptedDatabase([
+      [
+        {
+          id: mappingId,
+          application_id: applicationId,
+          secret_name: "organizer_password",
+          vault_secret_id: vaultSecretId,
+          opaque_reference: reference,
+          rotated_at: null,
+        },
+      ],
+      [],
+    ])
+    const service = new TargetSecretService(database)
+
+    await expect(service.delete(applicationId, reference)).resolves.toBe(true)
+    expect(database.calls[1]?.statement).toContain(
+      "delete from sentinel.target_secrets"
+    )
+    expect(database.calls[1]?.parameters).toEqual([mappingId])
+  })
+
+  it("treats deletion of an unknown reference as idempotent", async () => {
+    const database = new ScriptedDatabase([[]])
+    const service = new TargetSecretService(database)
+
+    await expect(
+      service.delete(
+        applicationId,
+        "secret-ref:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      )
+    ).resolves.toBe(false)
+    expect(database.calls).toHaveLength(1)
+  })
 })

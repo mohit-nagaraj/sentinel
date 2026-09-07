@@ -315,7 +315,12 @@ export function createOnboardingInputFingerprint(
   configurationInput: OnboardingConfiguration
 ) {
   const configuration = onboardingConfigurationSchema.parse(configurationInput)
-  const { recordId: _recordId, repository, ...rest } = configuration
+  const {
+    recordId: _recordId,
+    name: _name,
+    repository,
+    ...rest
+  } = configuration
   const { resolvedCommitSha: _resolvedCommitSha, ...repositoryInput } =
     repository
   return hashCanonical({ ...rest, repository: repositoryInput })
