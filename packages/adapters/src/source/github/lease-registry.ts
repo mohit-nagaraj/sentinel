@@ -21,6 +21,12 @@ const leaseSchema = z.strictObject({
   version: z.literal(1),
   createdAt: z.iso.datetime({ offset: true }),
   ownerPid: z.number().int().positive(),
+  heartbeatIntervalMs: z
+    .number()
+    .int()
+    .positive()
+    .max(60 * 60_000)
+    .default(60_000),
 })
 
 export interface CheckoutLease {
@@ -134,6 +140,7 @@ export class CheckoutLeaseRegistry {
           version: 1,
           createdAt: createdAt.toISOString(),
           ownerPid: process.pid,
+          heartbeatIntervalMs: this.heartbeatIntervalMs,
         }),
         { encoding: "utf8", flag: "wx", mode: 0o600 }
       )
@@ -263,7 +270,8 @@ export class CheckoutLeaseRegistry {
         Date.parse(lease.createdAt),
         heartbeatStatus.mtimeMs
       )
-      if (this.now().getTime() - lastHeartbeat < olderThanMs) continue
+      const safeStaleAge = Math.max(olderThanMs, lease.heartbeatIntervalMs * 3)
+      if (this.now().getTime() - lastHeartbeat < safeStaleAge) continue
       await this.removeOwned(candidate)
       reclaimed += 1
     }

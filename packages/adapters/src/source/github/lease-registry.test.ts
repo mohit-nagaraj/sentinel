@@ -77,7 +77,7 @@ describe("CheckoutLeaseRegistry", () => {
       rootDirectory,
       now: () => new Date("2026-01-02T00:00:30.000Z"),
     })
-    await expect(reclaimer.reclaimStale(60_000)).resolves.toBe(0)
+    await expect(reclaimer.reclaimStale(10_000)).resolves.toBe(0)
     await expect(access(lease.path)).resolves.toBeUndefined()
     await lease.cleanup()
     await rm(parent, { recursive: true, force: true })
