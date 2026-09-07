@@ -32,6 +32,9 @@ final class StructuralVisitor extends NodeVisitorAbstract
     /** @var array<int, true> */
     private array $pushedScopes = [];
 
+    /** @var array<int, true> */
+    private array $pushedFunctionContexts = [];
+
     private ?string $namespaceSymbolId = null;
 
     public function __construct(
@@ -73,13 +76,17 @@ final class StructuralVisitor extends NodeVisitorAbstract
             $qualifiedName = $node->namespacedName?->toString() ?? $node->name->toString();
             $id = $this->addSymbol($node, 'function', $qualifiedName, $node->name->toString());
             $this->pushScope($node, $id);
-            $this->functionStack[] = ['variables' => $this->parameterTypes($node->params)];
+            $this->pushFunctionContext($node, $this->parameterTypes($node->params));
             $this->addAttributes($id, $node->attrGroups);
             $this->addTypeRelationships($id, $node->returnType, 'return_type', $node);
             return null;
         }
         if ($node instanceof Stmt\ClassMethod) {
             $this->enterMethod($node);
+            return null;
+        }
+        if ($node instanceof Expr\Closure || $node instanceof Expr\ArrowFunction) {
+            $this->enterAnonymousFunction($node);
             return null;
         }
         if ($node instanceof Stmt\Property) {
@@ -133,9 +140,10 @@ final class StructuralVisitor extends NodeVisitorAbstract
             if ($node instanceof Stmt\ClassLike) {
                 array_pop($this->classStack);
             }
-            if ($node instanceof Stmt\Function_ || $node instanceof Stmt\ClassMethod) {
-                array_pop($this->functionStack);
-            }
+        }
+        if (isset($this->pushedFunctionContexts[$objectId])) {
+            array_pop($this->functionStack);
+            unset($this->pushedFunctionContexts[$objectId]);
         }
         if ($node instanceof Stmt\Namespace_) {
             $this->namespaceSymbolId = null;
@@ -223,9 +231,22 @@ final class StructuralVisitor extends NodeVisitorAbstract
         $id = $this->addSymbol($node, 'method', $class['name'] . '::' . $methodName, $methodName, $class['id']);
         $this->pushScope($node, $id);
         $variables = $this->parameterTypes($node->params);
-        $this->functionStack[] = ['variables' => $variables];
+        $this->pushFunctionContext($node, $variables);
         $dependencyKind = strtolower($methodName) === '__construct' ? 'constructor_dependency' : 'parameter_type';
         foreach ($node->params as $param) {
+            if ($param->flags !== 0 && is_string($param->var->name)) {
+                $propertyName = $param->var->name;
+                $propertyId = $this->addSymbol(
+                    $param,
+                    'property',
+                    $class['name'] . '::$' . $propertyName,
+                    '$' . $propertyName,
+                    $class['id'],
+                    $param,
+                );
+                $this->addTypeRelationships($propertyId, $param->type, 'property_type', $param);
+                $this->addAttributes($propertyId, $param->attrGroups);
+            }
             $this->addTypeRelationships($id, $param->type, $dependencyKind, $param);
         }
         $this->addTypeRelationships($id, $node->returnType, 'return_type', $node);
@@ -244,6 +265,28 @@ final class StructuralVisitor extends NodeVisitorAbstract
             $this->addTypeRelationships($id, $node->type, 'property_type', $node);
             $this->addAttributes($id, $node->attrGroups);
         }
+    }
+
+    private function enterAnonymousFunction(Expr\Closure|Expr\ArrowFunction $node): void
+    {
+        $outerVariables = $this->currentFunction()['variables'];
+        $variables = $node instanceof Expr\ArrowFunction ? $outerVariables : [];
+        if ($node instanceof Expr\Closure) {
+            foreach ($node->uses as $use) {
+                if (is_string($use->var->name) && isset($outerVariables[$use->var->name])) {
+                    $variables[$use->var->name] = $outerVariables[$use->var->name];
+                }
+            }
+        }
+        foreach ($node->params as $param) {
+            if (is_string($param->var->name)) {
+                unset($variables[$param->var->name]);
+            }
+        }
+        foreach ($this->parameterTypes($node->params) as $name => $type) {
+            $variables[$name] = $type;
+        }
+        $this->pushFunctionContext($node, $variables);
     }
 
     /** @param list<Param> $params
@@ -530,13 +573,7 @@ final class StructuralVisitor extends NodeVisitorAbstract
         $qualifiedName = Protocol::bounded(ltrim($qualifiedName, '\\'), $this->maxStringLength);
         $originalName = Protocol::bounded($originalName, $this->maxStringLength);
         $range = Protocol::range($modifierNode ?? $node);
-        $id = Protocol::id('php-symbol', [
-            $this->path,
-            $kind,
-            $qualifiedName,
-            $range['startFilePos'],
-            $range['endFilePos'],
-        ]);
+        $id = Protocol::codeSymbolId($this->path, $qualifiedName, $kind);
         $symbol = [
             'id' => $id,
             'kind' => $kind,
@@ -583,6 +620,13 @@ final class StructuralVisitor extends NodeVisitorAbstract
     {
         $this->scopeStack[] = $id;
         $this->pushedScopes[spl_object_id($node)] = true;
+    }
+
+    /** @param array<string, array{originalName: string, resolvedName: string}> $variables */
+    private function pushFunctionContext(Node $node, array $variables): void
+    {
+        $this->functionStack[] = ['variables' => $variables];
+        $this->pushedFunctionContexts[spl_object_id($node)] = true;
     }
 
     private function currentSource(): ?string

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   PhpLaravelIndexer,
+  phpSourceIdentitySchema,
   startGitHubSourceConnector,
   type ResolvedGitHubCommit,
 } from "@sentinel/adapters"
@@ -42,7 +43,15 @@ describe.runIf(runSmoke)("public Hi.Events PHP index", () => {
           throw new Error("Source checkout is unavailable")
         const response = await new PhpLaravelIndexer({
           limits: { timeoutMs: 5 * 60_000 },
-        }).indexCheckout(snapshot, files)
+        }).indexCheckout(
+          snapshot,
+          files,
+          phpSourceIdentitySchema.parse({
+            applicationId: `application:v1:${"a".repeat(64)}`,
+            repository: resolved.repository.repository,
+            commitSha: resolved.commit.sha,
+          })
+        )
         expect(response.files).toHaveLength(files.length)
         expect(response.summary.errorCount).toBe(0)
         expect(

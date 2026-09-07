@@ -17,6 +17,7 @@ export interface PhpSourceSlice {
   readonly endLine: number
   readonly text: string
   readonly contentHash: string
+  readonly sourceContentHash: string
 }
 
 export interface PhpRelationshipNeighborhood {
@@ -190,9 +191,23 @@ export class PhpCodeIndex {
         "PHP source slice request is invalid"
       )
     }
-    const source = await snapshot.readText(
-      symbolFilePath(this.response, symbolId)
+    const file = symbolFile(this.response, symbolId)
+    if (snapshot.metadata.commitSha !== this.response.source.commitSha) {
+      throw new PhpIndexerError(
+        "content_mismatch",
+        "PHP source slice snapshot does not match the indexed commit"
+      )
+    }
+    const source = await snapshot.readText(file.path)
+    const sourceContentHash = contentHashSchema.parse(
+      `sha256:${createHash("sha256").update(source, "utf8").digest("hex")}`
     )
+    if (sourceContentHash !== file.contentHash) {
+      throw new PhpIndexerError(
+        "content_mismatch",
+        "PHP source slice does not match the indexed file"
+      )
+    }
     const lines = source.split(/\r?\n/)
     const startLine = Math.max(1, symbol.range.startLine - contextLines)
     const desiredEnd = Math.min(
@@ -209,26 +224,27 @@ export class PhpCodeIndex {
       )
     }
     return {
-      path: symbolFilePath(this.response, symbolId),
+      path: file.path,
       startLine,
       endLine,
       text,
       contentHash: contentHashSchema.parse(
         `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}`
       ),
+      sourceContentHash,
     }
   }
 }
 
-function symbolFilePath(
+function symbolFile(
   response: PhpIndexerResponse,
   symbolId: string
-): string {
+): PhpIndexerResponse["files"][number] {
   const file = response.files.find((candidate) =>
     candidate.symbols.some((symbol) => symbol.id === symbolId)
   )
   if (file === undefined) {
     throw new PhpIndexerError("invalid_input", "PHP symbol is not indexed")
   }
-  return file.path
+  return file
 }

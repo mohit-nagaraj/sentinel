@@ -20,3 +20,11 @@ Route::prefix('api')
 $router->prefix('legacy')->group(function (Router $router): void {
     $router->put('orders/{order}', OrderAction::class);
 });
+
+Route::prefix($computedPrefix)->group(function (): void {
+    Route::get('computed-prefix', OrderAction::class);
+});
+
+Route::match($computedMethods, 'computed-methods', OrderAction::class);
+Route::post('explicit-missing', [OrderAction::class, 'missing']);
+Route::post('invalid-constant', [OrderAction::TARGET, '__invoke']);

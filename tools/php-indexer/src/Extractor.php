@@ -16,7 +16,8 @@ final class Extractor
      */
     public function extract(array $request): array
     {
-        [$root, $files, $limits] = $this->validateRequest($request);
+        [$root, $files, $limits, $sourceIdentity] = $this->validateRequest($request);
+        Protocol::configureSource($sourceIdentity);
         $parser = (new ParserFactory())->createForNewestSupportedVersion();
         $results = [];
         $totalBytes = 0;
@@ -28,13 +29,20 @@ final class Extractor
             if (!is_int($size) || $size > $limits['maxFileBytes']) {
                 throw new IndexerException('limit_exceeded');
             }
-            $totalBytes += $size;
+            $source = file_get_contents($absolute, false, null, 0, $limits['maxFileBytes'] + 1);
+            if (!is_string($source)) {
+                throw new IndexerException('read_error');
+            }
+            $actualSize = strlen($source);
+            if ($actualSize > $limits['maxFileBytes']) {
+                throw new IndexerException('limit_exceeded');
+            }
+            $totalBytes += $actualSize;
             if ($totalBytes > $limits['maxTotalBytes']) {
                 throw new IndexerException('limit_exceeded');
             }
-            $source = file_get_contents($absolute);
-            if (!is_string($source)) {
-                throw new IndexerException('read_error');
+            if (str_starts_with($source, "\xEF\xBB\xBF")) {
+                $source = substr($source, 3);
             }
             $file = [
                 'path' => $path,
@@ -82,17 +90,18 @@ final class Extractor
         }
 
         $this->linkTargets($results);
-        return $this->response($results);
+        return $this->response($results, $sourceIdentity);
     }
 
     /** @param array<string, mixed> $request
-     *  @return array{string, list<string>, array{maxFiles: int, maxFileBytes: int, maxTotalBytes: int, maxPathDepth: int, maxFacts: int, maxStringLength: int, maxRequestBytes: int, timeoutMs: int}}
+     *  @return array{string, list<string>, array{maxFiles: int, maxFileBytes: int, maxTotalBytes: int, maxPathDepth: int, maxFacts: int, maxStringLength: int, maxRequestBytes: int, timeoutMs: int}, array{applicationId: string, repository: array{host: string, owner: string, name: string}, commitSha: string}}
      */
     private function validateRequest(array $request): array
     {
-        if (($request['schemaVersion'] ?? null) !== 1 || !is_string($request['root'] ?? null) || !is_array($request['files'] ?? null) || !is_array($request['limits'] ?? null)) {
+        if (($request['schemaVersion'] ?? null) !== 1 || !is_string($request['root'] ?? null) || !is_array($request['files'] ?? null) || !is_array($request['limits'] ?? null) || !is_array($request['source'] ?? null)) {
             throw new IndexerException('invalid_input');
         }
+        $sourceIdentity = $this->validateSourceIdentity($request['source']);
         $root = realpath($request['root']);
         if ($root === false || !is_dir($root) || is_link($root)) {
             throw new IndexerException('unsafe_path');
@@ -104,7 +113,7 @@ final class Extractor
             'maxTotalBytes' => 256 * 1024 * 1024,
             'maxPathDepth' => 128,
             'maxFacts' => 1_000_000,
-            'maxStringLength' => 16_384,
+            'maxStringLength' => 1_024,
             'maxRequestBytes' => 4 * 1024 * 1024,
             'timeoutMs' => 10 * 60_000,
         ];
@@ -134,7 +143,7 @@ final class Extractor
         }
         $paths = array_keys($files);
         sort($paths, SORT_STRING);
-        return [$root, $paths, $limits];
+        return [$root, $paths, $limits, $sourceIdentity];
     }
 
     private function validatePath(string $path, int $maxDepth): void
@@ -252,9 +261,9 @@ final class Extractor
                 $method = $route['action']['method'] ?? null;
                 if (is_string($target) && is_string($method) && isset($symbols[strtolower($target . '::' . $method)])) {
                     $route['action']['targetSymbolId'] = $symbols[strtolower($target . '::' . $method)];
-                } elseif (is_string($target) && isset($symbols[strtolower($target . '::__invoke')])) {
+                } elseif (is_string($target) && $method === null && isset($symbols[strtolower($target . '::__invoke')])) {
                     $route['action']['targetSymbolId'] = $symbols[strtolower($target . '::__invoke')];
-                } elseif (is_string($target) && isset($symbols[strtolower($target)])) {
+                } elseif (is_string($target) && $method === null && isset($symbols[strtolower($target)])) {
                     $route['action']['targetSymbolId'] = $symbols[strtolower($target)];
                 }
             }
@@ -289,7 +298,7 @@ final class Extractor
     /** @param list<array<string, mixed>> $files
      *  @return array<string, mixed>
      */
-    private function response(array $files): array
+    private function response(array $files, array $sourceIdentity): array
     {
         $summary = [
             'fileCount' => count($files),
@@ -306,12 +315,45 @@ final class Extractor
         }
         return [
             'schemaVersion' => 1,
+            'source' => $sourceIdentity,
             'parser' => [
                 'name' => 'nikic/php-parser',
                 'version' => ltrim(InstalledVersions::getPrettyVersion('nikic/php-parser') ?? '0.0.0', 'v'),
             ],
             'files' => $files,
             'summary' => $summary,
+        ];
+    }
+
+    /** @param array<string, mixed> $source
+     *  @return array{applicationId: string, repository: array{host: string, owner: string, name: string}, commitSha: string}
+     */
+    private function validateSourceIdentity(array $source): array
+    {
+        $applicationId = $source['applicationId'] ?? null;
+        $repository = $source['repository'] ?? null;
+        $commitSha = $source['commitSha'] ?? null;
+        if (!is_string($applicationId)
+            || preg_match('/^application:v1:[a-f0-9]{64}$/', $applicationId) !== 1
+            || !is_array($repository)
+            || !is_string($commitSha)
+            || preg_match('/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/', $commitSha) !== 1) {
+            throw new IndexerException('invalid_input');
+        }
+        $host = $repository['host'] ?? null;
+        $owner = $repository['owner'] ?? null;
+        $name = $repository['name'] ?? null;
+        if (!is_string($host) || !is_string($owner) || !is_string($name)
+            || $host === '' || strlen($host) > 253
+            || $owner === '' || strlen($owner) > 100
+            || $name === '' || strlen($name) > 100
+            || strtolower($host) !== $host) {
+            throw new IndexerException('invalid_input');
+        }
+        return [
+            'applicationId' => $applicationId,
+            'repository' => ['host' => $host, 'owner' => $owner, 'name' => $name],
+            'commitSha' => $commitSha,
         ];
     }
 }

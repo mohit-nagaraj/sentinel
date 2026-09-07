@@ -6,6 +6,7 @@ export const phpFixtureFiles = [
   "app/Actions/CreateOrderAction.php",
   "app/Attributes/Transactional.php",
   "app/Contracts/CreatesOrders.php",
+  "app/Domain/Route.php",
   "app/Handlers/CreateOrderHandler.php",
   "app/Models/Order.php",
   "app/Repositories/OrderRepository.php",

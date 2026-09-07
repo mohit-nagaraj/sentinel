@@ -13,8 +13,10 @@ import {
   PHP_INDEXER_SCHEMA_VERSION,
   phpIndexerLimitsSchema,
   phpIndexerResponseSchema,
+  phpSourceIdentitySchema,
   type PhpIndexerLimits,
   type PhpIndexerResponse,
+  type PhpSourceIdentity,
 } from "./schema.ts"
 
 export const defaultPhpIndexerLimits: PhpIndexerLimits = {
@@ -23,7 +25,7 @@ export const defaultPhpIndexerLimits: PhpIndexerLimits = {
   maxTotalBytes: 64 * 1_024 * 1_024,
   maxPathDepth: 40,
   maxFacts: 100_000,
-  maxStringLength: 4_096,
+  maxStringLength: 1_024,
   maxRequestBytes: 1024 * 1024,
   maxOutputBytes: 32 * 1_024 * 1_024,
   maxStderrBytes: 64 * 1_024,
@@ -40,6 +42,7 @@ export interface PhpIndexRequest {
   readonly rootPath: string
   readonly files: readonly string[]
   readonly expectedContentHashes: Readonly<Record<string, string>>
+  readonly source: PhpSourceIdentity
   readonly signal?: AbortSignal
 }
 
@@ -64,6 +67,10 @@ function safeProcessEnvironment(): NodeJS.ProcessEnv {
   environment["PHPRC"] = ""
   environment["PHP_INI_SCAN_DIR"] = ""
   return environment
+}
+
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true
 }
 
 function sha256Text(value: string): string {
@@ -159,6 +166,7 @@ function parseResponse(
   output: Buffer,
   requestedPaths: readonly string[],
   expectedHashes: Readonly<Record<string, string>>,
+  expectedSource: PhpSourceIdentity,
   limits: PhpIndexerLimits
 ): PhpIndexerResponse {
   let raw: unknown
@@ -175,6 +183,12 @@ function parseResponse(
     throw new PhpIndexerError(
       "malformed_output",
       "PHP indexer output failed contract validation"
+    )
+  }
+  if (JSON.stringify(parsed.data.source) !== JSON.stringify(expectedSource)) {
+    throw new PhpIndexerError(
+      "malformed_output",
+      "PHP indexer source identity did not match the request"
     )
   }
   const paths = parsed.data.files.map((file) => file.path)
@@ -248,20 +262,32 @@ export class PhpLaravelIndexer {
   }
 
   async index(request: PhpIndexRequest): Promise<PhpIndexerResponse> {
-    if (request.signal?.aborted === true) {
+    if (isAborted(request.signal)) {
       throw new PhpIndexerError("aborted", "PHP indexing was cancelled")
     }
     const root = await normalizeRoot(request.rootPath)
     const files = validatePaths(request.files, this.limits)
+    const sourceResult = phpSourceIdentitySchema.safeParse(request.source)
+    if (!sourceResult.success) {
+      throw new PhpIndexerError(
+        "invalid_input",
+        "PHP source identity is invalid"
+      )
+    }
+    const source = sourceResult.data
     await access(this.cliPath).catch(() => {
       throw new PhpIndexerError(
         "executable_missing",
         "PHP indexer CLI is unavailable"
       )
     })
+    if (isAborted(request.signal)) {
+      throw new PhpIndexerError("aborted", "PHP indexing was cancelled")
+    }
     const payload = Buffer.from(
       JSON.stringify({
         schemaVersion: PHP_INDEXER_SCHEMA_VERSION,
+        source,
         root,
         files,
         limits: {
@@ -297,17 +323,18 @@ export class PhpLaravelIndexer {
         let stderrBytes = 0
         const stdout: Buffer[] = []
         const stderr: Buffer[] = []
-        const child = spawn(
-          this.phpExecutable,
-          ["-n", "-d", "memory_limit=256M", this.cliPath],
-          {
-            cwd: dirname(dirname(this.cliPath)),
-            env: safeProcessEnvironment(),
-            shell: false,
-            stdio: ["pipe", "pipe", "pipe"],
-            windowsHide: true,
-          }
-        )
+        const phpArguments = ["-n", "-d", "memory_limit=256M"]
+        if (process.platform !== "win32") {
+          phpArguments.push("-d", "extension=tokenizer")
+        }
+        phpArguments.push(this.cliPath)
+        const child = spawn(this.phpExecutable, phpArguments, {
+          cwd: dirname(dirname(this.cliPath)),
+          env: safeProcessEnvironment(),
+          shell: false,
+          stdio: ["pipe", "pipe", "pipe"],
+          windowsHide: true,
+        })
         const finish = (
           error?: PhpIndexerError,
           result?: PhpIndexerResponse
@@ -339,6 +366,7 @@ export class PhpLaravelIndexer {
         }, this.limits.timeoutMs)
         timer.unref()
         request.signal?.addEventListener("abort", onAbort, { once: true })
+        if (isAborted(request.signal)) onAbort()
 
         child.stdout.on("data", (chunk: Buffer) => {
           stdoutBytes += chunk.length
@@ -431,6 +459,7 @@ export class PhpLaravelIndexer {
                 Buffer.concat(stdout),
                 files,
                 request.expectedContentHashes,
+                source,
                 this.limits
               )
             )
@@ -452,12 +481,26 @@ export class PhpLaravelIndexer {
   async indexCheckout(
     snapshot: CheckoutSnapshot,
     files: readonly string[],
+    source: PhpSourceIdentity,
     signal?: AbortSignal
   ): Promise<PhpIndexerResponse> {
+    const sourceResult = phpSourceIdentitySchema.safeParse(source)
+    if (
+      !sourceResult.success ||
+      sourceResult.data.commitSha !== snapshot.metadata.commitSha
+    ) {
+      throw new PhpIndexerError(
+        "content_mismatch",
+        "PHP source identity does not match the checkout snapshot"
+      )
+    }
     const normalized = validatePaths(files, this.limits)
     const expectedContentHashes: Record<string, string> = {}
     let totalBytes = 0
     for (const path of normalized) {
+      if (isAborted(signal)) {
+        throw new PhpIndexerError("aborted", "PHP indexing was cancelled")
+      }
       const source = await snapshot.readText(path, this.limits.maxFileBytes)
       totalBytes += Buffer.byteLength(source, "utf8")
       if (totalBytes > this.limits.maxTotalBytes) {
@@ -475,6 +518,7 @@ export class PhpLaravelIndexer {
       rootPath: snapshot.path,
       files: normalized,
       expectedContentHashes,
+      source: sourceResult.data,
       ...(signal === undefined ? {} : { signal }),
     })
   }

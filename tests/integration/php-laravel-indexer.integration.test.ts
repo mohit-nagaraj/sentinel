@@ -17,16 +17,27 @@ import {
   PhpIndexerError,
   PhpLaravelIndexer,
   phpIndexerResponseSchema,
+  phpSourceIdentitySchema,
   type CheckoutSnapshot,
   type PhpIndexerResponse,
   type PhpSymbol,
 } from "@sentinel/adapters"
+import { createStableKey } from "@sentinel/contracts"
 
 import golden from "../fixtures/php-laravel/golden-expectations.json" with { type: "json" }
 import { phpFixtureFiles, phpFixtureHashes } from "../fixtures/php-indexer.ts"
 
 const fixtureRoot = resolve("tests/fixtures/php-laravel")
 const markerPath = join(fixtureRoot, "executed-marker")
+const fixtureSource = phpSourceIdentitySchema.parse({
+  applicationId: `application:v1:${"a".repeat(64)}`,
+  repository: {
+    host: "github.com",
+    owner: "sentinel-tests",
+    name: "php-fixture",
+  },
+  commitSha: "b".repeat(40),
+})
 
 function symbol(
   response: PhpIndexerResponse,
@@ -49,6 +60,7 @@ describe("PHP and Laravel structural indexer", () => {
     await rm(markerPath, { force: true })
     expectedHashes = await phpFixtureHashes(fixtureRoot)
     response = await indexer.index({
+      source: fixtureSource,
       rootPath: fixtureRoot,
       files: phpFixtureFiles,
       expectedContentHashes: expectedHashes,
@@ -84,15 +96,59 @@ describe("PHP and Laravel structural indexer", () => {
     })
     expect(Object.isFrozen(response)).toBe(true)
     expect(Object.isFrozen(response.files[0]?.symbols)).toBe(true)
+    expect(
+      response.files
+        .flatMap((file) => file.routes)
+        .some((candidate) => candidate.path === "/not-a-laravel-route")
+    ).toBe(false)
+    const explicitMissing = response.files
+      .flatMap((file) => file.routes)
+      .find((candidate) => candidate.path === "/explicit-missing")
+    expect(explicitMissing?.action).toMatchObject({
+      resolvedName: golden.route.action,
+      method: "missing",
+      dynamic: false,
+    })
+    expect(explicitMissing?.action.targetSymbolId).toBeUndefined()
+    expect(
+      response.files
+        .flatMap((file) => file.routes)
+        .find((candidate) => candidate.path === "/invalid-constant")?.action
+    ).toMatchObject({ dynamic: true })
+    const dynamicRoutes = response.files
+      .flatMap((file) => file.routes)
+      .filter((candidate) => candidate.path === null)
+    expect(dynamicRoutes.length).toBeGreaterThanOrEqual(2)
+    expect(dynamicRoutes.every((candidate) => candidate.dynamic)).toBe(true)
+    expect(
+      response.files
+        .flatMap((file) => file.routes)
+        .find((candidate) => candidate.path === "/computed-methods")
+    ).toMatchObject({ methods: ["ANY"], dynamic: true })
     for (const qualifiedName of golden.symbols) {
       expect(symbol(response, qualifiedName)).toBeDefined()
     }
     const repeated = await indexer.index({
+      source: fixtureSource,
       rootPath: fixtureRoot,
       files: [...phpFixtureFiles].reverse(),
       expectedContentHashes: expectedHashes,
     })
     expect(repeated).toEqual(response)
+    const otherCommit = phpSourceIdentitySchema.parse({
+      ...fixtureSource,
+      commitSha: "c".repeat(40),
+    })
+    const reScoped = await indexer.index({
+      source: otherCommit,
+      rootPath: fixtureRoot,
+      files: phpFixtureFiles,
+      expectedContentHashes: expectedHashes,
+    })
+    expect(reScoped.source).toEqual(otherCommit)
+    expect(reScoped.files[0]?.symbols[0]?.id).not.toBe(
+      response.files[0]?.symbols[0]?.id
+    )
   })
 
   it("traces route to action, handler, service, repository, and model", () => {
@@ -105,7 +161,18 @@ describe("PHP and Laravel structural indexer", () => {
       response,
       "Fixture\\Actions\\CreateOrderAction::__invoke"
     )
-    expect(actionInvoke.range).toMatchObject({ startLine: 17, endLine: 22 })
+    expect(actionInvoke.id).toBe(
+      createStableKey({
+        kind: "code-symbol",
+        applicationId: fixtureSource.applicationId,
+        repository: fixtureSource.repository,
+        commitSha: fixtureSource.commitSha,
+        filePath: "app/Actions/CreateOrderAction.php",
+        qualifiedName: actionInvoke.qualifiedName,
+        symbolKind: "method",
+      })
+    )
+    expect(actionInvoke.range).toMatchObject({ startLine: 18, endLine: 23 })
     expect(actionInvoke.range.startFilePos).toBeGreaterThan(0)
     expect(actionInvoke.range.endFilePos).toBeGreaterThan(
       actionInvoke.range.startFilePos
@@ -118,6 +185,9 @@ describe("PHP and Laravel structural indexer", () => {
       "Fixture\\Actions\\CreateOrderAction::__construct"
     )
     const handler = symbol(response, "Fixture\\Handlers\\CreateOrderHandler")
+    expect(
+      symbol(response, "Fixture\\Actions\\CreateOrderAction::$handler")
+    ).toMatchObject({ kind: "property", visibility: "private" })
     const handlerMethod = symbol(
       response,
       "Fixture\\Handlers\\CreateOrderHandler::handle"
@@ -220,6 +290,21 @@ describe("PHP and Laravel structural indexer", () => {
       dynamic.every((relationship) => relationship.resolvedTarget === undefined)
     ).toBe(true)
     expect(
+      dynamic.filter(
+        (relationship) =>
+          relationship.originalTarget === "dynamic-method:dispatch"
+      )
+    ).toHaveLength(2)
+    expect(
+      response.files
+        .flatMap((file) => file.relationships)
+        .some(
+          (relationship) =>
+            relationship.resolvedTarget ===
+            "Fixture\\Services\\OrderService::dispatch"
+        )
+    ).toBe(false)
+    expect(
       response.files.find((file) => file.path === "malformed.php")?.errors
     ).toEqual([expect.objectContaining({ code: "parse_error", line: 7 })])
     expect(response.summary.errorCount).toBe(1)
@@ -248,7 +333,7 @@ describe("PHP and Laravel structural indexer", () => {
       path: fixtureRoot,
       metadata: {
         label: "fixture",
-        commitSha: "1".repeat(40),
+        commitSha: fixtureSource.commitSha,
         treeObjectId: "2".repeat(40),
         treeFingerprint: `sha256:${"3".repeat(64)}`,
         configFingerprint: `sha256:${"4".repeat(64)}`,
@@ -287,11 +372,30 @@ describe("PHP and Laravel structural indexer", () => {
         maxCharacters: 1,
       })
     ).rejects.toMatchObject({ code: "limit_exceeded" })
+    await expect(
+      index.sourceSlice(
+        {
+          ...snapshot,
+          readText: async () => "<?php // different indexed source\n",
+        },
+        enclosing?.id ?? ""
+      )
+    ).rejects.toMatchObject({ code: "content_mismatch" })
+    await expect(
+      index.sourceSlice(
+        {
+          ...snapshot,
+          metadata: { ...snapshot.metadata, commitSha: "c".repeat(40) },
+        },
+        enclosing?.id ?? ""
+      )
+    ).rejects.toMatchObject({ code: "content_mismatch" })
   })
 
   it("rejects source hash mismatches", async () => {
     await expect(
       indexer.index({
+        source: fixtureSource,
         rootPath: fixtureRoot,
         files: ["app/Models/Order.php"],
         expectedContentHashes: {
@@ -301,9 +405,50 @@ describe("PHP and Laravel structural indexer", () => {
     ).rejects.toMatchObject({ code: "content_mismatch" })
   })
 
+  it("normalizes a UTF-8 BOM consistently with checkout text reads", async () => {
+    const temporary = await mkdtemp(join(tmpdir(), "sentinel-php-bom-test-"))
+    const path = "Bom.php"
+    const source = "<?php final class Bom {}\n"
+    await writeFile(
+      join(temporary, path),
+      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(source)])
+    )
+    const snapshot: CheckoutSnapshot = {
+      path: temporary,
+      metadata: {
+        label: "bom",
+        commitSha: fixtureSource.commitSha,
+        treeObjectId: "2".repeat(40),
+        treeFingerprint: `sha256:${"3".repeat(64)}`,
+        configFingerprint: `sha256:${"4".repeat(64)}`,
+        fileCount: 1,
+        totalBytes: Buffer.byteLength(source) + 3,
+      },
+      enumerate: () => [],
+      readText: async () => source,
+    }
+    try {
+      await expect(
+        indexer.indexCheckout(snapshot, [path], fixtureSource)
+      ).resolves.toMatchObject({
+        files: [
+          {
+            path,
+            symbols: [
+              expect.objectContaining({ qualifiedName: "Bom", kind: "class" }),
+            ],
+          },
+        ],
+      })
+    } finally {
+      await rm(temporary, { recursive: true, force: true })
+    }
+  })
+
   it("rejects traversal and symlink escape inputs", async () => {
     await expect(
       indexer.index({
+        source: fixtureSource,
         rootPath: fixtureRoot,
         files: ["../outside.php"],
         expectedContentHashes: { "../outside.php": `sha256:${"0".repeat(64)}` },
@@ -323,6 +468,7 @@ describe("PHP and Laravel structural indexer", () => {
     try {
       await expect(
         indexer.index({
+          source: fixtureSource,
           rootPath: rootLink,
           files: ["linked/Escaped.php"],
           expectedContentHashes: {
@@ -334,6 +480,7 @@ describe("PHP and Laravel structural indexer", () => {
       ).rejects.toMatchObject({ code: "unsafe_path" })
       await expect(
         indexer.index({
+          source: fixtureSource,
           rootPath: root,
           files: ["linked/Escaped.php"],
           expectedContentHashes: {
@@ -396,6 +543,7 @@ describe("PHP indexer process limits", () => {
             cliPath: temporary.cli,
             limits: testCase.options,
           }).index({
+            source: fixtureSource,
             rootPath: temporary.root,
             files: ["Input.php"],
             expectedContentHashes: { "Input.php": hash },
@@ -408,6 +556,7 @@ describe("PHP indexer process limits", () => {
 
     await expect(
       new PhpLaravelIndexer({ phpExecutable: "missing-sentinel-php" }).index({
+        source: fixtureSource,
         rootPath: fixtureRoot,
         files: ["app/Models/Order.php"],
         expectedContentHashes: await phpFixtureHashes(fixtureRoot, [
@@ -454,6 +603,7 @@ describe("PHP indexer process limits", () => {
     for (const testCase of cases) {
       await expect(
         testCase.indexer.index({
+          source: fixtureSource,
           rootPath: fixtureRoot,
           files: testCase.files,
           expectedContentHashes: hashes,
@@ -470,6 +620,7 @@ describe("PHP indexer process limits", () => {
           cliPath: temporary.cli,
           limits: { maxStderrBytes: 100 },
         }).index({
+          source: fixtureSource,
           rootPath: temporary.root,
           files: ["Input.php"],
           expectedContentHashes: await phpFixtureHashes(temporary.root, [
@@ -489,6 +640,7 @@ describe("PHP indexer process limits", () => {
     try {
       const error = await new PhpLaravelIndexer({ cliPath: temporary.cli })
         .index({
+          source: fixtureSource,
           rootPath: temporary.root,
           files: ["Input.php"],
           expectedContentHashes: await phpFixtureHashes(temporary.root, [
@@ -498,6 +650,26 @@ describe("PHP indexer process limits", () => {
         .catch((reason: unknown) => reason)
       expect(error).toBeInstanceOf(PhpIndexerError)
       expect((error as PhpIndexerError).message).not.toContain("source-secret")
+    } finally {
+      await temporary.cleanup()
+    }
+  })
+
+  it("honors cancellation even when it races pre-spawn validation", async () => {
+    const temporary = await temporaryCli("<?php usleep(500000); echo '{}';")
+    const controller = new AbortController()
+    try {
+      const pending = new PhpLaravelIndexer({ cliPath: temporary.cli }).index({
+        source: fixtureSource,
+        rootPath: temporary.root,
+        files: ["Input.php"],
+        expectedContentHashes: await phpFixtureHashes(temporary.root, [
+          "Input.php",
+        ]),
+        signal: controller.signal,
+      })
+      controller.abort()
+      await expect(pending).rejects.toMatchObject({ code: "aborted" })
     } finally {
       await temporary.cleanup()
     }

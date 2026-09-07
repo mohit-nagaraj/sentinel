@@ -1,4 +1,11 @@
-import { contentHashSchema, repositoryPathSchema } from "@sentinel/contracts"
+import {
+  applicationIdSchema,
+  codeSymbolIdSchema,
+  commitShaSchema,
+  contentHashSchema,
+  repositoryIdentitySchema,
+  repositoryPathSchema,
+} from "@sentinel/contracts"
 import { z } from "zod"
 
 export const PHP_INDEXER_SCHEMA_VERSION = 1 as const
@@ -33,9 +40,7 @@ export const phpSourceRangeSchema = z
     }
   })
 
-export const phpSymbolIdSchema = z
-  .string()
-  .regex(/^php-symbol:v1:[a-f0-9]{64}$/)
+export const phpSymbolIdSchema = codeSymbolIdSchema
 export const phpRelationshipIdSchema = z
   .string()
   .regex(/^php-relationship:v1:[a-f0-9]{64}$/)
@@ -117,11 +122,24 @@ export const phpRelationshipSchema = z
     dynamic: z.boolean(),
     range: phpSourceRangeSchema,
   })
-  .refine(
-    (relationship) =>
-      relationship.dynamic || relationship.resolvedTarget !== undefined,
-    { message: "Resolved relationships require a target identity" }
-  )
+  .superRefine((relationship, context) => {
+    if (relationship.dynamic) {
+      if (
+        relationship.resolvedTarget !== undefined ||
+        relationship.targetSymbolId !== undefined
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Dynamic relationships cannot claim resolved targets",
+        })
+      }
+    } else if (relationship.resolvedTarget === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Resolved relationships require a target identity",
+      })
+    }
+  })
 
 export const phpRouteActionSchema = z.strictObject({
   originalName: z.string().min(1).max(4_096),
@@ -169,9 +187,16 @@ export const phpIndexedFileSchema = z.strictObject({
   errors: z.array(phpFileErrorSchema).max(100),
 })
 
+export const phpSourceIdentitySchema = z.strictObject({
+  applicationId: applicationIdSchema,
+  repository: repositoryIdentitySchema,
+  commitSha: commitShaSchema,
+})
+
 export const phpIndexerResponseSchema = z
   .strictObject({
     schemaVersion: z.literal(PHP_INDEXER_SCHEMA_VERSION),
+    source: phpSourceIdentitySchema,
     parser: z.strictObject({
       name: z.literal("nikic/php-parser"),
       version: z.string().regex(/^5\.[0-9]+\.[0-9]+$/),
@@ -227,6 +252,17 @@ export const phpIndexerResponseSchema = z
       }
     }
     for (const file of response.files) {
+      for (const symbol of file.symbols) {
+        if (
+          symbol.containerSymbolId !== undefined &&
+          !symbolIds.has(symbol.containerSymbolId)
+        ) {
+          context.addIssue({
+            code: "custom",
+            message: `Unknown symbol container ${symbol.containerSymbolId}`,
+          })
+        }
+      }
       for (const relationship of file.relationships) {
         if (!symbolIds.has(relationship.sourceSymbolId)) {
           context.addIssue({
@@ -241,6 +277,27 @@ export const phpIndexerResponseSchema = z
           context.addIssue({
             code: "custom",
             message: `Unknown relationship target ${relationship.targetSymbolId}`,
+          })
+        }
+      }
+      for (const route of file.routes) {
+        if (
+          route.action.targetSymbolId !== undefined &&
+          !symbolIds.has(route.action.targetSymbolId)
+        ) {
+          context.addIssue({
+            code: "custom",
+            message: `Unknown route target ${route.action.targetSymbolId}`,
+          })
+        }
+        if (
+          route.action.dynamic &&
+          (route.action.resolvedName !== undefined ||
+            route.action.targetSymbolId !== undefined)
+        ) {
+          context.addIssue({
+            code: "custom",
+            message: "Dynamic route actions cannot claim resolved targets",
           })
         }
       }
@@ -276,7 +333,7 @@ export const phpIndexerLimitsSchema = z.strictObject({
     .max(256 * 1_024 * 1_024),
   maxPathDepth: z.number().int().positive().max(128),
   maxFacts: z.number().int().positive().max(1_000_000),
-  maxStringLength: z.number().int().positive().max(16_384),
+  maxStringLength: z.number().int().positive().max(1_024),
   maxRequestBytes: z
     .number()
     .int()
@@ -304,5 +361,6 @@ export type PhpSymbol = z.infer<typeof phpSymbolSchema>
 export type PhpRelationship = z.infer<typeof phpRelationshipSchema>
 export type PhpRoute = z.infer<typeof phpRouteSchema>
 export type PhpIndexedFile = z.infer<typeof phpIndexedFileSchema>
+export type PhpSourceIdentity = z.infer<typeof phpSourceIdentitySchema>
 export type PhpIndexerResponse = z.infer<typeof phpIndexerResponseSchema>
 export type PhpIndexerLimits = z.infer<typeof phpIndexerLimitsSchema>

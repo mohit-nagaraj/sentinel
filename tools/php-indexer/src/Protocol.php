@@ -12,6 +12,15 @@ use PhpParser\Node\UnionType;
 
 final class Protocol
 {
+    /** @var array{applicationId: string, repository: array{host: string, owner: string, name: string}, commitSha: string}|null */
+    private static ?array $sourceIdentity = null;
+
+    /** @param array{applicationId: string, repository: array{host: string, owner: string, name: string}, commitSha: string} $sourceIdentity */
+    public static function configureSource(array $sourceIdentity): void
+    {
+        self::$sourceIdentity = $sourceIdentity;
+    }
+
     /** @return array{startLine: int, endLine: int, startFilePos: int, endFilePos: int, startTokenPos: int, endTokenPos: int} */
     public static function range(Node $node): array
     {
@@ -28,8 +37,35 @@ final class Protocol
     /** @param list<string|int|bool|null> $parts */
     public static function id(string $kind, array $parts): string
     {
-        $encoded = json_encode($parts, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (self::$sourceIdentity === null) {
+            throw new IndexerException('process_failed');
+        }
+        $encoded = self::canonicalSerialize([
+            'parts' => $parts,
+            'source' => self::$sourceIdentity,
+        ]);
         return sprintf('%s:v1:%s', $kind, hash('sha256', $encoded));
+    }
+
+    public static function codeSymbolId(string $path, string $qualifiedName, string $symbolKind): string
+    {
+        if (self::$sourceIdentity === null) {
+            throw new IndexerException('process_failed');
+        }
+        $identity = [
+            'kind' => 'code-symbol',
+            'applicationId' => self::$sourceIdentity['applicationId'],
+            'repository' => self::$sourceIdentity['repository'],
+            'commitSha' => self::$sourceIdentity['commitSha'],
+            'filePath' => $path,
+            'qualifiedName' => $qualifiedName,
+            'symbolKind' => $symbolKind,
+        ];
+        return 'code-symbol:v1:' . hash('sha256', self::canonicalSerialize([
+            'identity' => $identity,
+            'kind' => 'code-symbol',
+            'version' => 1,
+        ]));
     }
 
     /** @return array{originalName: string, resolvedName: string} */
@@ -91,5 +127,33 @@ final class Protocol
             throw new IndexerException('limit_exceeded');
         }
         return $value;
+    }
+
+    private static function canonicalSerialize(mixed $value): string
+    {
+        if ($value === null) {
+            return 'null';
+        }
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+        if (is_int($value)) {
+            return (string) $value;
+        }
+        if (is_string($value)) {
+            return json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        }
+        if (!is_array($value)) {
+            throw new IndexerException('process_failed');
+        }
+        if (array_is_list($value)) {
+            return '[' . implode(',', array_map(self::canonicalSerialize(...), $value)) . ']';
+        }
+        ksort($value, SORT_STRING);
+        $properties = [];
+        foreach ($value as $key => $child) {
+            $properties[] = self::canonicalSerialize((string) $key) . ':' . self::canonicalSerialize($child);
+        }
+        return '{' . implode(',', $properties) . '}';
     }
 }

@@ -28,6 +28,7 @@ final class LaravelRouteExtractor
     {
         $this->walk($statements, [
             'prefix' => '',
+            'dynamicPrefix' => false,
             'middleware' => [],
             'routerVariables' => $this->discoverRouterVariables($statements),
         ]);
@@ -35,7 +36,7 @@ final class LaravelRouteExtractor
     }
 
     /** @param list<Stmt> $statements
-     *  @param array{prefix: string, middleware: list<string>, routerVariables: list<string>} $context
+     *  @param array{prefix: string, dynamicPrefix: bool, middleware: list<string>, routerVariables: list<string>} $context
      */
     private function walk(array $statements, array $context): void
     {
@@ -84,9 +85,7 @@ final class LaravelRouteExtractor
                 return null;
             }
             $class = Protocol::nameEvidence($expression->class);
-            if ($class['originalName'] !== 'Route'
-                && !str_ends_with($class['resolvedName'], '\\Route')
-                && $class['resolvedName'] !== 'Route') {
+            if (strcasecmp($class['resolvedName'], 'Illuminate\\Support\\Facades\\Route') !== 0) {
                 return null;
             }
             return [[
@@ -129,12 +128,13 @@ final class LaravelRouteExtractor
     }
 
     /** @param list<array{name: string, args: list<Arg>, node: Expr}> $chain
-     *  @param array{prefix: string, middleware: list<string>, routerVariables: list<string>} $context
-     *  @return array{prefix: string, middleware: list<string>, routerVariables: list<string>}
+     *  @param array{prefix: string, dynamicPrefix: bool, middleware: list<string>, routerVariables: list<string>} $context
+     *  @return array{prefix: string, dynamicPrefix: bool, middleware: list<string>, routerVariables: list<string>}
      */
     private function groupContext(array $chain, array $context, int $groupIndex, Expr\Closure $closure): array
     {
         $prefix = $context['prefix'];
+        $dynamicPrefix = $context['dynamicPrefix'];
         $middleware = $context['middleware'];
         foreach ($chain as $index => $call) {
             if ($index > $groupIndex) {
@@ -144,6 +144,8 @@ final class LaravelRouteExtractor
                 $value = $this->stringArgument($call['args'][0] ?? null);
                 if ($value !== null) {
                     $prefix = $this->joinPath($prefix, $value);
+                } else {
+                    $dynamicPrefix = true;
                 }
             }
             if ($call['name'] === 'middleware') {
@@ -156,6 +158,8 @@ final class LaravelRouteExtractor
                     }
                     if ($item->key->value === 'prefix' && $item->value instanceof String_) {
                         $prefix = $this->joinPath($prefix, $item->value->value);
+                    } elseif ($item->key->value === 'prefix') {
+                        $dynamicPrefix = true;
                     }
                     if ($item->key->value === 'middleware') {
                         array_push($middleware, ...$this->stringsFromExpression($item->value));
@@ -176,13 +180,14 @@ final class LaravelRouteExtractor
         }
         return [
             'prefix' => $prefix,
+            'dynamicPrefix' => $dynamicPrefix,
             'middleware' => array_values(array_unique($middleware)),
             'routerVariables' => array_values(array_unique($routerVariables)),
         ];
     }
 
     /** @param list<array{name: string, args: list<Arg>, node: Expr}> $chain
-     *  @param array{prefix: string, middleware: list<string>, routerVariables: list<string>} $context
+     *  @param array{prefix: string, dynamicPrefix: bool, middleware: list<string>, routerVariables: list<string>} $context
      *  @return array<string, mixed>|null
      */
     private function routeFromChain(array $chain, array $context): ?array
@@ -200,11 +205,14 @@ final class LaravelRouteExtractor
         if ($routeCall === null || $routeIndex === null) {
             return null;
         }
-        $methods = $this->methods($routeCall['name'], $routeCall['args'][0] ?? null);
+        $methodEvidence = $this->methods($routeCall['name'], $routeCall['args'][0] ?? null);
+        $methods = $methodEvidence['methods'];
         $pathArgumentIndex = $routeCall['name'] === 'match' ? 1 : 0;
         $actionArgumentIndex = $pathArgumentIndex + 1;
         $pathValue = $this->stringArgument($routeCall['args'][$pathArgumentIndex] ?? null);
-        $path = $pathValue === null ? null : $this->joinPath($context['prefix'], $pathValue);
+        $path = $pathValue === null || $context['dynamicPrefix']
+            ? null
+            : $this->joinPath($context['prefix'], $pathValue);
         $middleware = $context['middleware'];
         $name = null;
         foreach ($chain as $call) {
@@ -217,7 +225,7 @@ final class LaravelRouteExtractor
         }
         $action = $this->action($routeCall['args'][$actionArgumentIndex] ?? null);
         $range = Protocol::range($routeCall['node']);
-        $dynamic = $path === null || $action['dynamic'];
+        $dynamic = $path === null || $action['dynamic'] || $methodEvidence['dynamic'];
         $route = [
             'id' => Protocol::id('php-route', [
                 $this->path,
@@ -241,22 +249,26 @@ final class LaravelRouteExtractor
         return $route;
     }
 
-    /** @return list<string> */
+    /** @return array{methods: list<string>, dynamic: bool} */
     private function methods(string $method, ?Arg $argument): array
     {
         if ($method === 'any') {
-            return ['ANY'];
+            return ['methods' => ['ANY'], 'dynamic' => false];
         }
         if ($method !== 'match') {
-            return [strtoupper($method)];
+            return ['methods' => [strtoupper($method)], 'dynamic' => false];
         }
         if ($argument === null) {
-            return ['ANY'];
+            return ['methods' => ['ANY'], 'dynamic' => true];
         }
-        $methods = array_map('strtoupper', $this->stringsFromExpression($argument->value));
+        $rawMethods = $this->stringsFromExpression($argument->value);
+        $methods = array_map('strtoupper', $rawMethods);
         $allowed = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
         $methods = array_values(array_unique(array_filter($methods, fn (string $value): bool => in_array($value, $allowed, true))));
-        return $methods === [] ? ['ANY'] : $methods;
+        return [
+            'methods' => $methods === [] ? ['ANY'] : $methods,
+            'dynamic' => $rawMethods === [] || count($methods) !== count($rawMethods),
+        ];
     }
 
     /** @return array{originalName: string, resolvedName?: string, method?: string, dynamic: bool} */
@@ -282,6 +294,8 @@ final class LaravelRouteExtractor
             $methodItem = $value->items[1]?->value;
             if ($classItem instanceof Expr\ClassConstFetch
                 && $classItem->class instanceof Name
+                && $classItem->name instanceof Identifier
+                && strtolower($classItem->name->toString()) === 'class'
                 && $methodItem instanceof String_) {
                 $name = Protocol::nameEvidence($classItem->class);
                 return [

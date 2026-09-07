@@ -12,7 +12,7 @@ const range = {
 }
 
 const symbol = {
-  id: `php-symbol:v1:${"1".repeat(64)}`,
+  id: `code-symbol:v1:${"1".repeat(64)}`,
   kind: "class",
   role: "other",
   name: "Example",
@@ -28,6 +28,11 @@ const symbol = {
 function response() {
   return {
     schemaVersion: 1,
+    source: {
+      applicationId: `application:v1:${"a".repeat(64)}`,
+      repository: { host: "github.com", owner: "fixture", name: "example" },
+      commitSha: "b".repeat(40),
+    },
     parser: { name: "nikic/php-parser", version: "5.8.0" },
     files: [
       {
@@ -65,5 +70,58 @@ describe("PHP indexer response contract", () => {
       range: { ...range, startLine: 3, endLine: 1 },
     })
     expect(phpIndexerResponseSchema.safeParse(inconsistent).success).toBe(false)
+  })
+
+  it("rejects dangling containers/routes and falsely resolved dynamics", () => {
+    const danglingContainer = structuredClone(response())
+    Object.assign(danglingContainer.files[0]!.symbols[0]!, {
+      containerSymbolId: `code-symbol:v1:${"9".repeat(64)}`,
+    })
+    expect(phpIndexerResponseSchema.safeParse(danglingContainer).success).toBe(
+      false
+    )
+
+    const dynamicRelationship = structuredClone(response())
+    Object.assign(dynamicRelationship.files[0]!, {
+      relationships: [
+        {
+          id: `php-relationship:v1:${"3".repeat(64)}`,
+          kind: "unresolved_dynamic",
+          sourceSymbolId: symbol.id,
+          originalTarget: "dynamic-call",
+          resolvedTarget: "Fixture\\Wrong::call",
+          dynamic: true,
+          range,
+        },
+      ],
+    })
+    dynamicRelationship.summary.relationshipCount = 1
+    expect(
+      phpIndexerResponseSchema.safeParse(dynamicRelationship).success
+    ).toBe(false)
+
+    const danglingRoute = structuredClone(response())
+    Object.assign(danglingRoute.files[0]!, {
+      routes: [
+        {
+          id: `php-route:v1:${"4".repeat(64)}`,
+          methods: ["GET"],
+          path: "/example",
+          middleware: [],
+          action: {
+            originalName: "Example",
+            resolvedName: "Fixture\\Example",
+            dynamic: false,
+            targetSymbolId: `code-symbol:v1:${"9".repeat(64)}`,
+          },
+          dynamic: false,
+          range,
+        },
+      ],
+    })
+    danglingRoute.summary.routeCount = 1
+    expect(phpIndexerResponseSchema.safeParse(danglingRoute).success).toBe(
+      false
+    )
   })
 })
