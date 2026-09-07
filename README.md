@@ -144,7 +144,9 @@ Checkpoint state is limited to validated IDs, counters, budgets, bounded
 summaries, references, and pending decisions. Live clients, browser/page objects,
 documents, source/DOM, prompts, credentials, and oversized payloads are rejected.
 Node wrappers recheck run ownership before side effects, retry only explicit
-transient failures, and project redacted lifecycle events into durable run events.
+transient failures, sanitize checkpointed errors, and project redacted lifecycle
+events into durable run events only after node state commits. Concurrent resume
+attempts are serialized by a transaction-scoped PostgreSQL advisory lock.
 
 Do not deploy incompatible node names, routing, or checkpoint-state schemas while
 threads are interrupted or failed. Drain/resume those threads on the prior graph,

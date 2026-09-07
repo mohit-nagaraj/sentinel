@@ -24,6 +24,7 @@ export const SyntheticState = new StateSchema({
   runId: runIdSchema,
   applicationId: applicationIdSchema,
   graphName: reasonCodeSchema,
+  startedAtMs: z.number().int().nonnegative(),
   budget: executionBudgetSchema,
   toolCallsUsed: z.number().int().nonnegative().default(0),
   modelCallsUsed: z.number().int().nonnegative().default(0),
@@ -102,6 +103,7 @@ export const syntheticStateValueSchema = z.strictObject({
   runId: runIdSchema,
   applicationId: applicationIdSchema,
   graphName: reasonCodeSchema,
+  startedAtMs: z.number().int().nonnegative(),
   budget: executionBudgetSchema,
   toolCallsUsed: z.number().int().nonnegative(),
   modelCallsUsed: z.number().int().nonnegative(),
@@ -231,13 +233,28 @@ export function assertCompactCheckpointState(input: unknown): void {
 }
 
 export function parseSyntheticState(input: unknown): SyntheticStateValue {
-  if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    return syntheticStateValueSchema.parse(input)
-  }
-  const stateOnly = Object.fromEntries(
-    Object.entries(input).filter(([key]) => key !== "__interrupt__")
-  )
-  const parsed = syntheticStateValueSchema.parse(stateOnly)
+  const parsed = syntheticStateValueSchema.parse(input)
   assertCompactCheckpointState(parsed)
   return parsed
+}
+
+export function parseSyntheticGraphResultState(
+  input: unknown
+): SyntheticStateValue {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) {
+    return parseSyntheticState(input)
+  }
+  const keys = Object.keys(input)
+  if (
+    keys.some(
+      (key) => key !== "__interrupt__" && !(key in SyntheticState.fields)
+    )
+  ) {
+    throw new Error("Graph result contains an unknown state field")
+  }
+  return parseSyntheticState(
+    Object.fromEntries(
+      Object.entries(input).filter(([key]) => key !== "__interrupt__")
+    )
+  )
 }

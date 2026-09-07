@@ -11,6 +11,7 @@ import {
   CancelledOrchestrationError,
   DurableRunEventSink,
   LeaseOwnershipError,
+  PostgresResumeCoordinator,
   SyntheticOrchestrationService,
   buildSyntheticGraph,
   createSyntheticInitialState,
@@ -38,6 +39,7 @@ describeIntegration("LangGraph Postgres checkpoint runtime", () => {
   let database: DatabaseClient
   let saver:
     Awaited<ReturnType<typeof initializePostgresCheckpointSaver>> | undefined
+  let resumeCoordinator: PostgresResumeCoordinator | undefined
   let applicationDatabaseId: string
   let runDatabaseId: string
   let contractRunId: string
@@ -75,6 +77,9 @@ describeIntegration("LangGraph Postgres checkpoint runtime", () => {
     saver = await initializePostgresCheckpointSaver(
       environment.SENTINEL_TEST_DATABASE_URL
     )
+    resumeCoordinator = new PostgresResumeCoordinator(
+      environment.SENTINEL_TEST_DATABASE_URL
+    )
   }, 60_000)
 
   afterAll(async () => {
@@ -82,6 +87,7 @@ describeIntegration("LangGraph Postgres checkpoint runtime", () => {
       await saver.deleteThread(contractRunId)
       await saver.end()
     }
+    await resumeCoordinator?.close()
     if (database !== undefined && applicationDatabaseId !== undefined) {
       await database.query(
         "delete from sentinel.applications where id = $1::uuid",
@@ -123,6 +129,7 @@ describeIntegration("LangGraph Postgres checkpoint runtime", () => {
 
     const runs = new RunRepository(database)
     const effects = new Set<string>()
+    const effectAttempts = new Map<string, number>()
     const dependencies: RuntimeDependencies = {
       owner,
       control: {
@@ -158,10 +165,12 @@ describeIntegration("LangGraph Postgres checkpoint runtime", () => {
       }),
       effects: {
         execute: async ({ effectId }) => {
+          effectAttempts.set(effectId, (effectAttempts.get(effectId) ?? 0) + 1)
           effects.add(effectId)
         },
       },
       resumeAuthorization: { authorize: async () => true },
+      resumeCoordinator: resumeCoordinator!,
     }
 
     const firstGraph = buildSyntheticGraph(dependencies, saver!)
@@ -187,21 +196,23 @@ describeIntegration("LangGraph Postgres checkpoint runtime", () => {
       restartedGraph,
       dependencies
     )
-    const resumed = await restartedService.resume({
+    const resumeInput = {
       runId: contractRunId,
       actorId: "integration-reviewer",
       decisionId: "synthetic_review",
       approved: true,
-    })
+    } as const
+    const [resumed, duplicate] = await Promise.all([
+      restartedService.resume(resumeInput),
+      restartedService.resume(resumeInput),
+    ])
     expect(resumed.state.terminalStatus).toBe("complete")
     expect(effects).toContain("finalize")
-    const duplicate = await restartedService.resume({
-      runId: contractRunId,
-      actorId: "integration-reviewer",
-      decisionId: "synthetic_review",
-      approved: true,
-    })
-    expect(duplicate.idempotent).toBe(true)
+    expect([resumed.idempotent, duplicate.idempotent].sort()).toEqual([
+      false,
+      true,
+    ])
+    expect(effectAttempts.get("finalize")).toBe(1)
     const events = await runs.listEvents(runDatabaseId)
     expect(events.map((event) => event.kind)).toEqual(
       expect.arrayContaining([

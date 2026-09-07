@@ -13,6 +13,17 @@ export class CheckpointConfigurationError extends Error {
 export function createPostgresCheckpointSaver(
   connectionStringInput: string
 ): PostgresSaver {
+  const connectionString = parseCheckpointConnectionString(
+    connectionStringInput
+  )
+  return PostgresSaver.fromConnString(connectionString, {
+    schema: LANGGRAPH_CHECKPOINT_SCHEMA,
+  })
+}
+
+export function parseCheckpointConnectionString(
+  connectionStringInput: string
+): string {
   const parsed = z.string().min(1).max(4_096).safeParse(connectionStringInput)
   if (!parsed.success) throw new CheckpointConfigurationError()
   let url: URL
@@ -24,9 +35,7 @@ export function createPostgresCheckpointSaver(
   if (!new Set(["postgres:", "postgresql:"]).has(url.protocol)) {
     throw new CheckpointConfigurationError()
   }
-  return PostgresSaver.fromConnString(parsed.data, {
-    schema: LANGGRAPH_CHECKPOINT_SCHEMA,
-  })
+  return parsed.data
 }
 
 export async function initializePostgresCheckpointSaver(

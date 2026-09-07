@@ -1,12 +1,8 @@
 import { persistedTextSchema, reasonCodeSchema } from "@sentinel/contracts"
+import { isGraphInterrupt } from "@langchain/langgraph"
 import { z } from "zod"
 
-import {
-  assertCompactCheckpointState,
-  parseSyntheticState,
-  type SyntheticStateUpdate,
-  type SyntheticStateValue,
-} from "./state.ts"
+import { assertCompactCheckpointState } from "./state.ts"
 
 export type OrchestrationEventKind =
   | "node_started"
@@ -61,12 +57,20 @@ export interface ResumeAuthorizationPort {
   }): Promise<boolean>
 }
 
+export interface ResumeCoordinator {
+  runExclusive<Output>(
+    input: { readonly runId: string; readonly decisionId: string },
+    work: () => Promise<Output>
+  ): Promise<Output>
+}
+
 export interface RuntimeDependencies {
   readonly owner: string
   readonly control: RunControlPort
   readonly events: OrchestrationEventSink
   readonly effects: SideEffectPort
   readonly resumeAuthorization: ResumeAuthorizationPort
+  readonly resumeCoordinator: ResumeCoordinator
   readonly now?: () => Date
 }
 
@@ -98,6 +102,34 @@ export class ResumeAuthorizationError extends Error {
   }
 }
 
+export class BudgetExhaustedError extends Error {
+  constructor() {
+    super("Orchestration elapsed budget exhausted")
+    this.name = "BudgetExhaustedError"
+  }
+}
+
+export class CheckpointStateError extends Error {
+  constructor() {
+    super("Orchestration checkpoint state is invalid")
+    this.name = "CheckpointStateError"
+  }
+}
+
+export class EventPersistenceError extends Error {
+  constructor() {
+    super("Orchestration event persistence failed")
+    this.name = "EventPersistenceError"
+  }
+}
+
+export class SanitizedNodeError extends Error {
+  constructor() {
+    super("Orchestration node failed")
+    this.name = "SanitizedNodeError"
+  }
+}
+
 export const transientRetryPolicy = {
   initialInterval: 1,
   backoffFactor: 1,
@@ -119,19 +151,6 @@ function safeEvent(input: OrchestrationEvent): OrchestrationEvent {
     summary: persistedTextSchema.parse(input.summary),
     reasonCode: reasonCodeSchema.parse(input.reasonCode),
     occurredAt: z.iso.datetime({ offset: true }).parse(input.occurredAt),
-    ...(input.errorCategory === undefined
-      ? {}
-      : {
-          errorCategory: z
-            .enum([
-              "authorization",
-              "cancelled",
-              "provider",
-              "storage",
-              "unknown",
-            ])
-            .parse(input.errorCategory),
-        }),
   }
 }
 
@@ -139,12 +158,16 @@ async function emit(
   dependencies: RuntimeDependencies,
   event: Omit<OrchestrationEvent, "occurredAt">
 ): Promise<void> {
-  await dependencies.events.append(
-    safeEvent({
-      ...event,
-      occurredAt: (dependencies.now ?? (() => new Date()))().toISOString(),
-    })
-  )
+  try {
+    await dependencies.events.append(
+      safeEvent({
+        ...event,
+        occurredAt: (dependencies.now ?? (() => new Date()))().toISOString(),
+      })
+    )
+  } catch {
+    throw new EventPersistenceError()
+  }
 }
 
 export interface NodeRuntime {
@@ -155,32 +178,65 @@ export interface NodeRuntime {
   }): Promise<void>
 }
 
-export function wrapNode(
+export interface RuntimeStateBase {
+  readonly runId: string
+  readonly graphName: string
+  readonly startedAtMs: number
+  readonly budget: { readonly elapsedMs: number }
+}
+
+function isSafeRuntimeError(error: unknown): error is Error {
+  return (
+    error instanceof TransientOrchestrationError ||
+    error instanceof CancelledOrchestrationError ||
+    error instanceof LeaseOwnershipError ||
+    error instanceof ResumeAuthorizationError ||
+    error instanceof BudgetExhaustedError ||
+    error instanceof CheckpointStateError ||
+    error instanceof EventPersistenceError ||
+    error instanceof SanitizedNodeError
+  )
+}
+
+export function wrapNode<
+  State extends RuntimeStateBase,
+  Update extends Record<string, unknown>,
+>(
   nodeNameInput: string,
   dependencies: RuntimeDependencies,
-  handler: (
-    state: SyntheticStateValue,
-    runtime: NodeRuntime
-  ) => Promise<SyntheticStateUpdate> | SyntheticStateUpdate
-): (state: SyntheticStateValue) => Promise<SyntheticStateUpdate> {
+  parseState: (input: unknown) => State,
+  handler: (state: State, runtime: NodeRuntime) => Promise<Update> | Update
+): (state: State) => Promise<Update> {
   const nodeName = reasonCodeSchema.parse(nodeNameInput)
   return async (stateInput) => {
-    const state = parseSyntheticState(stateInput)
-    const started = (dependencies.now ?? (() => new Date()))().getTime()
-    const checkActive = () =>
-      dependencies.control.assertActive({
+    let state: State
+    try {
+      state = parseState(stateInput)
+    } catch {
+      throw new CheckpointStateError()
+    }
+    const now = dependencies.now ?? (() => new Date())
+    const started = now().getTime()
+    const checkActive = async () => {
+      if (
+        Math.max(0, now().getTime() - state.startedAtMs) >
+        state.budget.elapsedMs
+      ) {
+        throw new BudgetExhaustedError()
+      }
+      await dependencies.control.assertActive({
         runId: state.runId,
         owner: dependencies.owner,
       })
+    }
     const runtime: NodeRuntime = {
       checkActive,
       emitTool: async ({ toolName, phase }) => {
-        const parsedToolName = reasonCodeSchema.parse(toolName)
         await emit(dependencies, {
           runId: state.runId,
           graphName: state.graphName,
           nodeName,
-          toolName: parsedToolName,
+          toolName: reasonCodeSchema.parse(toolName),
           kind: phase === "started" ? "tool_started" : "tool_completed",
           status: phase,
           summary:
@@ -191,34 +247,27 @@ export function wrapNode(
         })
       },
     }
-    await checkActive()
-    await emit(dependencies, {
-      runId: state.runId,
-      graphName: state.graphName,
-      nodeName,
-      kind: "node_started",
-      status: "started",
-      summary: "Node execution started",
-      reasonCode: "node_started",
-    })
     try {
-      const update = await handler(state, runtime)
-      assertCompactCheckpointState(update)
+      await checkActive()
       await emit(dependencies, {
         runId: state.runId,
         graphName: state.graphName,
         nodeName,
-        kind: "node_completed",
-        status: "completed",
-        summary: "Node execution completed",
-        reasonCode: "node_completed",
-        elapsedMs:
-          (dependencies.now ?? (() => new Date()))().getTime() - started,
-        elapsedLimitMs: state.budget.elapsedMs,
+        kind: "node_started",
+        status: "started",
+        summary: "Node execution started",
+        reasonCode: "node_started",
       })
-      return { ...update, steps: 1 }
+      const update = await handler(state, runtime)
+      assertCompactCheckpointState(update)
+      await checkActive()
+      return update
     } catch (error) {
+      if (isGraphInterrupt(error)) throw error
       const retryable = error instanceof TransientOrchestrationError
+      const safeError = isSafeRuntimeError(error)
+        ? error
+        : new SanitizedNodeError()
       await emit(dependencies, {
         runId: state.runId,
         graphName: state.graphName,
@@ -231,8 +280,14 @@ export function wrapNode(
             ? "Run cancellation stopped node execution"
             : error instanceof LeaseOwnershipError
               ? "Run lease ownership was lost"
-              : "Node execution failed",
-        reasonCode: retryable ? "transient_failure" : "node_failure",
+              : error instanceof BudgetExhaustedError
+                ? "Run elapsed budget was exhausted"
+                : "Node execution failed",
+        reasonCode: retryable
+          ? "transient_failure"
+          : error instanceof BudgetExhaustedError
+            ? "budget_exhausted"
+            : "node_failure",
         retryable,
         errorCategory: retryable
           ? "provider"
@@ -241,18 +296,33 @@ export function wrapNode(
             : error instanceof LeaseOwnershipError
               ? "storage"
               : "unknown",
-        elapsedMs:
-          (dependencies.now ?? (() => new Date()))().getTime() - started,
+        elapsedMs: Math.max(0, now().getTime() - started),
         elapsedLimitMs: state.budget.elapsedMs,
       })
-      throw error
+      throw safeError
     }
   }
 }
 
+export async function emitCommittedNodeEvent(
+  dependencies: RuntimeDependencies,
+  state: RuntimeStateBase,
+  nodeNameInput: string
+): Promise<void> {
+  await emit(dependencies, {
+    runId: state.runId,
+    graphName: state.graphName,
+    nodeName: reasonCodeSchema.parse(nodeNameInput),
+    kind: "node_completed",
+    status: "completed",
+    summary: "Node state committed",
+    reasonCode: "node_committed",
+  })
+}
+
 export async function emitInterruptEvent(
   dependencies: RuntimeDependencies,
-  state: SyntheticStateValue,
+  state: RuntimeStateBase,
   phase: "requested" | "resumed"
 ): Promise<void> {
   await emit(dependencies, {

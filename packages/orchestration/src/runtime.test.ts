@@ -4,6 +4,7 @@ import {
   DurableRunEventSink,
   projectLangGraphEmission,
 } from "./event-projection.ts"
+import { InMemoryResumeCoordinator } from "./resume-coordinator.ts"
 import {
   CancelledOrchestrationError,
   LeaseOwnershipError,
@@ -11,6 +12,7 @@ import {
   type OrchestrationEvent,
   type RuntimeDependencies,
 } from "./runtime.ts"
+import { parseSyntheticState } from "./state.ts"
 import { createSyntheticInitialState } from "./synthetic.ts"
 
 const state = createSyntheticInitialState({
@@ -49,17 +51,28 @@ describe("orchestration runtime boundaries", () => {
       events: { append: async (event) => void events.push(event) },
       effects: { execute: sideEffect },
       resumeAuthorization: { authorize: async () => true },
+      resumeCoordinator: new InMemoryResumeCoordinator(),
     }
-    const node = wrapNode("side_effect", dependencies, async () => {
-      await sideEffect()
-      return {}
-    })
+    const node = wrapNode(
+      "side_effect",
+      dependencies,
+      parseSyntheticState,
+      async () => {
+        await sideEffect()
+        return {}
+      }
+    )
 
     await expect(node(state)).rejects.toBeInstanceOf(
       CancelledOrchestrationError
     )
     expect(sideEffect).not.toHaveBeenCalled()
-    expect(events).toHaveLength(0)
+    expect(events).toEqual([
+      expect.objectContaining({
+        kind: "error",
+        errorCategory: "cancelled",
+      }),
+    ])
   })
 
   it("projects typed lifecycle events without hidden details", async () => {
@@ -103,10 +116,12 @@ describe("orchestration runtime boundaries", () => {
       events: { append: async () => undefined },
       effects: { execute: sideEffect },
       resumeAuthorization: { authorize: async () => true },
+      resumeCoordinator: new InMemoryResumeCoordinator(),
     }
     const node = wrapNode(
       "tool_node",
       dependencies,
+      parseSyntheticState,
       async (_state, runtime) => {
         await runtime.checkActive()
         await sideEffect()
@@ -115,6 +130,62 @@ describe("orchestration runtime boundaries", () => {
     )
     await expect(node(state)).rejects.toBeInstanceOf(LeaseOwnershipError)
     expect(sideEffect).not.toHaveBeenCalled()
+  })
+
+  it("rechecks ownership after the handler before committing its update", async () => {
+    let checks = 0
+    const sideEffect = vi.fn()
+    const events: OrchestrationEvent[] = []
+    const dependencies: RuntimeDependencies = {
+      owner: "worker-a",
+      control: {
+        assertActive: async () => {
+          checks += 1
+          if (checks === 2) throw new LeaseOwnershipError()
+        },
+      },
+      events: { append: async (event) => void events.push(event) },
+      effects: { execute: sideEffect },
+      resumeAuthorization: { authorize: async () => true },
+      resumeCoordinator: new InMemoryResumeCoordinator(),
+    }
+    const node = wrapNode(
+      "long_node",
+      dependencies,
+      parseSyntheticState,
+      async () => {
+        await sideEffect()
+        return { terminalStatus: "complete" }
+      }
+    )
+    await expect(node(state)).rejects.toBeInstanceOf(LeaseOwnershipError)
+    expect(sideEffect).toHaveBeenCalledOnce()
+    expect(events.some((event) => event.kind === "node_completed")).toBe(false)
+  })
+
+  it("supports specialist state validators without synthetic-state coupling", async () => {
+    const dependencies: RuntimeDependencies = {
+      owner: "worker-a",
+      control: { assertActive: async () => undefined },
+      events: { append: async () => undefined },
+      effects: { execute: async () => undefined },
+      resumeAuthorization: { authorize: async () => true },
+      resumeCoordinator: new InMemoryResumeCoordinator(),
+    }
+    const parseSpecialist = (input: unknown) => {
+      const value = input as typeof state & { readonly missionId: string }
+      if (typeof value.missionId !== "string") throw new Error("invalid")
+      return value
+    }
+    const node = wrapNode(
+      "specialist_node",
+      dependencies,
+      parseSpecialist,
+      (specialistState) => ({ missionId: specialistState.missionId })
+    )
+    await expect(
+      node({ ...state, missionId: "mission-reference" })
+    ).resolves.toEqual({ missionId: "mission-reference" })
   })
 
   it("projects updates and custom emissions without checkpoint payloads", () => {
