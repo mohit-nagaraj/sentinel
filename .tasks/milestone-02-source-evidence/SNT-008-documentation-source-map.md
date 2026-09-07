@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M2 — Deterministic source evidence |
-| Status | `not-started` |
+| Status | `review` |
 | Depends on | SNT-002, SNT-003, SNT-007 |
 | Blocks | Documentation Explorer |
 | PRD references | §12 document nodes, §13.5, FR-004 |
@@ -27,15 +27,15 @@ The Documentation Explorer needs a bounded, searchable evidence space. This issu
 
 ## Implementation tasks
 
-- [ ] Implement web/repository source adapters into one fact contract.
-- [ ] Respect robots/sitemap and restrict host/path/protocol/redirects.
-- [ ] Strip navigation/repeated chrome, scripts, styles, forms, and unsafe markup.
-- [ ] Preserve exact source excerpts and offsets/heading paths.
-- [ ] Produce deterministic section IDs/content hashes/link edges.
-- [ ] Detect unchanged, changed, removed, duplicate, and failed pages.
-- [ ] Implement bounded tree/list/search/read-section repository APIs.
-- [ ] Store sanitized durable section facts/metadata; upload only evidence artifacts that earn retention.
-- [ ] Emit explicit partial-crawl warnings and coverage statistics.
+- [x] Implement web/repository source adapters into one fact contract.
+- [x] Respect robots/sitemap and restrict host/path/protocol/redirects.
+- [x] Strip navigation/repeated chrome, scripts, styles, forms, and unsafe markup.
+- [x] Preserve exact source excerpts and offsets/heading paths.
+- [x] Produce deterministic section IDs/content hashes/link edges.
+- [x] Detect unchanged, changed, removed, duplicate, and failed pages.
+- [x] Implement bounded tree/list/search/read-section repository APIs.
+- [x] Store sanitized durable section facts/metadata; upload only evidence artifacts that earn retention.
+- [x] Emit explicit partial-crawl warnings and coverage statistics.
 
 ## Acceptance criteria
 
@@ -63,4 +63,10 @@ Requirement extraction, arbitrary web search, embeddings/vector database, docume
 
 ## Implementation notes
 
-_Populate during implementation with final paths, commands, decisions, test evidence, and any explicitly deferred acceptance item._
+- Web and pinned-checkout adapters live in `packages/adapters/src/source/documentation`; both produce the existing contract-validated `DocumentSource`, `DocumentPage`, and `DocumentSection` fact shapes plus deterministic `LINKS_TO` edges.
+- The web frontier uses Crawlee 3.18.1 core/basic in disposable memory. Every root, robots/sitemap entry, link, redirect, canonical hint, and rendered-browser request is constrained by protocol/origin/path policy. Undici's connection lookup rejects every private/reserved result, with a second explicit check for literal IP hosts. HTTP/private-network access is available only through named test options.
+- Static HTML uses jsdom 26.1.0, Readability 0.6.0 where no explicit main/article is suitable, and DOMPurify 3.4.15. Repository Markdown uses remark-parse 11/mdast and is addressed by connector-proven commit URI. Raw responses, DOMs, and ASTs remain disposable.
+- Section offsets address the sanitized canonical page text; each durable excerpt is exactly `sanitizedText.slice(startOffset, endOffset)`. Duplicate canonical/content pages and repeated identical sections collapse deterministically.
+- `DocumentationMapIndex` exposes bounded tree/list/search/read/link APIs over prepared IDs only. Incremental input classifies added/changed/unchanged pages and reports removals, failures, duplicates, byte/page/time caps, and minimum-source coverage.
+- `20260907000200_documentation_maps.sql` adds private RLS-enabled map/page/section/link tables. `DocumentMapRepository.replace` swaps sanitized facts transactionally; no raw page artifact is retained by default.
+- Verification on 2026-09-07: formatting, zero-warning lint, TypeScript build, 40 files and 249 default tests passed; 7 focused files and 11 tests passed; 1 disposable Postgres persistence/RLS integration test passed.
