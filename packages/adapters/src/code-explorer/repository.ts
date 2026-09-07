@@ -65,6 +65,17 @@ export interface CodeExplorerRepositoryOptions {
   readonly endpoints?: readonly EndpointEvidence[]
 }
 
+export class CodeExplorerRepositoryError extends Error {
+  readonly code = "identity_mismatch" as const
+
+  constructor() {
+    super(
+      "Code Explorer repository sources do not share one immutable identity"
+    )
+    this.name = "CodeExplorerRepositoryError"
+  }
+}
+
 export interface RepositoryTextQuery {
   readonly query: string
   readonly caseSensitive?: boolean | undefined
@@ -129,6 +140,14 @@ function compareStrings(left: string, right: string): number {
   return Buffer.from(left, "utf8").compare(Buffer.from(right, "utf8"))
 }
 
+function repositoryKey(repository: {
+  readonly host: string
+  readonly owner: string
+  readonly name: string
+}): string {
+  return `${repository.host}\0${repository.owner}\0${repository.name}`
+}
+
 function directoryOf(path: string): string {
   const separator = path.lastIndexOf("/")
   return separator < 0 ? "" : path.slice(0, separator)
@@ -157,6 +176,30 @@ function languageAllowed(
     scope.languages.includes(language) &&
     (requested === undefined || requested.includes(language))
   )
+}
+
+function endpointEvidenceAllowed(
+  evidence: EndpointEvidence,
+  scope: CodeRepositoryScope
+): boolean {
+  if (
+    evidence.provenance.filePath !== undefined &&
+    !pathAllowed(evidence.provenance.filePath, scope)
+  ) {
+    return false
+  }
+  if (
+    evidence.sourceKind === "laravel" ||
+    evidence.sourceKind === "route_list"
+  ) {
+    return scope.languages.includes("php")
+  }
+  if (evidence.sourceKind === "frontend") {
+    return (
+      scope.languages.includes("typescript") || scope.languages.includes("tsx")
+    )
+  }
+  return true
 }
 
 function isTestPath(path: string): boolean {
@@ -244,14 +287,34 @@ function observation(input: {
       `${right.kind}\0${right.reasonCode}\0${right.question}`
     )
   )
-  const sourceLines = sourceSlices.reduce(
-    (total, slice) => total + sourceLineCount(slice.range),
+  const chargedRanges = uniqueBy(
+    [
+      ...sourceSlices.map(({ filePath, range }) => ({ filePath, range })),
+      ...sortEntities.flatMap((entity) =>
+        entity.entityType === "text_match"
+          ? [{ filePath: entity.filePath, range: entity.range }]
+          : []
+      ),
+    ],
+    ({ filePath, range }) => `${filePath}\0${range.startLine}\0${range.endLine}`
+  )
+  const sourceLines = chargedRanges.reduce(
+    (total, { range }) => total + sourceLineCount(range),
     0
   )
-  const contentBytes = sourceSlices.reduce(
-    (total, slice) => total + Buffer.byteLength(slice.text, "utf8"),
-    0
-  )
+  const contentBytes =
+    sourceSlices.reduce(
+      (total, slice) => total + Buffer.byteLength(slice.text, "utf8"),
+      0
+    ) +
+    sortEntities.reduce(
+      (total, entity) =>
+        total +
+        (entity.entityType === "text_match"
+          ? Buffer.byteLength(entity.text, "utf8")
+          : 0),
+      0
+    )
   return codeToolObservationSchema.parse({
     schemaVersion: 1,
     toolName: input.toolName,
@@ -288,6 +351,46 @@ export class CodeExplorerRepository {
   private readonly endpoints: readonly EndpointEvidence[]
 
   constructor(private readonly options: CodeExplorerRepositoryOptions) {
+    const applicationIds = [
+      options.applicationId,
+      options.typescript?.index.applicationId,
+      options.php?.index.response.source.applicationId,
+      ...(options.endpoints ?? []).map(
+        ({ endpoint }) => endpoint.applicationId
+      ),
+    ].filter((value): value is ApplicationId => value !== undefined)
+    const commitShas = [
+      options.typescript?.index.commitSha,
+      options.php?.index.response.source.commitSha,
+      options.php?.snapshot.metadata.commitSha,
+      ...(options.endpoints ?? []).map(
+        ({ provenance }) => provenance.commitSha
+      ),
+    ].filter((value): value is string => value !== undefined)
+    const repositories = [
+      options.typescript?.index.repository,
+      options.php?.index.response.source.repository,
+      ...(options.endpoints ?? []).map(
+        ({ provenance }) => provenance.repository
+      ),
+    ].filter(
+      (
+        value
+      ): value is {
+        readonly host: string
+        readonly owner: string
+        readonly name: string
+      } => value !== undefined
+    )
+    if (
+      applicationIds.some((id) => id !== options.applicationId) ||
+      (options.typescript !== undefined &&
+        options.typescript.index.runId !== options.runId) ||
+      new Set(commitShas).size > 1 ||
+      new Set(repositories.map(repositoryKey)).size > 1
+    ) {
+      throw new CodeExplorerRepositoryError()
+    }
     const typescriptSymbols = (options.typescript?.index.symbols ?? []).map(
       (symbol): UnifiedSymbol => ({
         origin: "typescript",
@@ -468,40 +571,51 @@ export class CodeExplorerRepository {
       return { evidence: [], edges: [], unresolved: [] }
     }
     const kind = reference.kind
+    const scopedTarget =
+      reference.targetSymbolId === undefined
+        ? undefined
+        : this.symbol(reference.targetSymbolId, scope)
+    const targetId = scopedTarget?.entity.id
+    const unresolvedTarget =
+      targetId === undefined
+        ? (reference.targetQualifiedName ?? reference.unresolvedTarget)
+        : undefined
+    const targetOutsideScope =
+      reference.targetSymbolId !== undefined && targetId === undefined
     const evidence: CodeSourceEvidence = {
       evidenceId: reference.id,
       kind,
-      strength:
-        reference.targetSymbolId === undefined ? "unresolved" : "structural",
+      strength: targetId === undefined ? "unresolved" : "structural",
       filePath: reference.filePath,
       range: reference.range,
       sourceEntityId: reference.sourceSymbolId,
-      ...(reference.targetSymbolId === undefined
+      ...(targetId === undefined ? {} : { targetEntityId: targetId }),
+      ...(reference.unresolvedReason === undefined && !targetOutsideScope
         ? {}
-        : { targetEntityId: reference.targetSymbolId }),
-      ...(reference.unresolvedReason === undefined
-        ? {}
-        : { detail: reference.unresolvedReason }),
+        : {
+            detail: targetOutsideScope
+              ? "target_outside_scope"
+              : reference.unresolvedReason,
+          }),
     }
     const edge: CodeStructuralEdge | undefined =
-      reference.targetSymbolId !== undefined
+      targetId !== undefined
         ? {
             kind,
             sourceId: reference.sourceSymbolId,
-            targetId: reference.targetSymbolId,
+            targetId,
             evidenceIds: [reference.id],
           }
-        : reference.unresolvedTarget === undefined
+        : unresolvedTarget === undefined
           ? undefined
           : {
               kind,
               sourceId: reference.sourceSymbolId,
-              unresolvedTarget: reference.unresolvedTarget,
+              unresolvedTarget,
               evidenceIds: [reference.id],
             }
     const unresolved: CodeUnresolvedBoundary[] =
-      reference.targetSymbolId !== undefined ||
-      reference.unresolvedTarget === undefined
+      targetId !== undefined || unresolvedTarget === undefined
         ? []
         : [
             {
@@ -510,9 +624,11 @@ export class CodeExplorerRepository {
                   ? "computed_url"
                   : "unresolved_reference",
               question: persistedTextSchema.parse(
-                `Resolve ${reference.unresolvedTarget} from ${reference.sourceQualifiedName}.`
+                `Resolve ${unresolvedTarget} from ${reference.sourceQualifiedName}.`
               ),
-              reasonCode: reference.unresolvedReason ?? "unresolved_reference",
+              reasonCode: targetOutsideScope
+                ? "target_outside_scope"
+                : (reference.unresolvedReason ?? "unresolved_reference"),
               evidenceIds: [reference.id],
               suggestedAgent: "application",
             },
@@ -545,49 +661,60 @@ export class CodeExplorerRepository {
       : relationship.kind === "calls" || relationship.kind === "static_calls"
         ? "call"
         : "reference"
+    const scopedTarget =
+      relationship.targetSymbolId === undefined
+        ? undefined
+        : this.symbol(relationship.targetSymbolId, scope)
+    const targetId = scopedTarget?.entity.id
+    const targetOutsideScope =
+      relationship.targetSymbolId !== undefined && targetId === undefined
     const evidence: CodeSourceEvidence = {
       evidenceId,
       kind,
-      strength: relationship.dynamic ? "unresolved" : "structural",
+      strength:
+        relationship.dynamic || targetId === undefined
+          ? "unresolved"
+          : "structural",
       filePath,
       range: {
         startLine: relationship.range.startLine,
         endLine: relationship.range.endLine,
       },
       sourceEntityId: relationship.sourceSymbolId,
-      ...(relationship.targetSymbolId === undefined
-        ? {}
-        : { targetEntityId: relationship.targetSymbolId }),
-      detail: relationship.kind,
+      ...(targetId === undefined ? {} : { targetEntityId: targetId }),
+      detail: targetOutsideScope ? "target_outside_scope" : relationship.kind,
     }
     const unresolvedTarget =
-      relationship.targetSymbolId === undefined
+      targetId === undefined
         ? (relationship.resolvedTarget ?? relationship.originalTarget)
         : undefined
     const edge: CodeStructuralEdge = {
       kind,
       sourceId: relationship.sourceSymbolId,
-      ...(relationship.targetSymbolId === undefined
+      ...(targetId === undefined
         ? { unresolvedTarget: unresolvedTarget! }
-        : { targetId: relationship.targetSymbolId }),
+        : { targetId }),
       evidenceIds: [evidenceId],
     }
-    const unresolved: CodeUnresolvedBoundary[] = relationship.dynamic
-      ? [
-          {
-            kind:
-              relationship.kind === "unresolved_dynamic"
-                ? "dynamic_call"
-                : "unresolved_reference",
-            question: persistedTextSchema.parse(
-              `Resolve dynamic target ${relationship.originalTarget}.`
-            ),
-            reasonCode: relationship.kind,
-            evidenceIds: [evidenceId],
-            suggestedAgent: "application",
-          },
-        ]
-      : []
+    const unresolved: CodeUnresolvedBoundary[] =
+      relationship.dynamic || targetId === undefined
+        ? [
+            {
+              kind:
+                relationship.kind === "unresolved_dynamic"
+                  ? "dynamic_call"
+                  : "unresolved_reference",
+              question: persistedTextSchema.parse(
+                `Resolve dynamic target ${relationship.originalTarget}.`
+              ),
+              reasonCode: targetOutsideScope
+                ? "target_outside_scope"
+                : relationship.kind,
+              evidenceIds: [evidenceId],
+              suggestedAgent: "application",
+            },
+          ]
+        : []
     return { evidence: [evidence], edges: [edge], unresolved }
   }
 
@@ -1121,7 +1248,8 @@ export class CodeExplorerRepository {
       .filter(
         ({ entry }) =>
           entry.endpoint.method === query.method &&
-          entry.endpoint.normalizedPath === normalizedPath
+          entry.endpoint.normalizedPath === normalizedPath &&
+          endpointEvidenceAllowed(entry, scope)
       )
       .slice(0, this.clampLimit(query.limit, limits))
     const byEndpoint = new Map<string, EndpointEvidence[]>()
@@ -1143,7 +1271,9 @@ export class CodeExplorerRepository {
           ...new Set(
             entries.flatMap(({ handler }) => {
               const parsed = codeSymbolIdSchema.safeParse(handler?.symbolId)
-              return parsed.success ? [parsed.data] : []
+              return parsed.success && this.isSymbolInScope(parsed.data, scope)
+                ? [parsed.data]
+                : []
             })
           ),
         ].sort(compareStrings),
@@ -1162,7 +1292,10 @@ export class CodeExplorerRepository {
       }
       const evidenceId = this.endpointEvidenceIds.get(index)!
       const parsedTarget = codeSymbolIdSchema.safeParse(entry.handler?.symbolId)
-      const targetId = parsedTarget.success ? parsedTarget.data : undefined
+      const targetId =
+        parsedTarget.success && this.isSymbolInScope(parsedTarget.data, scope)
+          ? parsedTarget.data
+          : undefined
       evidence.push({
         evidenceId,
         kind: targetId === undefined ? "openapi_operation" : "route_handler",

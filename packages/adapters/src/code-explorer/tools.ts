@@ -202,12 +202,28 @@ export class CodeExplorerTools {
     )
   }
 
-  private repositoryLimits(): CodeRepositoryLimits {
+  private repositoryLimits(
+    override: Partial<CodeExplorerLimits>
+  ): CodeRepositoryLimits {
+    const bounded = (configured: number, requested: number | undefined) =>
+      Math.max(1, Math.min(configured, requested ?? configured))
     return {
-      maxResults: this.limits.maxResultsPerTool,
-      maxHops: this.limits.maxTraversalHopsPerTool,
-      maxSourceLines: this.limits.maxSourceLinesPerTool,
-      maxSourceCharacters: this.limits.maxSourceCharactersPerTool,
+      maxResults: bounded(
+        this.limits.maxResultsPerTool,
+        override.maxResultsPerTool
+      ),
+      maxHops: bounded(
+        this.limits.maxTraversalHopsPerTool,
+        override.maxTraversalHopsPerTool
+      ),
+      maxSourceLines: bounded(
+        this.limits.maxSourceLinesPerTool,
+        override.maxSourceLinesPerTool
+      ),
+      maxSourceCharacters: bounded(
+        this.limits.maxSourceCharactersPerTool,
+        override.maxSourceCharactersPerTool
+      ),
     }
   }
 
@@ -246,12 +262,15 @@ export class CodeExplorerTools {
     }
   }
 
-  private checked(observation: CodeToolObservation): CodeExplorerToolExecution {
+  private checked(
+    observation: CodeToolObservation,
+    limits: CodeRepositoryLimits
+  ): CodeExplorerToolExecution {
     if (
-      observation.metrics.resultItems > this.limits.maxResultsPerTool * 20 ||
-      observation.metrics.traversalHops > this.limits.maxTraversalHopsPerTool ||
-      observation.metrics.sourceLines > this.limits.maxSourceLinesPerTool ||
-      observation.metrics.contentBytes > this.limits.maxSourceCharactersPerTool
+      observation.metrics.resultItems > limits.maxResults * 20 ||
+      observation.metrics.traversalHops > limits.maxHops ||
+      observation.metrics.sourceLines > limits.maxSourceLines ||
+      observation.metrics.contentBytes > limits.maxSourceCharacters
     ) {
       throw new CodeExplorerToolError("result_limit_exceeded")
     }
@@ -260,7 +279,8 @@ export class CodeExplorerTools {
 
   async execute(
     nameInput: string,
-    argumentsInput: unknown
+    argumentsInput: unknown,
+    limitOverride: Partial<CodeExplorerLimits> = {}
   ): Promise<CodeExplorerToolExecution> {
     let name: CodeExplorerToolName
     try {
@@ -269,7 +289,7 @@ export class CodeExplorerTools {
       throw new CodeExplorerToolError("tool_not_allowed")
     }
     this.assertAllowed(name)
-    const limits = this.repositoryLimits()
+    const limits = this.repositoryLimits(limitOverride)
     switch (name) {
       case "list_repository_modules": {
         const input = parseArguments(
@@ -278,21 +298,24 @@ export class CodeExplorerTools {
         )
         this.assertFilters(input)
         return this.checked(
-          this.repository.listModules(this.scope, input, limits)
+          this.repository.listModules(this.scope, input, limits),
+          limits
         )
       }
       case "search_symbols": {
         const input = parseArguments(searchSymbolsInputSchema, argumentsInput)
         this.assertFilters(input)
         return this.checked(
-          this.repository.searchSymbols(this.scope, input, limits)
+          this.repository.searchSymbols(this.scope, input, limits),
+          limits
         )
       }
       case "search_code_text": {
         const input = parseArguments(searchCodeTextInputSchema, argumentsInput)
         this.assertFilters(input)
         return this.checked(
-          await this.repository.searchText(this.scope, input, limits)
+          await this.repository.searchText(this.scope, input, limits),
+          limits
         )
       }
       case "inspect_symbol": {
@@ -303,14 +326,16 @@ export class CodeExplorerTools {
             this.scope,
             input.symbolId,
             limits
-          )
+          ),
+          limits
         )
       }
       case "find_definition": {
         const input = parseArguments(findDefinitionInputSchema, argumentsInput)
         this.assertFilters(input)
         return this.checked(
-          this.repository.findDefinition(this.scope, input, limits)
+          this.repository.findDefinition(this.scope, input, limits),
+          limits
         )
       }
       case "find_references": {
@@ -322,21 +347,24 @@ export class CodeExplorerTools {
             input.symbolId,
             input.limit,
             limits
-          )
+          ),
+          limits
         )
       }
       case "trace_callers": {
         const input = parseArguments(traceCallersInputSchema, argumentsInput)
         this.assertSymbol(input.symbolId)
         return this.checked(
-          this.repository.trace("callers", this.scope, input, limits)
+          this.repository.trace("callers", this.scope, input, limits),
+          limits
         )
       }
       case "trace_callees": {
         const input = parseArguments(traceCalleesInputSchema, argumentsInput)
         this.assertSymbol(input.symbolId)
         return this.checked(
-          this.repository.trace("callees", this.scope, input, limits)
+          this.repository.trace("callees", this.scope, input, limits),
+          limits
         )
       }
       case "find_endpoint_handler": {
@@ -345,7 +373,8 @@ export class CodeExplorerTools {
           argumentsInput
         )
         return this.checked(
-          this.repository.findEndpointHandler(this.scope, input, limits)
+          this.repository.findEndpointHandler(this.scope, input, limits),
+          limits
         )
       }
       case "find_frontend_callers": {
@@ -354,14 +383,16 @@ export class CodeExplorerTools {
           argumentsInput
         )
         return this.checked(
-          this.repository.findFrontendCallers(this.scope, input, limits)
+          this.repository.findFrontendCallers(this.scope, input, limits),
+          limits
         )
       }
       case "inspect_tests": {
         const input = parseArguments(inspectTestsInputSchema, argumentsInput)
         if (input.targetKind === "symbol") this.assertSymbol(input.symbolId)
         return this.checked(
-          await this.repository.inspectTests(this.scope, input, limits)
+          await this.repository.inspectTests(this.scope, input, limits),
+          limits
         )
       }
       case "submit_code_claim":

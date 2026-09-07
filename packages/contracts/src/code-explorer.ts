@@ -142,6 +142,14 @@ export const codeEvidenceStrengthSchema = z.enum([
   "unresolved",
 ])
 
+export const codeClaimPredicateSchema = z.enum([
+  "calls",
+  "calls_api",
+  "handled_by",
+  "reads",
+  "references",
+])
+
 export const codeEntityReferenceSchema = z.union([
   apiEndpointIdSchema,
   codeFileIdSchema,
@@ -289,7 +297,7 @@ export const codeToolObservationSchema = z.strictObject({
 
 export const submitCodeClaimInputSchema = z.strictObject({
   subjectId: codeEntityReferenceSchema,
-  predicate: reasonCodeSchema,
+  predicate: codeClaimPredicateSchema,
   objectId: codeEntityReferenceSchema,
   evidenceIds: z.array(evidenceIdSchema).min(1).max(100),
   explanation: persistedTextSchema,
@@ -297,6 +305,7 @@ export const submitCodeClaimInputSchema = z.strictObject({
 
 export const codeProposedClaimSchema = proposedClaimSchema
   .extend({
+    predicate: codeClaimPredicateSchema,
     evidence: z.array(codeSourceEvidenceSchema).min(1).max(100),
   })
   .superRefine((claim, context) => {
@@ -325,7 +334,7 @@ export const codeProposedClaimSchema = proposedClaimSchema
 
 export const codePathEdgeSchema = z.strictObject({
   subjectId: codeEntityReferenceSchema,
-  predicate: reasonCodeSchema,
+  predicate: codeClaimPredicateSchema,
   objectId: codeEntityReferenceSchema,
   evidenceIds: z.array(evidenceIdSchema).min(1).max(100),
 })

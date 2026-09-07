@@ -87,6 +87,7 @@ AST extraction itself, arbitrary code execution, semantic requirement acceptance
 ### Decisions
 
 - `CodeExplorerRepository` composes prepared TypeScript query, PHP relationship/source-slice, Laravel route, frontend API-call, and OpenAPI evidence. It never parses syntax itself and never receives an unrestricted filesystem handle.
+- Repository construction rejects application, run, repository, snapshot, endpoint-provenance, or commit identity disagreement. Resolved reference/handler targets are emitted only when the target symbol remains inside the mission's path and language scope.
 - `CodeExplorerTools` exposes exactly the task's thirteen operations. Mission path/language/tool scope is checked before execution; per-tool result, hop, line, and character limits are applied again below the model gateway.
 - Symbol and text searches return candidates without structural claim evidence. `submit_code_claim` accepts only evidence IDs previously observed in the mission, and at least one structural source-to-target edge must exactly support the proposed relationship.
 - Focused test evidence is always `corroborating` with `corroboratesOnly: true`; it cannot satisfy the structural-edge rule alone.
@@ -99,10 +100,11 @@ AST extraction itself, arbitrary code execution, semantic requirement acceptance
 ### Verification (2026-09-08)
 
 - `pnpm typecheck`, `pnpm lint`, and `pnpm build` pass.
-- `pnpm test` passes 671 tests across 70 files, including 30 new contract/adapter/orchestration unit tests.
+- `pnpm test` passes 677 tests across 70 files, including 36 new contract/adapter/orchestration unit tests.
 - `pnpm test:agent` passes 9 Code Explorer mission tests: the golden cross-stack trace, endpoint-first and changed-symbol paths, frontend/backend/capability entry modes, distractors, dynamic/unmapped partial results, and five equivalent repeated runs.
 - `php-laravel-indexer.integration.test.ts` passes all 13 tests after installing the lockfile-pinned ignored Composer dependency. The other integration projects passed or remained gated by their documented external-service flags.
 - With `RUN_LIVE_TESTS=1` alone, the Hi.Events Code Explorer evaluation is discovered and skipped; it runs only when `RUN_CODE_EXPLORER_HI_EVENTS=1` and the existing GitHub/Azure configuration are also present.
+- `/review` identified and fixed four P1 boundaries before shipping: mixed immutable identities, cross-scope resolved targets, predicate/evidence-kind mismatch, and remaining budget/elapsed checks around model-selected tools.
 
 ### Deferred
 

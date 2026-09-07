@@ -229,8 +229,10 @@ class ScriptedTools implements CodeExplorerToolPort {
   readonly execute = vi.fn(
     async (
       name: string,
-      argumentsInput: unknown
+      argumentsInput: unknown,
+      _limits?: Parameters<CodeExplorerToolPort["execute"]>[2]
     ): Promise<CodeExplorerToolExecution> => {
+      void _limits
       if (name === "find_endpoint_handler") {
         findEndpointHandlerInputSchema.parse(argumentsInput)
         return { kind: "observation", observation: this.currentObservation }
@@ -299,6 +301,12 @@ describe("Code Explorer specialist loop", () => {
     expect(model.requests[1]?.input).toContain("Route::post")
     expect(model.requests[0]?.instructions).toContain("untrusted data")
     expect(tools.execute).toHaveBeenCalledTimes(3)
+    expect(tools.execute.mock.calls[0]?.[2]).toMatchObject({
+      maxResultsPerTool: 50,
+      maxTraversalHopsPerTool: 100,
+      maxSourceLinesPerTool: 100,
+      maxSourceCharactersPerTool: 10_000,
+    })
   })
 
   it("produces byte-equivalent results for repeated scripted trajectories", async () => {
@@ -362,12 +370,35 @@ describe("Code Explorer specialist loop", () => {
     })
   })
 
+  it("rejects a predicate that does not match the structural evidence kind", async () => {
+    const model = new ScriptedModel([
+      toolDecision("call-1", "find_endpoint_handler", endpointArguments),
+      toolDecision("call-2", "submit_code_claim", {
+        ...claimArguments,
+        predicate: "reads",
+      }),
+    ])
+    const tools = new ScriptedTools(
+      ["find_endpoint_handler", "submit_code_claim", "finish_code_mission"],
+      observation()
+    )
+    const result = await new CodeExplorerService(model, tools, {
+      now: () => 1_000,
+    }).run(mission())
+
+    expect(result).toMatchObject({
+      status: "partial",
+      claims: [],
+      stopReason: { code: "claim_evidence_invalid" },
+    })
+  })
+
   it.each([
     ["model calls", { modelCalls: 0 }, "model_budget_exhausted"],
     ["model input tokens", { modelInputTokens: 10 }, "model_budget_exhausted"],
     ["model output tokens", { modelOutputTokens: 5 }, "model_budget_exhausted"],
     ["tool calls", { toolCalls: 0 }, "tool_budget_exhausted"],
-    ["source lines", { sourceLines: 0 }, "content_budget_exhausted"],
+    ["source lines", { sourceLines: 0 }, "source_budget_exhausted"],
     ["content bytes", { contentBytes: 1 }, "content_budget_exhausted"],
     ["repository bytes", { repositoryBytes: 0 }, "content_budget_exhausted"],
     ["repository files", { repositoryFiles: 0 }, "content_budget_exhausted"],
@@ -458,6 +489,58 @@ describe("Code Explorer specialist loop", () => {
       }
     ).run(mission(baseBudget, ["find_endpoint_handler", "finish_code_mission"]))
     expect(recursion.stopReason.code).toBe("recursion_limit")
+  })
+
+  it("rechecks elapsed time after the model before executing its tool", async () => {
+    const times = [0, 10, 100]
+    const model = new ScriptedModel([
+      toolDecision("call-1", "find_endpoint_handler", endpointArguments),
+    ])
+    const tools = new ScriptedTools(
+      ["find_endpoint_handler", "finish_code_mission"],
+      observation()
+    )
+    const result = await new CodeExplorerService(model, tools, {
+      now: () => times.shift() ?? 100,
+    }).run(
+      mission({ ...baseBudget, elapsedMs: 50 }, [
+        "find_endpoint_handler",
+        "finish_code_mission",
+      ])
+    )
+
+    expect(result.stopReason.code).toBe("elapsed_budget_exhausted")
+    expect(tools.execute).not.toHaveBeenCalled()
+  })
+
+  it("keeps redacted bounded source context as valid structured input", async () => {
+    const unsafeObservation = {
+      ...observation(),
+      sourceSlices: [
+        {
+          ...observation().sourceSlices[0]!,
+          text: 'const password = "must-not-reach-model"',
+        },
+      ],
+    }
+    const model = new ScriptedModel([
+      toolDecision("call-1", "find_endpoint_handler", endpointArguments),
+      toolDecision("call-2", "find_endpoint_handler", endpointArguments),
+    ])
+    const tools = new ScriptedTools(
+      ["find_endpoint_handler", "finish_code_mission"],
+      unsafeObservation
+    )
+    const result = await new CodeExplorerService(model, tools, {
+      now: () => 1_000,
+    }).run(
+      mission(baseBudget, ["find_endpoint_handler", "finish_code_mission"])
+    )
+
+    expect(result.stopReason.code).toBe("no_progress")
+    expect(() => JSON.parse(model.requests[1]!.input)).not.toThrow()
+    expect(model.requests[1]!.input).toContain("[REDACTED]")
+    expect(model.requests[1]!.input).not.toContain("must-not-reach-model")
   })
 
   it("rejects unauthorized, multiple, and free-text model decisions", async () => {

@@ -7,6 +7,7 @@ import {
   codeMissionResultSchema,
   codeProposedClaimSchema,
   codeSourceEvidenceSchema,
+  submitCodeClaimInputSchema,
 } from "./code-explorer.ts"
 
 const applicationId = `application:v1:${"a".repeat(64)}`
@@ -139,6 +140,12 @@ describe("Code Explorer contracts", () => {
       codeProposedClaimSchema.safeParse({
         ...claim,
         evidenceIds: [`evidence:v1:${"1".repeat(64)}`],
+      }).success
+    ).toBe(false)
+    expect(
+      submitCodeClaimInputSchema.safeParse({
+        ...claim,
+        predicate: "deletes",
       }).success
     ).toBe(false)
   })

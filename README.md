@@ -290,9 +290,12 @@ focused tests are marked as corroboration only.
 one strict function-tool call, revalidates it through the tool port, accounts
 for model/tool/content/source/repository/time budgets, and records normalized
 visit keys before execution. Repeated visits stop without replaying the tool.
-Only a recorded structural edge whose source and target match the proposal can
-support a claim; lexical matches, same-name symbols, source slices, and tests do
-not establish a relationship by themselves. Dynamic calls, computed targets,
+Only a recorded structural edge whose source, target, and relationship kind
+match the proposal can support a claim; lexical matches, same-name symbols,
+source slices, and tests do not establish a relationship by themselves. All
+composed indexes must share one application, run, repository, and immutable
+commit identity, and resolved targets outside mission scope are suppressed.
+Dynamic calls, computed targets,
 dependency-injection ambiguity, and unmapped endpoints remain typed unresolved
 boundaries. This service is a feature-specific bounded loop; generic specialist
 checkpoint, interrupt, and cross-agent behavior is not part of its API.

@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto"
 
 import {
+  applicationIdSchema,
   codeExplorerMissionSchema,
   codeExplorerToolNames,
+  commitShaSchema,
   createStableKey,
   hashCanonical,
+  type CodeExplorerMission,
 } from "@sentinel/contracts"
 import { beforeAll, describe, expect, it } from "vitest"
 
@@ -15,6 +18,7 @@ import {
   fixtureCommitScope,
   fixtureRunId,
   indexFixture,
+  type IndexedFixture,
 } from "../source/typescript/testing.ts"
 import { defaultIndexPolicy } from "../source/typescript/policy.ts"
 import type { CheckoutSnapshot } from "../source/github/checkout.ts"
@@ -185,6 +189,9 @@ const emptyBudget = {
 }
 
 let tools: CodeExplorerTools
+let repository: CodeExplorerRepository
+let baseMission: CodeExplorerMission
+let indexedFixture: IndexedFixture
 let dashboardId: string
 let clientCreateId: string
 
@@ -192,12 +199,13 @@ beforeAll(async () => {
   const fixture = await indexFixture({
     policy: { ...defaultIndexPolicy, includeTests: true },
   })
+  indexedFixture = fixture
   const endpoint = createEndpointTemplate({
     applicationId: fixtureCommitScope.applicationId,
     method: "POST",
     path: "/events",
   })
-  const repository = new CodeExplorerRepository({
+  repository = new CodeExplorerRepository({
     applicationId: fixtureCommitScope.applicationId,
     runId: fixtureRunId,
     typescript: {
@@ -258,6 +266,7 @@ beforeAll(async () => {
     budget: emptyBudget,
     successCriteria: ["Return a source-cited implementation path."],
   })
+  baseMission = mission
   tools = new CodeExplorerTools(repository, mission, {
     maxResultsPerTool: 10,
     maxTraversalHopsPerTool: 2,
@@ -472,5 +481,83 @@ describe("Code Explorer bounded tools", () => {
         symbolId: `code-symbol:v1:${"7".repeat(64)}`,
       })
     ).rejects.toMatchObject({ code: "scope_denied" })
+  })
+
+  it("rejects mixed application, run, repository, and commit identities", () => {
+    expect(
+      () =>
+        new CodeExplorerRepository({
+          applicationId: applicationIdSchema.parse(
+            `application:v1:${"8".repeat(64)}`
+          ),
+          runId: fixtureRunId,
+          typescript: {
+            index: indexedFixture.index,
+            query: createTypeScriptIndexQuery(
+              indexedFixture.index,
+              indexedFixture.reader
+            ),
+          },
+        })
+    ).toThrow(expect.objectContaining({ code: "identity_mismatch" }))
+
+    expect(
+      () =>
+        new CodeExplorerRepository({
+          applicationId: fixtureCommitScope.applicationId,
+          runId: fixtureRunId,
+          typescript: {
+            index: {
+              ...indexedFixture.index,
+              commitSha: commitShaSchema.parse("9".repeat(40)),
+            },
+            query: createTypeScriptIndexQuery(
+              indexedFixture.index,
+              indexedFixture.reader
+            ),
+          },
+          php: { index: new PhpCodeIndex(phpResponse), snapshot },
+        })
+    ).toThrow(expect.objectContaining({ code: "identity_mismatch" }))
+  })
+
+  it("does not expose resolved targets outside mission path or language scope", async () => {
+    const narrowMission = codeExplorerMissionSchema.parse({
+      ...baseMission,
+      scope: {
+        ...baseMission.scope,
+        repositoryPaths: ["frontend/src"],
+        languages: ["typescript", "tsx"],
+      },
+    })
+    const narrowTools = new CodeExplorerTools(repository, narrowMission)
+    const result = await narrowTools.execute("find_endpoint_handler", {
+      method: "POST",
+      normalizedPath: "/events",
+    })
+    expect(result.kind).toBe("observation")
+    if (result.kind !== "observation") return
+    expect(result.observation.edges).toStrictEqual([])
+    expect(result.observation.entities).toContainEqual(
+      expect.objectContaining({ handlerSymbolIds: [] })
+    )
+    expect(JSON.stringify(result)).not.toContain(phpClassId)
+  })
+
+  it("tightens per-tool limits to the remaining mission allowance", async () => {
+    const result = await tools.execute(
+      "inspect_symbol",
+      { symbolId: dashboardId },
+      {
+        maxResultsPerTool: 2,
+        maxTraversalHopsPerTool: 1,
+        maxSourceLinesPerTool: 1,
+        maxSourceCharactersPerTool: 1_000,
+      }
+    )
+    expect(result.kind).toBe("observation")
+    if (result.kind !== "observation") return
+    expect(result.observation.metrics.sourceLines).toBeLessThanOrEqual(1)
+    expect(result.observation.metrics.traversalHops).toBeLessThanOrEqual(1)
   })
 })

@@ -76,11 +76,19 @@ export type CodeExplorerToolExecution =
       readonly input: FinishCodeMissionInput
     }
 
+export interface CodeExplorerExecutionLimits {
+  readonly maxResultsPerTool?: number
+  readonly maxTraversalHopsPerTool?: number
+  readonly maxSourceLinesPerTool?: number
+  readonly maxSourceCharactersPerTool?: number
+}
+
 export interface CodeExplorerToolPort {
   readonly definitions: readonly CodeExplorerModelToolDefinition[]
   execute(
     name: string,
-    argumentsInput: unknown
+    argumentsInput: unknown,
+    limits?: CodeExplorerExecutionLimits
   ): Promise<CodeExplorerToolExecution>
 }
 
@@ -140,6 +148,27 @@ const CODE_EXPLORER_INSTRUCTIONS = [
   "Submit only evidence-backed proposed claims and use finish_code_mission to complete, abstain, or report unresolved boundaries.",
 ].join(" ")
 
+const sourceLineTools = new Set([
+  "search_code_text",
+  "inspect_symbol",
+  "find_definition",
+  "find_references",
+  "trace_callers",
+  "trace_callees",
+  "find_endpoint_handler",
+  "find_frontend_callers",
+  "inspect_tests",
+])
+const sourceContentTools = new Set(["search_code_text", "inspect_symbol"])
+const traversalTools = new Set([
+  "inspect_symbol",
+  "find_references",
+  "trace_callers",
+  "trace_callees",
+  "find_endpoint_handler",
+  "find_frontend_callers",
+])
+
 function compareStrings(left: string, right: string): number {
   return Buffer.from(left, "utf8").compare(Buffer.from(right, "utf8"))
 }
@@ -188,6 +217,18 @@ function compactObservation(
   }
 }
 
+function sanitizeModelValue(value: unknown): unknown {
+  if (typeof value === "string") return redactPersistedText(value)
+  if (Array.isArray(value)) return value.map(sanitizeModelValue)
+  if (value === null || typeof value !== "object") return value
+  return Object.fromEntries(
+    Object.entries(value).map(([key, child]) => [
+      key,
+      sanitizeModelValue(child),
+    ])
+  )
+}
+
 function selectedSourceObservation(
   observation: CodeToolObservation | undefined,
   maxCharacters: number
@@ -207,12 +248,13 @@ function selectedSourceObservation(
     return compactObservation(observation)
   let remaining = maxCharacters - withoutSource.length
   const sourceSlices = observation.sourceSlices.map((slice) => {
-    const text = slice.text.slice(0, Math.max(0, remaining))
+    const safeText = redactPersistedText(slice.text)
+    const text = safeText.slice(0, Math.max(0, remaining))
     remaining -= text.length
     return {
       ...slice,
       text,
-      truncated: slice.truncated || text.length < slice.text.length,
+      truncated: slice.truncated || text.length < safeText.length,
     }
   })
   return { ...base, sourceSlices }
@@ -248,10 +290,10 @@ function buildModelInput(
       Math.floor(maxCharacters * 0.55)
     ),
   }
-  let serialized = redactPersistedText(JSON.stringify(compact))
+  let serialized = JSON.stringify(sanitizeModelValue(compact))
   if (serialized.length > maxCharacters) {
-    serialized = redactPersistedText(
-      JSON.stringify({
+    serialized = JSON.stringify(
+      sanitizeModelValue({
         ...compact,
         history: state.history.slice(-3),
         latestObservation:
@@ -262,7 +304,21 @@ function buildModelInput(
     )
   }
   if (serialized.length > maxCharacters) {
-    serialized = serialized.slice(0, maxCharacters)
+    serialized = JSON.stringify(
+      sanitizeModelValue({
+        mission: {
+          id: state.mission.id,
+          mode: state.mission.mode,
+          goal: state.mission.goal.slice(0, Math.floor(maxCharacters / 3)),
+          questions: state.mission.questions.slice(0, 3),
+        },
+        budgetUsed: state.budgetUsed,
+        history: state.history.slice(-1),
+      })
+    )
+  }
+  if (serialized.length > maxCharacters) {
+    throw new Error("Code Explorer compact model context exceeds its limit")
   }
   return serialized
 }
@@ -474,7 +530,8 @@ export class CodeExplorerService {
       (entry) =>
         entry.strength === "structural" &&
         entry.sourceEntityId === input.subjectId &&
-        entry.targetEntityId === input.objectId
+        entry.targetEntityId === input.objectId &&
+        this.evidenceSupportsPredicate(entry, input.predicate)
     )
     if (!directlySupported) return undefined
     const duplicate = [...state.claims.values()].find(
@@ -499,6 +556,23 @@ export class CodeExplorerService {
     })
     state.claims.set(claim.id, claim)
     return claim
+  }
+
+  private evidenceSupportsPredicate(
+    evidence: CodeSourceEvidence,
+    predicate: SubmitCodeClaimInput["predicate"]
+  ): boolean {
+    if (evidence.kind === "call") return predicate === "calls"
+    if (evidence.kind === "frontend_call") return predicate === "calls_api"
+    if (evidence.kind === "route_handler") return predicate === "handled_by"
+    if (evidence.kind === "import") return predicate === "references"
+    if (evidence.kind === "reference") {
+      return (
+        predicate === "references" ||
+        (evidence.detail === "domain_reference" && predicate === "reads")
+      )
+    }
+    return false
   }
 
   private finish(
@@ -664,6 +738,9 @@ export class CodeExplorerService {
       ) {
         return this.budgetResult(state, "model_budget_exhausted")
       }
+      if (this.overElapsedBudget(state)) {
+        return this.budgetResult(state, "elapsed_budget_exhausted")
+      }
       if (decision.kind !== "tool_calls" || decision.output.length !== 1) {
         return this.result(state, {
           status: "failed",
@@ -698,6 +775,39 @@ export class CodeExplorerService {
       if (state.budgetUsed.toolCalls >= mission.budget.toolCalls) {
         return this.budgetResult(state, "tool_budget_exhausted")
       }
+      const isObservation =
+        call.name !== "submit_code_claim" && call.name !== "finish_code_mission"
+      const remainingResultItems =
+        this.limits.maxTotalResultItems - state.resultItemsUsed
+      const remainingTraversalHops =
+        this.limits.maxTotalTraversalHops - state.traversalHopsUsed
+      const remainingSourceLines =
+        mission.budget.sourceLines - state.budgetUsed.sourceLines
+      const remainingSourceCharacters = Math.min(
+        mission.budget.repositoryBytes - state.budgetUsed.repositoryBytes,
+        mission.budget.contentBytes - state.budgetUsed.contentBytes
+      )
+      if (
+        (isObservation && remainingResultItems < 20) ||
+        (call.name === "submit_code_claim" && remainingResultItems < 1)
+      ) {
+        return this.budgetResult(state, "result_budget_exhausted")
+      }
+      if (traversalTools.has(call.name) && remainingTraversalHops < 1) {
+        return this.budgetResult(state, "hop_budget_exhausted")
+      }
+      if (sourceLineTools.has(call.name) && remainingSourceLines < 1) {
+        return this.budgetResult(state, "source_budget_exhausted")
+      }
+      if (sourceContentTools.has(call.name) && remainingSourceCharacters < 1) {
+        return this.budgetResult(state, "source_budget_exhausted")
+      }
+      const executionLimits: CodeExplorerExecutionLimits = {
+        maxResultsPerTool: Math.max(1, Math.floor(remainingResultItems / 20)),
+        maxTraversalHopsPerTool: Math.max(1, remainingTraversalHops),
+        maxSourceLinesPerTool: Math.max(1, remainingSourceLines),
+        maxSourceCharactersPerTool: Math.max(1, remainingSourceCharacters),
+      }
       await this.emit(state, {
         nodeName: "tool_execution",
         toolName: call.name,
@@ -708,7 +818,11 @@ export class CodeExplorerService {
       })
       let execution: CodeExplorerToolExecution
       try {
-        execution = await this.tools.execute(call.name, call.arguments)
+        execution = await this.tools.execute(
+          call.name,
+          call.arguments,
+          executionLimits
+        )
       } catch {
         await this.emit(state, {
           nodeName: "tool_execution",
@@ -727,6 +841,9 @@ export class CodeExplorerService {
         })
       }
       state.budgetUsed.toolCalls += 1
+      if (this.overElapsedBudget(state)) {
+        return this.budgetResult(state, "elapsed_budget_exhausted")
+      }
       await this.emit(state, {
         nodeName: "tool_execution",
         toolName: call.name,
