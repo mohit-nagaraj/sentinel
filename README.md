@@ -315,6 +315,7 @@ configuration:
 RUN_LIVE_TESTS=1 RUN_CODE_EXPLORER_HI_EVENTS=1 \
   pnpm vitest run --project live tests/live/code-explorer-hi-events.live.test.ts
 ```
+
 ## Application Explorer
 
 `@sentinel/contracts` exports strict Application Explorer schemas and inferred
