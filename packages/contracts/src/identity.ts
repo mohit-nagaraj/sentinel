@@ -180,6 +180,7 @@ export const artifactIdentityInputSchema = z.strictObject({
 export const actionIdentityInputSchema = z.strictObject({
   applicationId: applicationIdSchema,
   runId: runIdSchema,
+  sessionNonce: contentHashSchema,
   stateFingerprint: contentHashSchema,
   actionType: reasonCodeSchema,
   ordinal: z.number().int().nonnegative(),
