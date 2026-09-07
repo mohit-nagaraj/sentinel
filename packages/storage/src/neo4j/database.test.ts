@@ -152,6 +152,11 @@ describe("Neo4j database boundary", () => {
           NEO4J_DATABASE: "different",
         })
       ).toThrow("different configuration")
+      environment.NEO4J_DATABASE = "mutated"
+      expect(() => getSharedNeo4jGraphDatabase(environment)).toThrow(
+        "different configuration"
+      )
+      environment.NEO4J_DATABASE = "neo4j"
       await closeSharedNeo4jGraphDatabase()
       expect(getSharedNeo4jGraphDatabase(environment)).not.toBe(first)
     } finally {

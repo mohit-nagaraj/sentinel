@@ -230,7 +230,7 @@ export function getSharedNeo4jGraphDatabase(
   environment: Neo4jEnvironment
 ): Neo4jGraphDatabase {
   if (sharedDatabase === undefined) {
-    sharedEnvironment = environment
+    sharedEnvironment = { ...environment }
     sharedDatabase = createNeo4jGraphDatabase(environment)
     return sharedDatabase
   }
