@@ -1,4 +1,5 @@
 export * from "./checkpointer.ts"
+export * from "./code-explorer.ts"
 export * from "./event-projection.ts"
 export * from "./runtime.ts"
 export * from "./resume-coordinator.ts"
