@@ -73,8 +73,8 @@ Generating the Hi.Events OpenAPI spec, semantic requirement matching, live API i
 - `packages/adapters/src/source/endpoint/matching.ts` compares source templates
   and matches concrete runtime URLs with static-segment precedence, explicit
   ambiguity, method/path conflicts, and value-free runtime summaries.
-- `packages/contracts/src/facts.ts` additively permits OpenAPI tags and
-  request/response schema-reference arrays on endpoint facts.
+- `packages/contracts/src/facts.ts` additively permits the OpenAPI version,
+  tags, and request/response schema-reference arrays on endpoint facts.
 - Unit tests live beside the endpoint modules; the cross-stack fixture is
   `tests/integration/endpoint-normalization.integration.test.ts`.
 
@@ -87,23 +87,29 @@ Generating the Hi.Events OpenAPI spec, semantic requirement matching, live API i
 - Version/base prefix removal is never inferred. Callers provide source base
   paths and optional prefixes explicitly.
 - OpenAPI parsing is in-memory only. No URL or file resolver exists, so external
-  refs fail before local resolution can perform I/O.
+  refs fail before local resolution can perform I/O. Object imports reject
+  accessors, custom array prototypes, and Proxies; all structural and metadata
+  traversals have caller-tightenable limits and fixed redacted errors.
 - Runtime paths, query values, headers, and bodies are transient. Match results
   expose canonical catalog paths or an unmatched reason plus source hash and
   value-free counts; errors use fixed messages.
 - Conflicts retain both endpoint evidence records. Static/dynamic overlaps and
   equally specific runtime matches remain candidates rather than being guessed.
+  Embedded placeholders use a bounded linear matcher rather than generated
+  regular expressions or backtracking.
 - The optional trusted-baseline `route:list --json` adapter remains deferred as
   allowed by scope; no acceptance item depends on it.
 
 ### Verification (2026-09-07)
 
-- Focused endpoint unit tests: 38 tests pass across normalization, OpenAPI
+- Focused endpoint unit tests: 62 tests pass across normalization, OpenAPI
   import, matching, and redaction.
 - Cross-stack integration: TypeScript, Laravel, OpenAPI, and browser evidence
   converge on one stable endpoint while runtime secret values remain absent.
 - `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, and `pnpm build` pass.
-- `pnpm test` passes 562 tests across 61 files.
-- `pnpm test:integration` passes 30 tests across four files with 13
+- `pnpm test` passes 601 tests across 63 files.
+- `pnpm test:integration` passes 33 tests across five files with 13
   environment-gated Supabase/LangGraph/Playwright tests skipped. The PHP suite
   was run with checksum-verified PHP 8.4.25 and the locked Composer dependencies.
+- The ystack review completed all five roles. Every confirmed P0/P1 was fixed;
+  the final adversarial pass found no remaining P0/P1 issues.
