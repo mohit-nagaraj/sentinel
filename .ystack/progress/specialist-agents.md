@@ -5,7 +5,9 @@
 - [x] Define strict Application Explorer decisions, checkpoint, frontier, claim, blocker, and result contracts.
 - [x] Implement the guarded browser tools and adaptive mission runtime.
 - [x] Verify deterministic and real-browser mission, denial, recovery, and stability trajectories.
-- [ ] Record verified SNT-017 documentation and milestone status.
+- [x] Record verified SNT-017 documentation and milestone status.
+
+SNT-017 is complete as a composable Application Explorer. SNT-014 remains incomplete and is still required for generic cross-specialist kernel composition.
 
 ## Decisions
 
