@@ -1026,47 +1026,6 @@ function buildPathEvidenceClaims(input: {
         ? {}
         : { screenshotArtifactId: observation.screenshotArtifactId }),
     })
-
-    for (const candidate of observation.candidates) {
-      if (candidate.role === undefined || candidate.name === undefined) continue
-      const uiElementId = uiElementIdSchema.parse(
-        createStableKey({
-          kind: "ui-element",
-          applicationId: input.mission.applicationId,
-          screenId,
-          role: candidate.role,
-          accessibleName: candidate.name,
-          contextFingerprint: candidate.signature,
-        })
-      )
-      additionalClaims.push({
-        schemaVersion: 1,
-        id: createClaimId({
-          applicationId: input.mission.applicationId,
-          missionId: input.mission.id,
-          subjectId: screenId,
-          predicate: "contains_ui_element",
-          objectId: uiElementId,
-          ordinal: additionalClaims.length,
-        }),
-        status: "proposed",
-        claimKind: "ui_element",
-        missionId: input.mission.id,
-        runId: input.mission.runId,
-        evidenceIds: [observation.evidenceId],
-        observationEvidenceId: observation.evidenceId,
-        fact: {
-          id: uiElementId,
-          applicationId: input.mission.applicationId,
-          screenId,
-          role: candidate.role,
-          accessibleName: candidate.name,
-          contextFingerprint: candidate.signature,
-          observedAt: observation.observedAt,
-          sourceRunId: input.mission.runId,
-        },
-      })
-    }
   }
 
   input.transitions.forEach((transition, ordinal) => {
@@ -1102,6 +1061,54 @@ function buildPathEvidenceClaims(input: {
       transition.after.evidenceId,
       transition.evidenceId,
     ])
+    const applicationRequests = transition.network.filter((request) =>
+      ["fetch", "xhr"].includes(request.resourceType)
+    )
+    const requestWindow = (
+      applicationRequests.length > 0 ? applicationRequests : transition.network
+    ).slice(0, 1)
+    if (
+      transition.action.role !== undefined &&
+      transition.action.name !== undefined
+    ) {
+      const uiElementId = uiElementIdSchema.parse(
+        createStableKey({
+          kind: "ui-element",
+          applicationId: input.mission.applicationId,
+          screenId: beforeScreenId,
+          role: transition.action.role,
+          accessibleName: transition.action.name,
+          contextFingerprint: transition.action.signature,
+        })
+      )
+      additionalClaims.push({
+        schemaVersion: 1,
+        id: createClaimId({
+          applicationId: input.mission.applicationId,
+          missionId: input.mission.id,
+          subjectId: beforeScreenId,
+          predicate: "contains_ui_element",
+          objectId: uiElementId,
+          ordinal,
+        }),
+        status: "proposed",
+        claimKind: "ui_element",
+        missionId: input.mission.id,
+        runId: input.mission.runId,
+        evidenceIds: [transition.before.evidenceId],
+        observationEvidenceId: transition.before.evidenceId,
+        fact: {
+          id: uiElementId,
+          applicationId: input.mission.applicationId,
+          screenId: beforeScreenId,
+          role: transition.action.role,
+          accessibleName: transition.action.name,
+          contextFingerprint: transition.action.signature,
+          observedAt: transition.before.observedAt,
+          sourceRunId: input.mission.runId,
+        },
+      })
+    }
     stepClaims.push({
       schemaVersion: 1,
       id: createClaimId({
@@ -1141,10 +1148,10 @@ function buildPathEvidenceClaims(input: {
       ...(transition.after.screenshotArtifactId === undefined
         ? {}
         : { afterScreenshotArtifactId: transition.after.screenshotArtifactId }),
-      networkRequestIds: transition.network.map((request) => request.requestId),
+      networkRequestIds: requestWindow.map((request) => request.requestId),
     })
 
-    transition.network.forEach((request, requestOrdinal) => {
+    requestWindow.forEach((request, requestOrdinal) => {
       additionalClaims.push({
         schemaVersion: 1,
         id: createClaimId({
