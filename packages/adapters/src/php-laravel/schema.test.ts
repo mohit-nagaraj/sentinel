@@ -123,5 +123,24 @@ describe("PHP indexer response contract", () => {
     expect(phpIndexerResponseSchema.safeParse(danglingRoute).success).toBe(
       false
     )
+
+    const falseStaticRoute = structuredClone(response())
+    Object.assign(falseStaticRoute.files[0]!, {
+      routes: [
+        {
+          id: `php-route:v1:${"5".repeat(64)}`,
+          methods: ["GET"],
+          path: null,
+          middleware: [],
+          action: { originalName: "computed", dynamic: false },
+          dynamic: false,
+          range,
+        },
+      ],
+    })
+    falseStaticRoute.summary.routeCount = 1
+    expect(phpIndexerResponseSchema.safeParse(falseStaticRoute).success).toBe(
+      false
+    )
   })
 })

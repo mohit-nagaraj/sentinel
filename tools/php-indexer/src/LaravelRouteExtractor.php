@@ -262,12 +262,14 @@ final class LaravelRouteExtractor
             return ['methods' => ['ANY'], 'dynamic' => true];
         }
         $rawMethods = $this->stringsFromExpression($argument->value);
+        $dynamicItems = !$argument->value instanceof Expr\Array_
+            || count($rawMethods) !== count(array_filter($argument->value->items));
         $methods = array_map('strtoupper', $rawMethods);
         $allowed = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
         $methods = array_values(array_unique(array_filter($methods, fn (string $value): bool => in_array($value, $allowed, true))));
         return [
             'methods' => $methods === [] ? ['ANY'] : $methods,
-            'dynamic' => $rawMethods === [] || count($methods) !== count($rawMethods),
+            'dynamic' => $dynamicItems || $rawMethods === [] || count($methods) !== count($rawMethods),
         ];
     }
 

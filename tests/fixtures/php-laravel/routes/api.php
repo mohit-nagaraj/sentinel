@@ -26,5 +26,6 @@ Route::prefix($computedPrefix)->group(function (): void {
 });
 
 Route::match($computedMethods, 'computed-methods', OrderAction::class);
+Route::match(['GET', $runtimeMethod], 'mixed-methods', OrderAction::class);
 Route::post('explicit-missing', [OrderAction::class, 'missing']);
 Route::post('invalid-constant', [OrderAction::TARGET, '__invoke']);

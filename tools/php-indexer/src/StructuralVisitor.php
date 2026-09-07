@@ -17,6 +17,9 @@ final class StructuralVisitor extends NodeVisitorAbstract
     /** @var list<array<string, mixed>> */
     private array $symbols = [];
 
+    /** @var array<string, true> */
+    private array $symbolIds = [];
+
     /** @var list<array<string, mixed>> */
     private array $relationships = [];
 
@@ -574,6 +577,10 @@ final class StructuralVisitor extends NodeVisitorAbstract
         $originalName = Protocol::bounded($originalName, $this->maxStringLength);
         $range = Protocol::range($modifierNode ?? $node);
         $id = Protocol::codeSymbolId($this->path, $qualifiedName, $kind);
+        if (isset($this->symbolIds[$id])) {
+            return $id;
+        }
+        $this->symbolIds[$id] = true;
         $symbol = [
             'id' => $id,
             'kind' => $kind,

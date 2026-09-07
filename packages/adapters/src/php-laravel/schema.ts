@@ -141,31 +141,67 @@ export const phpRelationshipSchema = z
     }
   })
 
-export const phpRouteActionSchema = z.strictObject({
-  originalName: z.string().min(1).max(4_096),
-  resolvedName: z.string().min(1).max(4_096).optional(),
-  method: z.string().min(1).max(1_024).optional(),
-  dynamic: z.boolean(),
-  targetSymbolId: phpSymbolIdSchema.optional(),
-})
+export const phpRouteActionSchema = z
+  .strictObject({
+    originalName: z.string().min(1).max(4_096),
+    resolvedName: z.string().min(1).max(4_096).optional(),
+    method: z.string().min(1).max(1_024).optional(),
+    dynamic: z.boolean(),
+    targetSymbolId: phpSymbolIdSchema.optional(),
+  })
+  .superRefine((action, context) => {
+    if (action.dynamic) {
+      if (
+        action.resolvedName !== undefined ||
+        action.targetSymbolId !== undefined
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Dynamic route actions cannot claim resolved targets",
+        })
+      }
+    } else if (action.resolvedName === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Static route actions require a resolved target",
+      })
+    }
+  })
 
-export const phpRouteSchema = z.strictObject({
-  id: phpRouteIdSchema,
-  methods: z
-    .array(z.enum(["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "ANY"]))
-    .min(1)
-    .max(8),
-  path: z
-    .string()
-    .regex(/^\/(?:[^\u0000-\u001f]*)$/)
-    .max(2_048)
-    .nullable(),
-  name: z.string().min(1).max(1_024).optional(),
-  middleware: z.array(z.string().min(1).max(1_024)).max(100),
-  action: phpRouteActionSchema,
-  dynamic: z.boolean(),
-  range: phpSourceRangeSchema,
-})
+export const phpRouteSchema = z
+  .strictObject({
+    id: phpRouteIdSchema,
+    methods: z
+      .array(
+        z.enum(["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "ANY"])
+      )
+      .min(1)
+      .max(8),
+    path: z
+      .string()
+      .regex(/^\/(?:[^\u0000-\u001f]*)$/)
+      .max(2_048)
+      .nullable(),
+    name: z.string().min(1).max(1_024).optional(),
+    middleware: z.array(z.string().min(1).max(1_024)).max(100),
+    action: phpRouteActionSchema,
+    dynamic: z.boolean(),
+    range: phpSourceRangeSchema,
+  })
+  .superRefine((route, context) => {
+    if (!route.dynamic && (route.path === null || route.action.dynamic)) {
+      context.addIssue({
+        code: "custom",
+        message: "Static routes require a static path and action",
+      })
+    }
+    if (route.path === null && !route.dynamic) {
+      context.addIssue({
+        code: "custom",
+        message: "Routes without a path must remain dynamic",
+      })
+    }
+  })
 
 export const phpFileErrorSchema = z.strictObject({
   code: z.enum([
@@ -288,16 +324,6 @@ export const phpIndexerResponseSchema = z
           context.addIssue({
             code: "custom",
             message: `Unknown route target ${route.action.targetSymbolId}`,
-          })
-        }
-        if (
-          route.action.dynamic &&
-          (route.action.resolvedName !== undefined ||
-            route.action.targetSymbolId !== undefined)
-        ) {
-          context.addIssue({
-            code: "custom",
-            message: "Dynamic route actions cannot claim resolved targets",
           })
         }
       }

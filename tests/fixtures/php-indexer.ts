@@ -10,6 +10,7 @@ export const phpFixtureFiles = [
   "app/Handlers/CreateOrderHandler.php",
   "app/Models/Order.php",
   "app/Repositories/OrderRepository.php",
+  "app/Repeated/Namespaces.php",
   "app/Requests/CreateOrderRequest.php",
   "app/Resources/OrderResource.php",
   "app/Services/OrderService.php",

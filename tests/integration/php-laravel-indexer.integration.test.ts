@@ -125,6 +125,25 @@ describe("PHP and Laravel structural indexer", () => {
         .flatMap((file) => file.routes)
         .find((candidate) => candidate.path === "/computed-methods")
     ).toMatchObject({ methods: ["ANY"], dynamic: true })
+    expect(
+      response.files
+        .flatMap((file) => file.routes)
+        .find((candidate) => candidate.path === "/mixed-methods")
+    ).toMatchObject({ methods: ["GET"], dynamic: true })
+    const repeatedFile = response.files.find(
+      (file) => file.path === "app/Repeated/Namespaces.php"
+    )
+    expect(
+      repeatedFile?.symbols.filter(
+        (candidate) => candidate.kind === "namespace"
+      )
+    ).toHaveLength(1)
+    expect(
+      repeatedFile?.symbols.filter((candidate) => candidate.kind === "import")
+    ).toHaveLength(1)
+    expect(
+      repeatedFile?.symbols.filter((candidate) => candidate.kind === "class")
+    ).toHaveLength(2)
     for (const qualifiedName of golden.symbols) {
       expect(symbol(response, qualifiedName)).toBeDefined()
     }
