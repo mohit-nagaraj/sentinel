@@ -92,6 +92,11 @@ export class FakeBrowserEvidenceRuntime implements BrowserEvidenceRuntime {
     if (index < 0) throw new Error("Fake action was not scripted")
     const [transition] = active.remaining.splice(index, 1)
     if (transition === undefined) throw new Error("Fake transition disappeared")
+    if (
+      transition.before.stateFingerprint !== active.observation.stateFingerprint
+    ) {
+      throw new Error("Fake transition is stale for the active observation")
+    }
     active.observation = transition.after
     return transition
   }

@@ -73,21 +73,26 @@ describe("browser policy", () => {
         policy
       ).category
     ).toBe("external_navigation")
+    expect(
+      classifyBrowserAction({ kind: "click", name: "Save profile" }, policy)
+    ).toMatchObject({ category: "unknown_submission", allowed: false })
   })
 
   it("allows bounded semantic navigation, progress, and named inputs", () => {
-    expect(
-      classifyBrowserAction(
-        { kind: "click", name: "Continue", submit: true },
-        policy
-      ).allowed
-    ).toBe(true)
+    const progress = classifyBrowserAction(
+      { kind: "click", name: "Continue", submit: true },
+      policy
+    )
+    expect(progress).toMatchObject({ allowed: true, replaySafe: false })
     expect(
       classifyBrowserAction(
         { kind: "fill", name: "Email", inputSlot: "account_email" },
         policy
       )
     ).toMatchObject({ category: "credential_entry", replaySafe: true })
+    expect(classifyBrowserAction({ kind: "back" }, policy).replaySafe).toBe(
+      false
+    )
   })
 
   it("normalizes dynamic routes and strips public URL queries", () => {

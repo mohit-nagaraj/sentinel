@@ -11,6 +11,12 @@ const emailPattern = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi
 const paymentCardPattern = /\b(?:\d[ -]*?){13,19}\b/g
 const phonePattern = /(?<!\w)(?:\+?\d[\d ().-]{7,}\d)(?!\w)/g
 
+export const SCREENSHOT_PII_PATTERNS = [
+  new RegExp(emailPattern.source, "i"),
+  new RegExp(paymentCardPattern.source),
+  new RegExp(phonePattern.source),
+] as const
+
 function replaceExact(value: string, secret: string): string {
   if (secret.length === 0) return value
   return value.split(secret).join("[REDACTED]")

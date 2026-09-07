@@ -215,6 +215,11 @@ describe("Playwright browser evidence runtime", () => {
       /buyer@example\.test|correct horse|vip|selector|locator|cookie|storageState/
     )
     expect(
+      runtime
+        .createRecoveryRecipe(runIds.primary)
+        .steps.some((step) => step.name === "Continue")
+    ).toBe(false)
+    expect(
       artifacts.records.every((record) => record.body.byteLength > 0)
     ).toBe(true)
     await runtime.completeRun(runIds.primary)

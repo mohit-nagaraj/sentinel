@@ -171,6 +171,13 @@ function classifyUnsafeName(name: string): BrowserPolicyCategory | undefined {
   if (/\b(send|email|message|notify|publish|broadcast|invite)\b/i.test(name)) {
     return "external_message"
   }
+  if (
+    /\b(save|create|update|submit|confirm|approve|reserve|register|upload|add)\b/i.test(
+      name
+    )
+  ) {
+    return "unknown_submission"
+  }
   return undefined
 }
 
@@ -222,6 +229,8 @@ export function classifyBrowserAction(
       category !== "unknown_submission" &&
       category !== "payment" &&
       category !== "destructive" &&
-      input.kind !== "check",
+      input.kind !== "check" &&
+      input.kind !== "back" &&
+      input.submit !== true,
   })
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   BrowserEvidenceRedactor,
+  SCREENSHOT_PII_PATTERNS,
   SCREENSHOT_MASK_SELECTOR,
 } from "./redaction.ts"
 
@@ -47,5 +48,10 @@ describe("browser evidence redaction", () => {
     expect(SCREENSHOT_MASK_SELECTOR).toContain("input")
     expect(SCREENSHOT_MASK_SELECTOR).toContain("textarea")
     expect(SCREENSHOT_MASK_SELECTOR).toContain("select")
+    expect(
+      SCREENSHOT_PII_PATTERNS.some((pattern) =>
+        pattern.test("buyer@example.test")
+      )
+    ).toBe(true)
   })
 })

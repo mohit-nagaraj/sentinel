@@ -58,6 +58,7 @@ import {
 import {
   BrowserEvidenceRedactor,
   SCREENSHOT_MASK_SELECTOR,
+  SCREENSHOT_PII_PATTERNS,
 } from "./redaction.ts"
 
 const INTERACTIVE_SELECTOR = [
@@ -1371,7 +1372,15 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
       type: "png",
       animations: "disabled",
       caret: "hide",
-      mask: [session.page.locator(SCREENSHOT_MASK_SELECTOR)],
+      mask: [
+        session.page.locator(SCREENSHOT_MASK_SELECTOR),
+        ...SCREENSHOT_PII_PATTERNS.map((pattern) =>
+          session.page.getByText(pattern)
+        ),
+        ...[...session.secretValues].map((secret) =>
+          session.page.getByText(secret, { exact: false })
+        ),
+      ],
       maskColor: "#000000",
     })
     return artifactIdSchema.parse(

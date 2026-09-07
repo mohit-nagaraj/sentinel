@@ -118,4 +118,35 @@ describe("fake browser evidence runtime", () => {
     await runtime.cancelRun(ids.run)
     expect(runtime.cancelledRuns).toStrictEqual([ids.run])
   })
+
+  it("rejects scripted transitions from a different active state", async () => {
+    const runtime = new FakeBrowserEvidenceRuntime()
+    const initial = observation(ids.beforeEvidence, ids.beforeFingerprint, [
+      candidate,
+    ])
+    const wrongBefore = observation(ids.afterEvidence, ids.afterFingerprint, [
+      candidate,
+    ])
+    const transition = browserTransitionEvidenceSchema.parse({
+      schemaVersion: 1,
+      evidenceId: ids.transitionEvidence,
+      runId: ids.run,
+      action: candidate,
+      before: wrongBefore,
+      after: wrongBefore,
+      network: [],
+      errors: [],
+      observedAt: "2026-09-07T10:00:01.000Z",
+    })
+    runtime.enqueue(ids.run, { initial, transitions: [transition] })
+    await runtime.startRun({
+      applicationId: ids.application,
+      runId: ids.run,
+      entryUrl: initial.url,
+      policy: { allowedOrigins: ["https://example.test"] },
+    })
+    await expect(runtime.performAction(ids.run, ids.action)).rejects.toThrow(
+      /stale/
+    )
+  })
 })
