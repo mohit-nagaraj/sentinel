@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M1 — Foundation and durable execution |
-| Status | `not-started` |
+| Status | `review` |
 | Depends on | SNT-002, SNT-003, SNT-005 |
 | Blocks | Specialist kernel, run API, all compiled workflows |
 | PRD references | §7.4, §9.3, §10.4, §11.6, §13.2, §15 |
@@ -26,17 +26,17 @@ LangGraph.js is the execution graph; Neo4j is the knowledge graph. This issue pr
 
 ## Implementation tasks
 
-- [ ] Initialize `PostgresSaver` in a non-user-controlled schema.
-- [ ] Ensure checkpoint schema is not exposed through browser Data API configuration.
-- [ ] Build graph invocation/resume service keyed by run ID.
-- [ ] Define state fields that contain IDs/raw state, never live clients or large artifacts.
-- [ ] Add node lifecycle event envelope and durable event writer.
-- [ ] Add cancellation and lease ownership checks between nodes/tool calls.
-- [ ] Add per-node retry policies for transient faults only.
-- [ ] Add interrupt creation, persisted review payload, authorized resume, and idempotent repeat handling.
-- [ ] Add recursion/budget guard that ends with typed terminal status.
-- [ ] Build a synthetic graph with deterministic branch, parallel branch, model-tool loop stub, interrupt, and finalizer.
-- [ ] Document graph migration constraints for in-flight interrupted runs.
+- [x] Initialize `PostgresSaver` in a non-user-controlled schema.
+- [x] Ensure checkpoint schema is not exposed through browser Data API configuration.
+- [x] Build graph invocation/resume service keyed by run ID.
+- [x] Define state fields that contain IDs/raw state, never live clients or large artifacts.
+- [x] Add node lifecycle event envelope and durable event writer.
+- [x] Add cancellation and lease ownership checks between nodes/tool calls.
+- [x] Add per-node retry policies for transient faults only.
+- [x] Add interrupt creation, persisted review payload, authorized resume, and idempotent repeat handling.
+- [x] Add recursion/budget guard that ends with typed terminal status.
+- [x] Build a synthetic graph with deterministic branch, parallel branch, model-tool loop stub, interrupt, and finalizer.
+- [x] Document graph migration constraints for in-flight interrupted runs.
 
 ## Acceptance criteria
 
@@ -65,3 +65,17 @@ Real specialist agents, Neo4j publication, UI Realtime subscriptions, and produc
 ## Implementation notes
 
 Follow LangGraph's documented guidance: state stores raw data/IDs, external calls occupy focused nodes, retries are node-specific, and interrupt-producing nodes must avoid unsafe side effects before the interrupt because the node may re-run on resume.
+
+- Runtime package: `@sentinel/orchestration` using `@langchain/langgraph` 1.4.14, `@langchain/core` 1.2.9, and PostgresSaver 1.0.5.
+- Official guidance used: [persistence](https://docs.langchain.com/oss/javascript/langgraph/persistence), [interrupts](https://docs.langchain.com/oss/javascript/langgraph/interrupts), and [PostgresSaver reference](https://reference.langchain.com/javascript/langchain-langgraph-checkpoint-postgres).
+- PostgresSaver always uses the fixed `langgraph_checkpoint` schema; migration and live privilege checks prove `PUBLIC`, `anon`, and `authenticated` have no schema access.
+- Synthetic coverage includes deterministic and parallel branches, transient-only retry, pending-write recovery on a new graph instance, bounded model/tool work, interrupt/authorized resume, duplicate resume, rejection, cancellation, recursion exhaustion, and finalization.
+- In-flight graph migrations must drain old threads or use a versioned graph/checkpoint namespace with an explicit validated state migration; node/state changes are never reinterpreted implicitly.
+- Node wrappers are generic over validated specialist state, recheck ownership and elapsed budget after handlers, preserve LangGraph interrupt control flow, and replace raw failures with fixed checkpoint-safe errors.
+- Node completion is emitted only from the following committed graph step; transient pending-write recovery cannot claim an uncommitted sibling completion.
+- Concurrent resume uses a per-decision coordinator; production uses PostgreSQL transaction-scoped advisory locks and unit tests use the serialized in-memory implementation.
+- Identical resumes continue any committed decision's pending completion/finalizer nodes; only an actually terminal matching actor/outcome short-circuits as idempotent.
+- Wrapped handlers race the remaining elapsed budget and receive an `AbortSignal`, preventing a hung tool/provider promise from holding a run or resume lock indefinitely.
+- Commit-marker guards suppress internal lifecycle starts, terminal resume checks also require no pending graph nodes, and long elapsed budgets use bounded timer chunks rather than overflowing Node timers.
+- Default verification on 2026-09-07: formatting, zero-warning lint, TypeScript build, 33 files and 238 tests passed; 5 orchestration files and 38 tests passed.
+- Opt-in disposable Postgres verification: 1 integration test passed checkpoint setup/privacy, close/recreate restart, interrupt persistence, concurrent authorized/idempotent resume with one finalizer, durable event ordering, and exact thread cleanup.

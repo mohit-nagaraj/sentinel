@@ -54,8 +54,8 @@ graph LR
 | SNT-002 | [Core domain contracts and stable identity](./.tasks/milestone-01-foundation/SNT-002-core-contracts-stable-identity.md) | SNT-001 | done |
 | SNT-003 | [Supabase operational state, secrets, and artifact storage](./.tasks/milestone-01-foundation/SNT-003-supabase-operational-schema.md) | SNT-001, SNT-002 | done |
 | SNT-004 | [Neo4j constraints, repositories, and test isolation](./.tasks/milestone-01-foundation/SNT-004-neo4j-foundation.md) | SNT-001, SNT-002 | done |
-| SNT-005 | [Azure OpenAI model gateway compatibility spike](./.tasks/milestone-01-foundation/SNT-005-azure-model-gateway.md) | SNT-001, SNT-002 | review |
-| SNT-006 | [LangGraph runtime, checkpointing, events, and interrupts](./.tasks/milestone-01-foundation/SNT-006-langgraph-runtime.md) | SNT-002, SNT-003, SNT-005 | not-started |
+| SNT-005 | [Azure OpenAI model gateway compatibility spike](./.tasks/milestone-01-foundation/SNT-005-azure-model-gateway.md) | SNT-001, SNT-002 | done |
+| SNT-006 | [LangGraph runtime, checkpointing, events, and interrupts](./.tasks/milestone-01-foundation/SNT-006-langgraph-runtime.md) | SNT-002, SNT-003, SNT-005 | review |
 
 ---
 
@@ -183,7 +183,7 @@ graph LR
 
 | Milestone | Done | Total | Status |
 |---|---:|---:|---|
-| M1 Foundation and durable execution | 4 | 6 | in-progress |
+| M1 Foundation and durable execution | 5 | 6 | in-progress |
 | M2 Deterministic source evidence | 1 | 7 | in-progress |
 | M3 Specialist discovery agents | 0 | 4 | not-started |
 | M4 Graph construction and reconciliation | 0 | 4 | not-started |
@@ -191,11 +191,11 @@ graph LR
 | M6 PR blast-radius loop | 0 | 4 | not-started |
 | M7 Verification and refresh | 0 | 3 | blocked on deployment decision |
 | M8 Evaluation and delivery | 0 | 3 | not-started |
-| **Overall** | **5** | **35** | **review: SNT-005** |
+| **Overall** | **6** | **35** | **review: SNT-006** |
 
 ## Active front
 
-- **SNT-005** — Azure OpenAI model gateway compatibility spike is in review.
+- **SNT-006** — LangGraph runtime, checkpointing, events, and interrupts is in review.
 - External preparation can proceed without implementation ownership conflicts:
   - GitHub App registration inputs for SNT-026;
   - public baseline/head deployment decision for SNT-030.

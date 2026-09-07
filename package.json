@@ -27,6 +27,7 @@
     "@playwright/test": "^1.55.0",
     "@sentinel/adapters": "workspace:*",
     "@sentinel/contracts": "workspace:*",
+    "@sentinel/orchestration": "workspace:*",
     "@sentinel/storage": "workspace:*",
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "^16.3.0",
