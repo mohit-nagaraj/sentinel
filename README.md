@@ -131,3 +131,22 @@ The paid compatibility probe is skipped unless
 `RUN_AZURE_OPENAI_COMPATIBILITY=1` is set. Its output-token cap is controlled by
 `AZURE_OPENAI_COMPATIBILITY_MAX_TOKENS` and validation never permits more than
 1,024 tokens per call.
+
+## Durable Orchestration
+
+`@sentinel/orchestration` owns custom LangGraph.js workflows. Every invocation
+uses the contract run ID as `thread_id`; PostgresSaver is initialized only in the
+fixed `langgraph_checkpoint` schema reserved by the Supabase migration. That
+schema remains outside browser-facing access. Operational ownership, leases,
+cancellation, and ordered UI events stay in the `sentinel` schema.
+
+Checkpoint state is limited to validated IDs, counters, budgets, bounded
+summaries, references, and pending decisions. Live clients, browser/page objects,
+documents, source/DOM, prompts, credentials, and oversized payloads are rejected.
+Node wrappers recheck run ownership before side effects, retry only explicit
+transient failures, and project redacted lifecycle events into durable run events.
+
+Do not deploy incompatible node names, routing, or checkpoint-state schemas while
+threads are interrupted or failed. Drain/resume those threads on the prior graph,
+or publish a versioned graph/checkpoint namespace and run an explicit validated
+state migration. Never reinterpret an in-flight checkpoint implicitly.

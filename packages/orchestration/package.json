@@ -9,6 +9,14 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@types/pg": "8.23.1",
     "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "@langchain/core": "1.2.9",
+    "@langchain/langgraph": "1.4.14",
+    "@langchain/langgraph-checkpoint-postgres": "1.0.5",
+    "@sentinel/contracts": "workspace:*",
+    "zod": "4.3.6"
   }
 }

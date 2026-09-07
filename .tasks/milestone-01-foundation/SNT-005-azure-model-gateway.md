@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M1 — Foundation and durable execution |
-| Status | `review` |
+| Status | `done` |
 | Depends on | SNT-001, SNT-002 |
 | External prerequisite | Satisfied: configured Azure deployment passed the bounded compatibility probe on 2026-09-07 |
 | Blocks | SNT-006, all specialist agents, grounded report wording |
