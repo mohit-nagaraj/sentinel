@@ -444,7 +444,10 @@ describe("onboarding repository", () => {
 
     expect(publicApplication.configuration.authentication).toEqual({
       method: "credentials",
-      configuredFields: ["Email", "Password"],
+      configuredFields: [
+        { key: "email", label: "Email" },
+        { key: "password", label: "Password" },
+      ],
       revision: 1,
     })
     expect(JSON.stringify(publicApplication)).not.toContain("secret-ref:v1")

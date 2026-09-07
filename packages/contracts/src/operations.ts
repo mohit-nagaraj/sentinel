@@ -285,7 +285,12 @@ function requireDeploymentHost(
   },
   context: z.RefinementCtx
 ): void {
-  const deploymentHost = new URL(value.deploymentUrl).hostname.toLowerCase()
+  let deploymentHost: string
+  try {
+    deploymentHost = new URL(value.deploymentUrl).hostname.toLowerCase()
+  } catch {
+    return
+  }
   if (!value.crawl.allowedHosts.includes(deploymentHost)) {
     context.addIssue({
       code: "custom",
@@ -422,7 +427,14 @@ export const publicOnboardingConfigurationSchema = z.strictObject({
   previewUrlPattern: z.string().max(2_048).optional(),
   authentication: z.strictObject({
     method: z.enum(["none", "credentials", "storage_state"]),
-    configuredFields: z.array(credentialLabelSchema).max(10),
+    configuredFields: z
+      .array(
+        z.strictObject({
+          key: credentialFieldKeySchema,
+          label: credentialLabelSchema,
+        })
+      )
+      .max(10),
     revision: z.number().int().nonnegative(),
   }),
   crawl: onboardingCrawlPolicySchema,
@@ -457,8 +469,14 @@ export const onboardingFormValuesSchema = z.strictObject({
   documentationSources: z.string().max(16_384),
   previewUrlPattern: z.string().max(2_048),
   authenticationMethod: z.enum(["none", "credentials", "storage_state"]),
-  credentialFieldName: z.string().max(96),
-  credentialFieldLabel: z.string().max(80),
+  credentialFields: z
+    .array(
+      z.strictObject({
+        key: z.string().max(96),
+        label: z.string().max(80),
+      })
+    )
+    .max(10),
   allowedHosts: z.string().max(4_096),
   maxActions: z.string().max(8),
   maxScreens: z.string().max(8),

@@ -264,9 +264,9 @@ export function toPublicOnboardingApplication(
   const authentication = record.configuration.authentication
   const configuredFields =
     authentication.method === "credentials"
-      ? authentication.fields.map((field) => field.label)
+      ? authentication.fields.map(({ key, label }) => ({ key, label }))
       : authentication.method === "storage_state"
-        ? ["Encrypted storage state"]
+        ? [{ key: "storage_state", label: "Encrypted storage state" }]
         : []
   return publicOnboardingApplicationSchema.parse({
     id: record.id,
