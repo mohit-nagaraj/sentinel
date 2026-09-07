@@ -12,6 +12,10 @@ import {
 } from "./assessment.ts"
 import { runEventSchema } from "./events.ts"
 import {
+  codeExplorerMissionSchema,
+  codeMissionResultSchema,
+} from "./code-explorer.ts"
+import {
   browserFactEnvelopeSchema,
   browserTransitionSchema,
   codeFactEnvelopeSchema,
@@ -39,6 +43,10 @@ export const parseDiscoveryMission = (input: unknown) =>
   parseContract("discovery mission", discoveryMissionSchema, input)
 export const parseMissionResult = (input: unknown) =>
   parseContract("mission result", missionResultSchema, input)
+export const parseCodeExplorerMission = (input: unknown) =>
+  parseContract("code explorer mission", codeExplorerMissionSchema, input)
+export const parseCodeMissionResult = (input: unknown) =>
+  parseContract("code mission result", codeMissionResultSchema, input)
 export const parseDocumentFactEnvelope = (input: unknown) =>
   parseContract("document fact envelope", documentFactEnvelopeSchema, input)
 export const parseCodeFactEnvelope = (input: unknown) =>
