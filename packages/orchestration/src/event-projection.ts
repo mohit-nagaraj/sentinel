@@ -1,6 +1,8 @@
 import {
   createEventId,
+  evidenceIdSchema,
   hashCanonical,
+  agentKindSchema,
   missionIdSchema,
   parseRunEvent,
   reasonCodeSchema,
@@ -27,12 +29,24 @@ export function projectLangGraphEmission(
     readonly runId: string
     readonly graphName: string
     readonly occurredAt: string
+    readonly agent?: OrchestrationEvent["agent"]
+    readonly missionId?: string
+    readonly evidenceIds?: readonly string[]
   }
 ): OrchestrationEvent {
   const parsedContext = {
     runId: runIdSchema.parse(context.runId),
     graphName: reasonCodeSchema.parse(context.graphName),
     occurredAt: z.iso.datetime({ offset: true }).parse(context.occurredAt),
+    ...(context.agent === undefined
+      ? {}
+      : { agent: agentKindSchema.parse(context.agent) }),
+    ...(context.missionId === undefined
+      ? {}
+      : { missionId: missionIdSchema.parse(context.missionId) }),
+    evidenceIds: (context.evidenceIds ?? []).map((id) =>
+      evidenceIdSchema.parse(id)
+    ),
   }
   if (emission.mode === "updates") {
     const data = z.record(z.string(), z.unknown()).parse(emission.data)
@@ -95,16 +109,20 @@ export class DurableRunEventSink implements OrchestrationEventSink {
       nodeName: event.nodeName,
       summary: event.summary,
       reasonCode: event.reasonCode,
-      evidenceIds: [],
-      ...(event.elapsedMs === undefined || event.elapsedLimitMs === undefined
-        ? {}
-        : {
-            budget: {
-              consumed: event.elapsedMs,
-              limit: event.elapsedLimitMs,
-              unit: "elapsed_ms" as const,
-            },
-          }),
+      evidenceIds: [...(event.evidenceIds ?? [])],
+      ...(event.agent === undefined ? {} : { agent: event.agent }),
+      ...(event.missionId === undefined ? {} : { missionId: event.missionId }),
+      ...(event.budget !== undefined
+        ? { budget: event.budget }
+        : event.elapsedMs === undefined || event.elapsedLimitMs === undefined
+          ? {}
+          : {
+              budget: {
+                consumed: event.elapsedMs,
+                limit: event.elapsedLimitMs,
+                unit: "elapsed_ms" as const,
+              },
+            }),
     }
     const projected = (() => {
       switch (event.kind) {
@@ -112,13 +130,34 @@ export class DurableRunEventSink implements OrchestrationEventSink {
           return { ...common, kind: event.kind, status: "started" as const }
         case "node_completed":
           return { ...common, kind: event.kind, status: "completed" as const }
+        case "mission_started":
+          return {
+            ...common,
+            kind: event.kind,
+            status: "started" as const,
+            agent: event.agent ?? ("system" as const),
+            missionId: event.missionId ?? missionId,
+          }
+        case "mission_completed":
+          return {
+            ...common,
+            kind: event.kind,
+            status:
+              event.status === "failed"
+                ? ("failed" as const)
+                : event.status === "blocked"
+                  ? ("blocked" as const)
+                  : ("completed" as const),
+            agent: event.agent ?? ("system" as const),
+            missionId: event.missionId ?? missionId,
+          }
         case "tool_started":
           return {
             ...common,
             kind: event.kind,
             status: "started" as const,
-            agent: "system" as const,
-            missionId,
+            agent: event.agent ?? ("system" as const),
+            missionId: event.missionId ?? missionId,
             toolName: event.toolName,
           }
         case "tool_completed":
@@ -126,10 +165,20 @@ export class DurableRunEventSink implements OrchestrationEventSink {
             ...common,
             kind: event.kind,
             status: "completed" as const,
-            agent: "system" as const,
-            missionId,
+            agent: event.agent ?? ("system" as const),
+            missionId: event.missionId ?? missionId,
             toolName: event.toolName,
           }
+        case "evidence_gained":
+          return {
+            ...common,
+            kind: event.kind,
+            status: "completed" as const,
+            agent: event.agent ?? ("system" as const),
+            missionId: event.missionId ?? missionId,
+          }
+        case "budget_updated":
+          return { ...common, kind: event.kind, status: "completed" as const }
         case "interrupt_requested":
           return { ...common, kind: event.kind, status: "blocked" as const }
         case "interrupt_resumed":

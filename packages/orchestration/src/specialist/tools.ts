@@ -64,6 +64,7 @@ export interface SpecialistToolContext {
   readonly callId: string
   readonly decisionId: string
   readonly requestHash: string
+  readonly signal: AbortSignal
 }
 
 interface SpecialistToolDefinitionConfig<
@@ -325,6 +326,7 @@ export interface AuthorizeSpecialistToolCallInput {
   readonly state: SpecialistStateValue
   readonly decision: SpecialistDecision
   readonly request: SpecialistToolRequest
+  readonly signal?: AbortSignal
 }
 
 export function authorizeSpecialistToolCall({
@@ -332,6 +334,7 @@ export function authorizeSpecialistToolCall({
   state: stateInput,
   decision: decisionInput,
   request: requestInput,
+  signal,
 }: AuthorizeSpecialistToolCallInput): SpecialistToolAuthorization {
   const state = parseSpecialistState(stateInput)
   const decision = specialistDecisionSchema.parse(decisionInput)
@@ -368,6 +371,7 @@ export function authorizeSpecialistToolCall({
     callId: request.callId,
     decisionId: request.decisionId,
     requestHash,
+    signal: signal ?? new AbortController().signal,
   }
   assertScope(definition, arguments_, context)
 
@@ -462,12 +466,14 @@ export interface ExecuteSpecialistToolCallInput {
   readonly registry: SpecialistToolRegistry
   readonly state: SpecialistStateValue
   readonly call: PendingToolCall
+  readonly signal?: AbortSignal
 }
 
 export async function executeSpecialistToolCall({
   registry,
   state: stateInput,
   call: callInput,
+  signal,
 }: ExecuteSpecialistToolCallInput): Promise<SpecialistToolExecution> {
   const state = parseSpecialistState(stateInput)
   const call = pendingToolCallSchema.parse(callInput)
@@ -514,6 +520,7 @@ export async function executeSpecialistToolCall({
     callId: call.callId,
     decisionId: call.decisionId,
     requestHash: call.requestHash,
+    signal: signal ?? new AbortController().signal,
   }
   assertScope(definition, arguments_, context)
   const estimate = estimateUsage(definition, arguments_, context)
@@ -532,18 +539,7 @@ export async function executeSpecialistToolCall({
     "Authorized tool estimate no longer fits the remaining mission budget"
   )
 
-  const failedExecution = buildSpecialistToolExecution(
-    state,
-    call,
-    specialistToolOutputSchema.parse({
-      outcome: "failed",
-      summary:
-        "Tool execution failed after authorization; side-effect status is uncertain.",
-      evidenceIds: [],
-      references: [],
-      usage: call.preflightUsage,
-    })
-  )
+  const failedExecution = settlePendingSpecialistToolCall(state, call)
   const coordinated = await registry.executeOnce(
     {
       missionId: call.missionId,
@@ -578,6 +574,36 @@ export async function executeSpecialistToolCall({
   } catch {
     return failedExecution
   }
+}
+
+export function settlePendingSpecialistToolCall(
+  stateInput: SpecialistStateValue,
+  callInput: PendingToolCall
+): Extract<SpecialistToolExecution, { kind: "executed" }> {
+  const state = parseSpecialistState(stateInput)
+  const call = pendingToolCallSchema.parse(callInput)
+  assertCallIdentity(state, call)
+  const durableCall = state.pendingToolCalls.find(
+    (candidate) => candidate.callId === call.callId
+  )
+  if (durableCall === undefined) {
+    deny("state_denied", `Tool call ${call.callId} is not pending in state`)
+  }
+  if (canonicalStringify(durableCall) !== canonicalStringify(call)) {
+    deny("duplicate_call", `Tool call ${call.callId} conflicts with state`)
+  }
+  return buildSpecialistToolExecution(
+    state,
+    call,
+    specialistToolOutputSchema.parse({
+      outcome: "failed",
+      summary:
+        "Tool execution failed after authorization; side-effect status is uncertain.",
+      evidenceIds: [],
+      references: [],
+      usage: call.preflightUsage,
+    })
+  )
 }
 
 function buildSpecialistToolExecution(

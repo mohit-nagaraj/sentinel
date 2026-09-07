@@ -1,14 +1,48 @@
-import { persistedTextSchema, reasonCodeSchema } from "@sentinel/contracts"
+import {
+  agentKindSchema,
+  evidenceIdSchema,
+  missionIdSchema,
+  persistedTextSchema,
+  reasonCodeSchema,
+  runIdSchema,
+} from "@sentinel/contracts"
 import { isGraphInterrupt } from "@langchain/langgraph"
 import { z } from "zod"
 
 import { assertCompactCheckpointState } from "./state.ts"
 
+type AgentKind = z.infer<typeof agentKindSchema>
+
+const orchestrationBudgetSchema = z.strictObject({
+  consumed: z.number().int().nonnegative(),
+  limit: z.number().int().nonnegative(),
+  unit: z.enum([
+    "tool_calls",
+    "content_bytes",
+    "document_bytes",
+    "document_pages",
+    "document_sections",
+    "source_lines",
+    "repository_bytes",
+    "repository_files",
+    "browser_actions",
+    "model_calls",
+    "input_tokens",
+    "output_tokens",
+    "reconciliation_rounds",
+    "elapsed_ms",
+  ]),
+})
+
 export type OrchestrationEventKind =
   | "node_started"
   | "node_completed"
+  | "mission_started"
+  | "mission_completed"
   | "tool_started"
   | "tool_completed"
+  | "evidence_gained"
+  | "budget_updated"
   | "interrupt_requested"
   | "interrupt_resumed"
   | "warning"
@@ -18,7 +52,11 @@ export interface OrchestrationEvent {
   readonly runId: string
   readonly graphName: string
   readonly nodeName: string
+  readonly agent?: AgentKind
+  readonly missionId?: string
   readonly toolName?: string
+  readonly evidenceIds?: readonly string[]
+  readonly budget?: z.infer<typeof orchestrationBudgetSchema>
   readonly kind: OrchestrationEventKind
   readonly status: "started" | "completed" | "blocked" | "failed" | "warning"
   readonly summary: string
@@ -156,6 +194,19 @@ function safeEvent(input: OrchestrationEvent): OrchestrationEvent {
     ...(input.toolName === undefined
       ? {}
       : { toolName: reasonCodeSchema.parse(input.toolName) }),
+    ...(input.agent === undefined
+      ? {}
+      : { agent: agentKindSchema.parse(input.agent) }),
+    ...(input.missionId === undefined
+      ? {}
+      : { missionId: missionIdSchema.parse(input.missionId) }),
+    evidenceIds: z
+      .array(evidenceIdSchema)
+      .max(100)
+      .parse(input.evidenceIds ?? []),
+    ...(input.budget === undefined
+      ? {}
+      : { budget: orchestrationBudgetSchema.parse(input.budget) }),
     summary: persistedTextSchema.parse(input.summary),
     reasonCode: reasonCodeSchema.parse(input.reasonCode),
     occurredAt: z.iso.datetime({ offset: true }).parse(input.occurredAt),
@@ -185,6 +236,12 @@ export interface NodeRuntime {
     readonly toolName: string
     readonly phase: "started" | "completed"
   }): Promise<void>
+  emit(
+    input: Omit<
+      OrchestrationEvent,
+      "runId" | "graphName" | "nodeName" | "occurredAt"
+    >
+  ): Promise<void>
 }
 
 export interface RuntimeStateBase {
@@ -194,9 +251,25 @@ export interface RuntimeStateBase {
   readonly budget: { readonly elapsedMs: number }
 }
 
-export interface NodeWrapperOptions {
+const runtimeStateBaseSchema = z.object({
+  runId: runIdSchema,
+  graphName: reasonCodeSchema,
+  startedAtMs: z.number().int().nonnegative(),
+  budget: z.object({ elapsedMs: z.number().int().nonnegative() }),
+})
+
+export interface NodeEventContext {
+  readonly agent?: AgentKind
+  readonly missionId?: string
+  readonly evidenceIds?: readonly string[]
+}
+
+export interface NodeWrapperOptions<State = RuntimeStateBase> {
   readonly emitStarted?: boolean
   readonly lifecycleNodeName?: string
+  readonly runtimeState?: (state: State) => RuntimeStateBase
+  readonly eventContext?: (state: State) => NodeEventContext
+  readonly validateUpdate?: (update: Record<string, unknown>) => void
 }
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647
@@ -215,15 +288,12 @@ function isSafeRuntimeError(error: unknown): error is Error {
   )
 }
 
-export function wrapNode<
-  State extends RuntimeStateBase,
-  Update extends Record<string, unknown>,
->(
+export function wrapNode<State, Update extends Record<string, unknown>>(
   nodeNameInput: string,
   dependencies: RuntimeDependencies,
   parseState: (input: unknown) => State,
   handler: (state: State, runtime: NodeRuntime) => Promise<Update> | Update,
-  options: NodeWrapperOptions = {}
+  options: NodeWrapperOptions<State> = {}
 ): (state: State) => Promise<Update> {
   const nodeName = reasonCodeSchema.parse(nodeNameInput)
   const lifecycleNodeName = reasonCodeSchema.parse(
@@ -237,18 +307,28 @@ export function wrapNode<
       throw new CheckpointStateError()
     }
     const now = dependencies.now ?? (() => new Date())
+    let runtimeState: RuntimeStateBase
+    try {
+      runtimeState = runtimeStateBaseSchema.parse(
+        options.runtimeState?.(state) ?? state
+      )
+    } catch {
+      throw new CheckpointStateError()
+    }
+    const eventContext = options.eventContext?.(state) ?? {}
     const started = now().getTime()
     const abortController = new AbortController()
-    const elapsed = () => Math.max(0, now().getTime() - state.startedAtMs)
+    const elapsed = () =>
+      Math.max(0, now().getTime() - runtimeState.startedAtMs)
     const checkActive = async () => {
       if (
         abortController.signal.aborted ||
-        elapsed() >= state.budget.elapsedMs
+        elapsed() >= runtimeState.budget.elapsedMs
       ) {
         throw new BudgetExhaustedError()
       }
       await dependencies.control.assertActive({
-        runId: state.runId,
+        runId: runtimeState.runId,
         owner: dependencies.owner,
       })
     }
@@ -256,10 +336,12 @@ export function wrapNode<
       signal: abortController.signal,
       checkActive,
       emitTool: async ({ toolName, phase }) => {
+        await checkActive()
         await emit(dependencies, {
-          runId: state.runId,
-          graphName: state.graphName,
+          runId: runtimeState.runId,
+          graphName: runtimeState.graphName,
           nodeName: lifecycleNodeName,
+          ...eventContext,
           toolName: reasonCodeSchema.parse(toolName),
           kind: phase === "started" ? "tool_started" : "tool_completed",
           status: phase,
@@ -270,14 +352,31 @@ export function wrapNode<
           reasonCode: phase === "started" ? "tool_started" : "tool_completed",
         })
       },
+      emit: async (event) => {
+        await checkActive()
+        await emit(dependencies, {
+          runId: runtimeState.runId,
+          graphName: runtimeState.graphName,
+          nodeName: lifecycleNodeName,
+          ...event,
+          ...(eventContext.agent === undefined
+            ? {}
+            : { agent: eventContext.agent }),
+          ...(eventContext.missionId === undefined
+            ? {}
+            : { missionId: eventContext.missionId }),
+          evidenceIds: event.evidenceIds ?? eventContext.evidenceIds ?? [],
+        })
+      },
     }
     try {
       await checkActive()
       if (options.emitStarted !== false) {
         await emit(dependencies, {
-          runId: state.runId,
-          graphName: state.graphName,
+          runId: runtimeState.runId,
+          graphName: runtimeState.graphName,
           nodeName: lifecycleNodeName,
+          ...eventContext,
           kind: "node_started",
           status: "started",
           summary: "Node execution started",
@@ -287,7 +386,7 @@ export function wrapNode<
       let timeout: ReturnType<typeof setTimeout> | undefined
       const timeoutPromise = new Promise<never>((_resolve, reject) => {
         const armTimeout = () => {
-          const remainingMs = state.budget.elapsedMs - elapsed()
+          const remainingMs = runtimeState.budget.elapsedMs - elapsed()
           if (remainingMs <= 0) {
             abortController.abort()
             reject(new BudgetExhaustedError())
@@ -295,7 +394,7 @@ export function wrapNode<
           }
           timeout = setTimeout(
             () => {
-              if (elapsed() >= state.budget.elapsedMs) {
+              if (elapsed() >= runtimeState.budget.elapsedMs) {
                 abortController.abort()
                 reject(new BudgetExhaustedError())
               } else {
@@ -316,7 +415,7 @@ export function wrapNode<
       } finally {
         if (timeout !== undefined) clearTimeout(timeout)
       }
-      assertCompactCheckpointState(update)
+      ;(options.validateUpdate ?? assertCompactCheckpointState)(update)
       await checkActive()
       return update
     } catch (error) {
@@ -326,9 +425,10 @@ export function wrapNode<
         ? error
         : new SanitizedNodeError()
       await emit(dependencies, {
-        runId: state.runId,
-        graphName: state.graphName,
+        runId: runtimeState.runId,
+        graphName: runtimeState.graphName,
         nodeName: lifecycleNodeName,
+        ...eventContext,
         kind: "error",
         status: "failed",
         summary: retryable
@@ -354,7 +454,7 @@ export function wrapNode<
               ? "storage"
               : "unknown",
         elapsedMs: Math.max(0, now().getTime() - started),
-        elapsedLimitMs: state.budget.elapsedMs,
+        elapsedLimitMs: runtimeState.budget.elapsedMs,
       })
       throw safeError
     }

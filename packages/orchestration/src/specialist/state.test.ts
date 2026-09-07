@@ -186,6 +186,12 @@ describe("specialist checkpoint state", () => {
     expect(state).toMatchObject({
       mission,
       agent: "code",
+      kernel: {
+        graphName: "code_specialist",
+        promptTemplateId: "default_specialist",
+        configurationFingerprint: `sha256:${"0".repeat(64)}`,
+        startedAtMs: 0,
+      },
       decisions: [],
       pendingToolCalls: [],
       observations: [],
@@ -496,6 +502,13 @@ describe("specialist checkpoint state", () => {
         approved: true,
       })
     ).toThrow("resolution conflicts")
+    expect(reduceHumanInterrupt(resolved, null)).toBeNull()
+    expect(
+      reduceHumanInterrupt(resolved, {
+        ...interrupt(),
+        decisionId: "decision_03",
+      })
+    ).toMatchObject({ status: "pending", decisionId: "decision_03" })
   })
 
   it("allows only an idempotent terminal result or a needs-human transition", () => {
@@ -521,6 +534,7 @@ describe("specialist checkpoint state", () => {
 
     expect(reduceTerminalResult(null, needsHuman)).toEqual(needsHuman)
     expect(reduceTerminalResult(needsHuman, complete)).toEqual(complete)
+    expect(reduceTerminalResult(needsHuman, null)).toBeNull()
     expect(() =>
       reduceTerminalResult(complete, { ...complete, status: "partial" })
     ).toThrow("conflicts with durable state")

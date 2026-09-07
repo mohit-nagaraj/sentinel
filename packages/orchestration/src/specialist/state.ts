@@ -36,11 +36,14 @@ export const specialistAgentSchema = agentKindSchema.exclude([
   "system",
 ])
 
-export const specialistCallIdSchema = z
-  .string()
-  .min(1)
-  .max(96)
-  .regex(/^[A-Za-z][A-Za-z0-9:._-]*$/)
+export const specialistKernelIdentitySchema = z.strictObject({
+  graphName: reasonCodeSchema,
+  promptTemplateId: reasonCodeSchema,
+  configurationFingerprint: contentHashSchema,
+  startedAtMs: z.number().int().nonnegative(),
+})
+
+export const specialistCallIdSchema = reasonCodeSchema
 
 const compactTextSchema = persistedTextSchema.refine(
   (value) => value.length <= 512,
@@ -557,12 +560,21 @@ export function reduceHumanInterrupt(
 ) {
   const parsedCurrent = humanInterruptStateSchema.nullable().parse(current)
   const parsedNext = humanInterruptStateSchema.nullable().parse(next)
-  if (parsedNext === null) return assertSafeChannelValue(parsedCurrent)
-  if (parsedCurrent === null) return assertSafeChannelValue(parsedNext)
-  assertSameInterruptIdentity(parsedCurrent, parsedNext)
-  if (parsedCurrent.status === "resolved" && parsedNext.status === "pending") {
-    return assertSafeChannelValue(parsedCurrent)
+  if (parsedNext === null) {
+    return assertSafeChannelValue(
+      parsedCurrent?.status === "resolved" ? null : parsedCurrent
+    )
   }
+  if (parsedCurrent === null) return assertSafeChannelValue(parsedNext)
+  if (parsedCurrent.status === "resolved" && parsedNext.status === "pending") {
+    try {
+      assertSameInterruptIdentity(parsedCurrent, parsedNext)
+      return assertSafeChannelValue(parsedCurrent)
+    } catch {
+      return assertSafeChannelValue(parsedNext)
+    }
+  }
+  assertSameInterruptIdentity(parsedCurrent, parsedNext)
   if (
     parsedCurrent.status === "resolved" &&
     parsedNext.status === "resolved" &&
@@ -579,7 +591,11 @@ export function reduceTerminalResult(
 ): MissionResult | null {
   const parsedCurrent = missionResultSchema.nullable().parse(current)
   const parsedNext = missionResultSchema.nullable().parse(next)
-  if (parsedNext === null) return assertSafeChannelValue(parsedCurrent)
+  if (parsedNext === null) {
+    return assertSafeChannelValue(
+      parsedCurrent?.status === "needs_human" ? null : parsedCurrent
+    )
+  }
   if (parsedCurrent === null) return assertSafeChannelValue(parsedNext)
   if (
     parsedCurrent.status === "needs_human" &&
@@ -597,6 +613,7 @@ export function reduceTerminalResult(
 export const SpecialistState = new StateSchema({
   mission: discoveryMissionSchema,
   agent: specialistAgentSchema,
+  kernel: specialistKernelIdentitySchema,
   decisions: new ReducedValue(decisionListSchema, {
     inputSchema: decisionUpdateSchema,
     reducer: reduceSpecialistDecisions,
@@ -665,6 +682,7 @@ export type SpecialistStateUpdate = typeof SpecialistState.Update
 export const specialistStateValueSchema = z.strictObject({
   mission: discoveryMissionSchema,
   agent: specialistAgentSchema,
+  kernel: specialistKernelIdentitySchema,
   decisions: decisionListSchema,
   pendingToolCalls: pendingToolCallListSchema,
   observations: compactObservationListSchema,
@@ -676,8 +694,6 @@ export const specialistStateValueSchema = z.strictObject({
 })
 
 export const specialistUpdateSchema = z.strictObject({
-  mission: discoveryMissionSchema.optional(),
-  agent: specialistAgentSchema.optional(),
   decisions: decisionUpdateSchema.optional(),
   pendingToolCalls: pendingToolCallUpdateSchema.optional(),
   observations: compactObservationUpdateSchema.optional(),
@@ -691,11 +707,18 @@ export const specialistUpdateSchema = z.strictObject({
 export type SpecialistUpdate = z.input<typeof specialistUpdateSchema>
 
 export function createSpecialistInitialState(
-  mission: DiscoveryMission
+  mission: DiscoveryMission,
+  kernel: z.input<typeof specialistKernelIdentitySchema> = {
+    graphName: `${mission.agent}_specialist`,
+    promptTemplateId: "default_specialist",
+    configurationFingerprint: `sha256:${"0".repeat(64)}`,
+    startedAtMs: 0,
+  }
 ): SpecialistStateValue {
   return parseSpecialistState({
     mission,
     agent: mission.agent,
+    kernel,
     decisions: [],
     pendingToolCalls: [],
     observations: [],
@@ -725,8 +748,9 @@ export function validateSpecialistUpdate(
   const state = parseSpecialistState(current)
   const update = specialistUpdateSchema.parse(input)
   const next = parseSpecialistState({
-    mission: update.mission ?? state.mission,
-    agent: update.agent ?? state.agent,
+    mission: state.mission,
+    agent: state.agent,
+    kernel: state.kernel,
     decisions:
       update.decisions === undefined
         ? state.decisions
@@ -766,6 +790,7 @@ export function validateSpecialistUpdate(
   return {
     mission: next.mission,
     agent: next.agent,
+    kernel: next.kernel,
     decisions: new Overwrite(next.decisions),
     pendingToolCalls: new Overwrite(next.pendingToolCalls),
     observations: new Overwrite(next.observations),
