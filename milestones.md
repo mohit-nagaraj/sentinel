@@ -125,7 +125,7 @@ SNT-017 provides a composable explorer and typed ports. SNT-014 remains incomple
 
 | ID | Issue | Depends on | Status |
 |---|---|---|---|
-| SNT-022 | [Application onboarding, compatibility, auth, and safety configuration](./.tasks/milestone-05-control-plane/SNT-022-onboarding-control-plane.md) | SNT-003, SNT-007, SNT-012 | not-started |
+| SNT-022 | [Application onboarding, compatibility, auth, and safety configuration](./.tasks/milestone-05-control-plane/SNT-022-onboarding-control-plane.md) | SNT-003, SNT-007, SNT-012 | done |
 | SNT-023 | [Run APIs, worker control, cancellation, and recovery](./.tasks/milestone-05-control-plane/SNT-023-run-control-api.md) | SNT-006, SNT-022 | not-started |
 | SNT-024 | [Realtime specialist activity and screenshot storyboard](./.tasks/milestone-05-control-plane/SNT-024-agent-activity-ux.md) | SNT-006, SNT-017, SNT-023 | not-started |
 | SNT-025 | [Knowledge, coverage, evidence-path, and review UI](./.tasks/milestone-05-control-plane/SNT-025-knowledge-review-ui.md) | SNT-019, SNT-020, SNT-021, SNT-023, SNT-024 | not-started |
@@ -189,7 +189,7 @@ SNT-017 provides a composable explorer and typed ports. SNT-014 remains incomple
 | M2 Deterministic source evidence | 6 | 7 | in-progress |
 | M3 Specialist discovery agents | 1 | 4 | in-progress |
 | M4 Graph construction and reconciliation | 0 | 4 | not-started |
-| M5 Onboarding and control plane | 0 | 4 | not-started |
+| M5 Onboarding and control plane | 1 | 4 | in-progress |
 | M6 PR blast-radius loop | 0 | 4 | not-started |
 | M7 Verification and refresh | 0 | 3 | blocked on deployment decision |
 | M8 Evaluation and delivery | 0 | 3 | not-started |
@@ -198,6 +198,7 @@ SNT-017 provides a composable explorer and typed ports. SNT-014 remains incomple
 ## Active front
 
 - No implementation issue is currently active.
+- SNT-023 is the next ready control-plane issue after SNT-022 merges.
 - External preparation can proceed without implementation ownership conflicts:
   - GitHub App registration inputs for SNT-026;
   - public baseline/head deployment decision for SNT-030.

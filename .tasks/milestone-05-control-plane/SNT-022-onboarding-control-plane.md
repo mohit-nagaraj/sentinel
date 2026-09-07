@@ -1,12 +1,12 @@
 # SNT-022 — Application onboarding, compatibility, auth, and safety configuration
 
-| Field | Value |
-|---|---|
-| Milestone | M5 — Onboarding and observable control plane |
-| Status | `not-started` |
-| Depends on | SNT-003, SNT-007, SNT-012 |
-| Blocks | Run API, knowledge UI, verification planning |
-| PRD references | §6.3, §8.1–8.3, §18.2–18.3, FR-001–FR-002 |
+| Field          | Value                                        |
+| -------------- | -------------------------------------------- |
+| Milestone      | M5 — Onboarding and observable control plane |
+| Status         | `done`                                       |
+| Depends on     | SNT-003, SNT-007, SNT-012                    |
+| Blocks         | Run API, knowledge UI, verification planning |
+| PRD references | §6.3, §8.1–8.3, §18.2–18.3, FR-001–FR-002    |
 
 ## Background
 
@@ -25,15 +25,15 @@ Onboarding is a product workflow, not a YAML requirement. Users connect the thre
 
 ## Implementation tasks
 
-- [ ] Build server-validated onboarding wizard and application list/detail shell.
-- [ ] Add dynamic auth fields by method without Hi.Events-specific UI conditionals.
-- [ ] Implement secret create/update/delete/reference service and redaction.
-- [ ] Add repository/commit, documentation, and application reachability probes.
-- [ ] Integrate repository inspector/adapters and Playwright readiness checks.
-- [ ] Show detected technologies, warnings, blockers, missing human actions, and proposed scope.
-- [ ] Persist normalized configuration and require explicit confirmation before initialization.
-- [ ] Add edit/reinspect behavior that marks current knowledge stale when relevant inputs change.
-- [ ] Enforce server-side authorization even though take-home tenancy may be simple.
+- [x] Build server-validated onboarding wizard and application list/detail shell.
+- [x] Add dynamic auth fields by method without Hi.Events-specific UI conditionals.
+- [x] Implement secret create/update/delete/reference service and redaction.
+- [x] Add repository/commit, documentation, and application reachability probes.
+- [x] Integrate repository inspector/adapters and Playwright readiness checks.
+- [x] Show detected technologies, warnings, blockers, missing human actions, and proposed scope.
+- [x] Persist normalized configuration and require explicit confirmation before initialization.
+- [x] Add edit/reinspect behavior that marks current knowledge stale when relevant inputs change.
+- [x] Enforce server-side authorization even though take-home tenancy may be simple.
 
 ## Acceptance criteria
 
@@ -60,4 +60,11 @@ GitHub App registration flow, running initialization graph, target-owned seed im
 
 ## Implementation notes
 
-_Populate during implementation with final paths, commands, decisions, test evidence, and any explicitly deferred acceptance item._
+- Public contracts and canonical configuration fingerprints live in `packages/contracts/src/operations.ts`.
+- `packages/adapters/src/onboarding/compatibility.ts` resolves a bounded immutable GitHub checkout, cites installed-stack evidence, probes documentation through the DNS-pinned URL policy, and verifies the application with an exact-origin Playwright page load.
+- `supabase/migrations/20260908000100_onboarding_control_plane.sql` and `packages/storage/src/onboarding-repository.ts` store owner-scoped reference-only configuration, compatibility, confirmation, and stale state. Existing `TargetSecretService` uses Supabase Vault for create/resolve/rotate/delete.
+- `apps/web/lib/control-plane.ts` is the server-only authorization and secret-reconciliation boundary; `apps/web/app/actions.ts` exposes the Server Actions; `apps/web/components/onboarding-control-plane.tsx` renders the application rail and source/access/safety/review workflow.
+- Relevant source, deployment, documentation, authentication, preview, setup, and safety changes invalidate confirmation. Name-only edits preserve current readiness. A report must match the current fingerprint and contain no blockers before scope confirmation.
+- The fixed action denials cover destructive actions, real payments, external messages, and privilege changes. The browser never receives secret references or privileged environment values.
+- Verified with `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test` (669 tests), `pnpm test:integration` (42 passed, 13 credential-backed skips), `pnpm build`, and `pnpm test:browser` (4 Chromium tests).
+- GitHub App registration/exchange, initialization execution, target-owned seed/reset behavior, production multi-tenancy, and preview hosting remain outside this issue.
