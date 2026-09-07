@@ -18,7 +18,7 @@
 |---|---|
 | `not-started` | Dependencies may or may not be satisfied; no implementation begun |
 | `ready` | All dependencies are complete and implementation can begin |
-| `in-progress` | One owner/agent is actively implementing it |
+| `in-progress` | One owner/agent is actively implementing it                       |
 | `blocked` | An external input or failed dependency prevents progress |
 | `review` | Implementation and issue-level tests pass; awaiting review |
 | `done` | Reviewed, accepted, and regression checks pass |
@@ -69,7 +69,7 @@ graph LR
 
 | ID | Issue | Depends on | Status |
 |---|---|---|---|
-| SNT-007 | [Read-only GitHub source connector and ephemeral checkout](./.tasks/milestone-02-source-evidence/SNT-007-github-source-connector.md) | SNT-002, SNT-003 | not-started |
+| SNT-007 | [Read-only GitHub source connector and ephemeral checkout](./.tasks/milestone-02-source-evidence/SNT-007-github-source-connector.md) | SNT-002, SNT-003 | review |
 | SNT-008 | [Documentation discovery, parsing, and provenance map](./.tasks/milestone-02-source-evidence/SNT-008-documentation-source-map.md) | SNT-002, SNT-003, SNT-007 | not-started |
 | SNT-009 | [TypeScript and React structural indexer](./.tasks/milestone-02-source-evidence/SNT-009-typescript-react-indexer.md) | SNT-002, SNT-007 | not-started |
 | SNT-010 | [PHP and Laravel structural indexer](./.tasks/milestone-02-source-evidence/SNT-010-php-laravel-indexer.md) | SNT-002, SNT-007 | not-started |
@@ -184,14 +184,14 @@ graph LR
 | Milestone | Done | Total | Status |
 |---|---:|---:|---|
 | M1 Foundation and durable execution | 4 | 6 | in-progress |
-| M2 Deterministic source evidence | 0 | 7 | not-started |
+| M2 Deterministic source evidence | 0 | 7 | review: SNT-007 |
 | M3 Specialist discovery agents | 0 | 4 | not-started |
 | M4 Graph construction and reconciliation | 0 | 4 | not-started |
 | M5 Onboarding and control plane | 0 | 4 | not-started |
 | M6 PR blast-radius loop | 0 | 4 | not-started |
 | M7 Verification and refresh | 0 | 3 | blocked on deployment decision |
 | M8 Evaluation and delivery | 0 | 3 | not-started |
-| **Overall** | **4** | **35** | **review: SNT-005** |
+| **Overall** | **4** | **35** | **review: SNT-005, SNT-007** |
 
 ## Active front
 
