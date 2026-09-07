@@ -260,7 +260,8 @@ export function buildSyntheticGraph(
         await emitCommittedNodeEvent(dependencies, state, nodeName)
         await afterCommit?.(state)
         return {}
-      }
+      },
+      { emitStarted: false, lifecycleNodeName: nodeName }
     )
 
   return new StateGraph(SyntheticState)
@@ -521,10 +522,11 @@ export class SyntheticOrchestrationService {
             throw new ResumeConflictError()
           }
           if (
-            state.terminalStatus === "complete" ||
-            state.terminalStatus === "blocked" ||
-            state.terminalStatus === "budget_exhausted" ||
-            state.terminalStatus === "failed"
+            snapshot.next.length === 0 &&
+            (state.terminalStatus === "complete" ||
+              state.terminalStatus === "blocked" ||
+              state.terminalStatus === "budget_exhausted" ||
+              state.terminalStatus === "failed")
           ) {
             return this.toResult(state, true)
           }

@@ -220,6 +220,38 @@ describe("orchestration runtime boundaries", () => {
     expect(aborted).toBe(true)
   })
 
+  it("chunks elapsed deadlines above Node's maximum timer delay", async () => {
+    const timer = vi.spyOn(globalThis, "setTimeout")
+    const dependencies: RuntimeDependencies = {
+      owner: "worker-a",
+      control: { assertActive: async () => undefined },
+      events: { append: async () => undefined },
+      effects: { execute: async () => undefined },
+      resumeAuthorization: { authorize: async () => true },
+      resumeCoordinator: new InMemoryResumeCoordinator(),
+    }
+    const longState = createSyntheticInitialState({
+      runId: state.runId,
+      applicationId: state.applicationId,
+      budget: { ...state.budget, elapsedMs: 3_000_000_000 },
+      startedAtMs: Date.now(),
+    })
+    try {
+      const node = wrapNode(
+        "long_budget_node",
+        dependencies,
+        parseSyntheticState,
+        async () => ({})
+      )
+      await expect(node(longState)).resolves.toEqual({})
+      expect(timer.mock.calls.some((call) => call[1] === 2_147_483_647)).toBe(
+        true
+      )
+    } finally {
+      timer.mockRestore()
+    }
+  })
+
   it("projects updates and custom emissions without checkpoint payloads", () => {
     const context = {
       runId: state.runId,

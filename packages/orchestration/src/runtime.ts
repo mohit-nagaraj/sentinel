@@ -194,6 +194,13 @@ export interface RuntimeStateBase {
   readonly budget: { readonly elapsedMs: number }
 }
 
+export interface NodeWrapperOptions {
+  readonly emitStarted?: boolean
+  readonly lifecycleNodeName?: string
+}
+
+const MAX_TIMER_DELAY_MS = 2_147_483_647
+
 function isSafeRuntimeError(error: unknown): error is Error {
   return (
     error instanceof TransientOrchestrationError ||
@@ -215,9 +222,13 @@ export function wrapNode<
   nodeNameInput: string,
   dependencies: RuntimeDependencies,
   parseState: (input: unknown) => State,
-  handler: (state: State, runtime: NodeRuntime) => Promise<Update> | Update
+  handler: (state: State, runtime: NodeRuntime) => Promise<Update> | Update,
+  options: NodeWrapperOptions = {}
 ): (state: State) => Promise<Update> {
   const nodeName = reasonCodeSchema.parse(nodeNameInput)
+  const lifecycleNodeName = reasonCodeSchema.parse(
+    options.lifecycleNodeName ?? nodeName
+  )
   return async (stateInput) => {
     let state: State
     try {
@@ -248,7 +259,7 @@ export function wrapNode<
         await emit(dependencies, {
           runId: state.runId,
           graphName: state.graphName,
-          nodeName,
+          nodeName: lifecycleNodeName,
           toolName: reasonCodeSchema.parse(toolName),
           kind: phase === "started" ? "tool_started" : "tool_completed",
           status: phase,
@@ -262,22 +273,39 @@ export function wrapNode<
     }
     try {
       await checkActive()
-      await emit(dependencies, {
-        runId: state.runId,
-        graphName: state.graphName,
-        nodeName,
-        kind: "node_started",
-        status: "started",
-        summary: "Node execution started",
-        reasonCode: "node_started",
-      })
-      const remainingMs = Math.max(1, state.budget.elapsedMs - elapsed())
+      if (options.emitStarted !== false) {
+        await emit(dependencies, {
+          runId: state.runId,
+          graphName: state.graphName,
+          nodeName: lifecycleNodeName,
+          kind: "node_started",
+          status: "started",
+          summary: "Node execution started",
+          reasonCode: "node_started",
+        })
+      }
       let timeout: ReturnType<typeof setTimeout> | undefined
       const timeoutPromise = new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(() => {
-          abortController.abort()
-          reject(new BudgetExhaustedError())
-        }, remainingMs)
+        const armTimeout = () => {
+          const remainingMs = state.budget.elapsedMs - elapsed()
+          if (remainingMs <= 0) {
+            abortController.abort()
+            reject(new BudgetExhaustedError())
+            return
+          }
+          timeout = setTimeout(
+            () => {
+              if (elapsed() >= state.budget.elapsedMs) {
+                abortController.abort()
+                reject(new BudgetExhaustedError())
+              } else {
+                armTimeout()
+              }
+            },
+            Math.min(remainingMs, MAX_TIMER_DELAY_MS)
+          )
+        }
+        armTimeout()
       })
       let update: Update
       try {
@@ -300,7 +328,7 @@ export function wrapNode<
       await emit(dependencies, {
         runId: state.runId,
         graphName: state.graphName,
-        nodeName,
+        nodeName: lifecycleNodeName,
         kind: "error",
         status: "failed",
         summary: retryable

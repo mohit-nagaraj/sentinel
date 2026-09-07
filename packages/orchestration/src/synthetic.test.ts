@@ -138,6 +138,12 @@ describe("synthetic LangGraph runtime", () => {
     expect(
       test.events.filter((event) => event.kind === "node_completed").length
     ).toBeGreaterThan(0)
+    expect(
+      test.events.some(
+        (event) =>
+          event.nodeName.endsWith("_committed") && event.kind === "node_started"
+      )
+    ).toBe(false)
   })
 
   it("recovers pending parallel writes with a fresh graph instance", async () => {
@@ -214,6 +220,50 @@ describe("synthetic LangGraph runtime", () => {
     expect(recovered.idempotent).toBe(true)
     expect(recovered.status).toBe("completed")
     expect(test.attempts.get("finalize")).toBe(1)
+  })
+
+  it("continues a terminal decision while its commit event is pending", async () => {
+    const memory = new MemorySaver()
+    const test = harness()
+    const graph = buildSyntheticGraph(test.dependencies, memory)
+    const service = new SyntheticOrchestrationService(graph, test.dependencies)
+    const decision = {
+      runId,
+      actorId: "reviewer-1",
+      decisionId: "synthetic_review",
+      approved: true,
+    } as const
+    await service.start(
+      createSyntheticInitialState({
+        runId,
+        applicationId,
+        budget: normalBudget,
+      })
+    )
+    await graph.invoke(new Command({ resume: decision }), {
+      configurable: { thread_id: runId },
+      interruptAfter: ["finalize"],
+    })
+    const pending = await graph.getState({ configurable: { thread_id: runId } })
+    expect(pending.values).toMatchObject({ terminalStatus: "complete" })
+    expect(pending.next).toContain("finalize_committed")
+    expect(
+      test.events.some(
+        (event) =>
+          event.nodeName === "finalize" && event.kind === "node_completed"
+      )
+    ).toBe(false)
+
+    const recovered = await service.resume(decision)
+    expect(recovered.idempotent).toBe(true)
+    expect(recovered.status).toBe("completed")
+    expect(test.attempts.get("finalize")).toBe(1)
+    expect(
+      test.events.some(
+        (event) =>
+          event.nodeName === "finalize" && event.kind === "node_completed"
+      )
+    ).toBe(true)
   })
 
   it("rejects unauthorized resumes without final side effects", async () => {

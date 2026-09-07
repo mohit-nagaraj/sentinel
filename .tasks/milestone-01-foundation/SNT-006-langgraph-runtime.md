@@ -76,5 +76,6 @@ Follow LangGraph's documented guidance: state stores raw data/IDs, external call
 - Concurrent resume uses a per-decision coordinator; production uses PostgreSQL transaction-scoped advisory locks and unit tests use the serialized in-memory implementation.
 - Identical resumes continue any committed decision's pending completion/finalizer nodes; only an actually terminal matching actor/outcome short-circuits as idempotent.
 - Wrapped handlers race the remaining elapsed budget and receive an `AbortSignal`, preventing a hung tool/provider promise from holding a run or resume lock indefinitely.
-- Default verification on 2026-09-07: formatting, zero-warning lint, TypeScript build, 27 files and 170 tests passed; 5 orchestration files and 36 tests passed.
+- Commit-marker guards suppress internal lifecycle starts, terminal resume checks also require no pending graph nodes, and long elapsed budgets use bounded timer chunks rather than overflowing Node timers.
+- Default verification on 2026-09-07: formatting, zero-warning lint, TypeScript build, 27 files and 172 tests passed; 5 orchestration files and 38 tests passed.
 - Opt-in disposable Postgres verification: 1 integration test passed checkpoint setup/privacy, close/recreate restart, interrupt persistence, concurrent authorized/idempotent resume with one finalizer, durable event ordering, and exact thread cleanup.
