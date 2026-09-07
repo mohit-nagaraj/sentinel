@@ -319,6 +319,32 @@ export const baselineCompatibilitySchema = z
         path: ["relevantInterveningPaths"],
       })
     }
+    const expectedReason =
+      value.status === "exact"
+        ? "graph_matches_pr_base"
+        : value.status === "safe_ancestor_warning"
+          ? "ancestor_without_relevant_changes"
+          : value.status === "stale_relevant"
+            ? "ancestor_with_relevant_changes"
+            : undefined
+    if (expectedReason !== undefined && value.reason !== expectedReason) {
+      context.addIssue({
+        code: "custom",
+        message: "Baseline reason does not match its status",
+        path: ["reason"],
+      })
+    }
+    if (
+      value.status === "unrelated_or_unknown" &&
+      value.reason !== "baseline_not_ancestor_of_pr_base" &&
+      value.reason !== "ancestry_unavailable"
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Unrelated baseline has an incompatible reason",
+        path: ["reason"],
+      })
+    }
   })
 
 export const changedFileClassificationSchema = z.enum([
@@ -396,7 +422,11 @@ export const changedFileSchema = z
   })
   .superRefine((value, context) => {
     if (value.operation === "added") {
-      if (value.oldPath !== undefined || value.baseRanges.length > 0) {
+      if (
+        value.oldPath !== undefined ||
+        value.baseRanges.length > 0 ||
+        value.baseSymbolIds.length > 0
+      ) {
         context.addIssue({
           code: "custom",
           message: "Added files cannot contain base-side evidence",
@@ -409,7 +439,11 @@ export const changedFileSchema = z
         })
       }
     } else if (value.operation === "deleted") {
-      if (value.newPath !== undefined || value.headRanges.length > 0) {
+      if (
+        value.newPath !== undefined ||
+        value.headRanges.length > 0 ||
+        value.headSymbolIds.length > 0
+      ) {
         context.addIssue({
           code: "custom",
           message: "Deleted files cannot contain head-side evidence",
@@ -503,7 +537,9 @@ export const changedSymbolSchema = z
   .superRefine((value, context) => {
     if (
       value.operation === "added" &&
-      (value.base !== undefined || value.head === undefined)
+      (value.base !== undefined ||
+        value.head === undefined ||
+        value.baseRanges.length > 0)
     ) {
       context.addIssue({
         code: "custom",
@@ -512,7 +548,9 @@ export const changedSymbolSchema = z
     }
     if (
       value.operation === "deleted" &&
-      (value.base === undefined || value.head !== undefined)
+      (value.base === undefined ||
+        value.head !== undefined ||
+        value.headRanges.length > 0)
     ) {
       context.addIssue({
         code: "custom",
@@ -541,12 +579,27 @@ export const changedSymbolSchema = z
       })
     }
     if (
-      value.operation === "moved" &&
-      value.matchStrategy !== "unique_exact_content"
+      value.operation === "modified" &&
+      value.base !== undefined &&
+      value.head !== undefined &&
+      value.base.filePath !== value.head.filePath
     ) {
       context.addIssue({
         code: "custom",
-        message: "Moved symbols require a unique exact-content match",
+        message: "Modified symbols must remain in the same path",
+      })
+    }
+    const expectedStrategy = {
+      added: "unmatched",
+      deleted: "unmatched",
+      modified: "same_structure",
+      renamed: "git_rename_structure",
+      moved: "unique_exact_content",
+    }[value.operation]
+    if (value.matchStrategy !== expectedStrategy) {
+      context.addIssue({
+        code: "custom",
+        message: `${value.operation} symbols require ${expectedStrategy} matching`,
         path: ["matchStrategy"],
       })
     }

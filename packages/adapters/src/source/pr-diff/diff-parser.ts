@@ -335,7 +335,12 @@ function classifyFile(file: MutableFile): {
     reasons.push("unsupported_language")
   }
   if (!file.patchAvailable) reasons.push("patch_unavailable")
-  if (file.hunks.length === 0 && !file.binary && file.patchAvailable) {
+  if (
+    file.hunks.length === 0 &&
+    !file.binary &&
+    file.patchAvailable &&
+    file.operation === "modified"
+  ) {
     reasons.push("no_changed_ranges")
   }
   if (file.copied) reasons.push("copied_file")
@@ -498,6 +503,7 @@ export function parseGitDiff(
       current.operation = "renamed"
       current.newPath = parseExtendedPath(line.slice("rename to ".length))
     } else if (line.startsWith("copy from ")) {
+      parseExtendedPath(line.slice("copy from ".length))
       current.operation = "added"
       current.oldPath = undefined
       current.copied = true
@@ -570,9 +576,14 @@ export function parseGitHubPullFiles(
     else if (input.status === "removed") operation = "deleted"
     else if (input.status === "renamed") operation = "renamed"
     else operation = "modified"
-    const oldPath = operation === "added" ? undefined : (previous ?? filename)
+    const oldPath =
+      operation === "added"
+        ? undefined
+        : operation === "renamed"
+          ? previous
+          : filename
     const newPath = operation === "deleted" ? undefined : filename
-    const patchAvailable = input.patch !== undefined
+    const patchAvailable = input.patch !== undefined || operation === "renamed"
     const synthetic = parseGitDiff(
       [
         `diff --git a/${oldPath ?? filename} b/${newPath ?? filename}`,
