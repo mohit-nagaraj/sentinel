@@ -24,9 +24,9 @@ describe("browser policy", () => {
     expect(isAllowedBrowserUrl("http://app.example.test/path", policy)).toBe(
       false
     )
-    expect(() => canonicalizeAllowedOrigin("https://example.test/path")).toThrow(
-      /origin/i
-    )
+    expect(() =>
+      canonicalizeAllowedOrigin("https://example.test/path")
+    ).toThrow(/origin/i)
   })
 
   it("permits HTTP only for explicitly enabled loopback fixtures", () => {
@@ -34,7 +34,9 @@ describe("browser policy", () => {
       allowedOrigins: ["http://127.0.0.1:4312"],
       allowInsecureLocalhost: true,
     })
-    expect(isAllowedBrowserUrl("http://127.0.0.1:4312/form", fixture)).toBe(true)
+    expect(isAllowedBrowserUrl("http://127.0.0.1:4312/form", fixture)).toBe(
+      true
+    )
     expect(() =>
       createBrowserPolicy({
         allowedOrigins: ["http://example.test"],
@@ -89,11 +91,13 @@ describe("browser policy", () => {
   })
 
   it("normalizes dynamic routes and strips public URL queries", () => {
-    expect(normalizeRoute("https://app.example.test/orders/123?token=secret")).toBe(
-      "/orders/{id}"
-    )
     expect(
-      toPublicBrowserUrl("https://app.example.test/orders/123?email=a%40b.test#x")
+      normalizeRoute("https://app.example.test/orders/123?token=secret")
+    ).toBe("/orders/{id}")
+    expect(
+      toPublicBrowserUrl(
+        "https://app.example.test/orders/123?email=a%40b.test#x"
+      )
     ).toBe("https://app.example.test/orders/123")
   })
 

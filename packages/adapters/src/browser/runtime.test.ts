@@ -60,11 +60,9 @@ function observation(
 describe("fake browser evidence runtime", () => {
   it("follows the production observation and transition contract", async () => {
     const runtime = new FakeBrowserEvidenceRuntime()
-    const before = observation(
-      ids.beforeEvidence,
-      ids.beforeFingerprint,
-      [candidate]
-    )
+    const before = observation(ids.beforeEvidence, ids.beforeFingerprint, [
+      candidate,
+    ])
     const after = observation(ids.afterEvidence, ids.afterFingerprint, [])
     const transition = browserTransitionEvidenceSchema.parse({
       schemaVersion: 1,
@@ -87,9 +85,9 @@ describe("fake browser evidence runtime", () => {
         policy: { allowedOrigins: ["https://example.test"] },
       })
     ).resolves.toStrictEqual(before)
-    await expect(runtime.performAction(ids.run, ids.action)).resolves.toStrictEqual(
-      transition
-    )
+    await expect(
+      runtime.performAction(ids.run, ids.action)
+    ).resolves.toStrictEqual(transition)
     expect((await runtime.observe(ids.run)).stateFingerprint).toBe(
       ids.afterFingerprint
     )

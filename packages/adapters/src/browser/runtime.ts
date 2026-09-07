@@ -100,9 +100,7 @@ export interface BrowserArtifactSink {
 }
 
 export interface BrowserStorageStateProvider {
-  resolve(
-    reference: string
-  ): Promise<BrowserContextOptions["storageState"]>
+  resolve(reference: string): Promise<BrowserContextOptions["storageState"]>
 }
 
 export interface BrowserInputSlotResolver {
@@ -141,7 +139,10 @@ export interface BrowserReplayResult {
 export interface BrowserEvidenceRuntime {
   startRun(options: BrowserRunOptions): Promise<BrowserObservation>
   observe(runId: string): Promise<BrowserObservation>
-  performAction(runId: string, actionId: string): Promise<BrowserTransitionEvidence>
+  performAction(
+    runId: string,
+    actionId: string
+  ): Promise<BrowserTransitionEvidence>
   createRecoveryRecipe(runId: string): BrowserRecoveryRecipe
   replay(
     options: BrowserRunOptions,
@@ -288,7 +289,11 @@ function iso(date: Date): string {
   return date.toISOString()
 }
 
-function roleForElement(tag: string, explicitRole: string, inputType: string): string {
+function roleForElement(
+  tag: string,
+  explicitRole: string,
+  inputType: string
+): string {
   if (explicitRole.length > 0) return normalizeReasonCode(explicitRole)
   if (tag === "a") return "link"
   if (tag === "button") return "button"
@@ -341,7 +346,11 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
     }
     const policy = createBrowserPolicy(options.policy)
     if (!isAllowedBrowserUrl(options.entryUrl, policy)) {
-      throw this.publicError(runId, "host_denied", "Entry URL is not allowlisted")
+      throw this.publicError(
+        runId,
+        "host_denied",
+        "Entry URL is not allowlisted"
+      )
     }
 
     const storageState =
@@ -520,12 +529,18 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
           )
         }
         const after = await this.captureObservation(session, actionId)
+        const afterScreenId = createStableKey({
+          kind: "screen",
+          applicationId: session.applicationId,
+          normalizedRoute: after.normalizedRoute,
+          stateFingerprint: after.stateFingerprint,
+        })
         const transition = browserTransitionEvidenceSchema.parse({
           schemaVersion: 1,
           evidenceId: createRunScopedEvidenceId({
             applicationId: session.applicationId,
             runId: session.runId,
-            sourceId: after.evidenceId,
+            sourceId: afterScreenId,
             kind: "browser_transition",
             ordinal: session.transitionOrdinal++,
           }),
@@ -551,11 +566,27 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         }
         return transition
       } catch (error) {
-        if (error instanceof BrowserRuntimeError) throw error
+        if (error instanceof BrowserRuntimeError) {
+          if (
+            error.failure.screenshotArtifactId !== undefined ||
+            error.failure.traceArtifactId !== undefined
+          ) {
+            throw error
+          }
+          throw await this.failureWithArtifacts(
+            session,
+            error.failure.code,
+            error.failure.message,
+            actionId
+          )
+        }
+        const violation = session.violations[violationStart]
         throw await this.failureWithArtifacts(
           session,
-          "browser_error",
-          this.redactor(session).errorMessage(error),
+          violation ?? "browser_error",
+          violation === undefined
+            ? this.redactor(session).errorMessage(error)
+            : "Browser action triggered a denied side effect",
           actionId
         )
       }
@@ -588,7 +619,10 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         "Recovery recipe belongs to a different application"
       )
     }
-    let observation = await this.startRun({ ...options, entryUrl: recipe.entryUrl })
+    let observation = await this.startRun({
+      ...options,
+      entryUrl: recipe.entryUrl,
+    })
     const transitions: BrowserTransitionEvidence[] = []
     try {
       for (const step of recipe.steps) {
@@ -600,7 +634,8 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
           )
         }
         const candidate = observation.candidates.find(
-          (value) => value.signature === step.signature && value.policy.replaySafe
+          (value) =>
+            value.signature === step.signature && value.policy.replaySafe
         )
         if (candidate === undefined) {
           throw this.publicError(
@@ -613,7 +648,9 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
           observation.runId,
           candidate.actionId
         )
-        if (transition.after.stateFingerprint !== step.expectedAfterFingerprint) {
+        if (
+          transition.after.stateFingerprint !== step.expectedAfterFingerprint
+        ) {
           throw this.publicError(
             observation.runId,
             "recovery_mismatch",
@@ -728,7 +765,7 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
     const screenshotArtifactId = await this.captureScreenshot(
       session,
       "failure"
-    ).catch(() => undefined)
+    )
     const traceArtifactId = await this.captureFailureTrace(session).catch(
       () => undefined
     )
@@ -784,14 +821,7 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         await route.abort("blockedbyclient")
         return
       }
-      let redirects = 0
-      let previous = request.redirectedFrom()
-      while (previous !== null) {
-        redirects += 1
-        previous = previous.redirectedFrom()
-      }
-      session.redirectCount = Math.max(session.redirectCount, redirects)
-      if (redirects > session.policy.budgets.maxRedirects) {
+      if (session.redirectCount > session.policy.budgets.maxRedirects) {
         session.violations.push("redirect_limit_reached")
         await route.abort("blockedbyclient")
         return
@@ -832,6 +862,12 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
       record.status = response.status()
       record.completedAt = this.clock.now()
       record.outcome = "response"
+      if (response.status() >= 300 && response.status() < 400) {
+        session.redirectCount += 1
+        if (session.redirectCount > session.policy.budgets.maxRedirects) {
+          session.violations.push("redirect_limit_reached")
+        }
+      }
     })
     session.context.on("requestfailed", (request) => {
       const record = session.requestRecords.get(request)
@@ -841,18 +877,22 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
     })
     session.context.on("console", (message) => {
       if (message.type() !== "error" && message.type() !== "warning") return
-      session.errors.push(browserRuntimeErrorEvidenceSchema.parse({
-        kind: "console",
-        message: this.redactor(session).redactText(message.text(), 1_024),
-        observedAt: iso(this.clock.now()),
-      }))
+      session.errors.push(
+        browserRuntimeErrorEvidenceSchema.parse({
+          kind: "console",
+          message: this.redactor(session).redactText(message.text(), 1_024),
+          observedAt: iso(this.clock.now()),
+        })
+      )
     })
     session.page.on("pageerror", (error) => {
-      session.errors.push(browserRuntimeErrorEvidenceSchema.parse({
-        kind: "page",
-        message: this.redactor(session).errorMessage(error),
-        observedAt: iso(this.clock.now()),
-      }))
+      session.errors.push(
+        browserRuntimeErrorEvidenceSchema.parse({
+          kind: "page",
+          message: this.redactor(session).errorMessage(error),
+          observedAt: iso(this.clock.now()),
+        })
+      )
     })
     session.page.on("download", (download) => {
       session.downloadCount += 1
@@ -872,11 +912,13 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
 
   private async inspectPage(session: RunSession): Promise<PageSnapshot> {
     const redactor = this.redactor(session)
-    const url = redactor.redactUrl(
-      toPublicBrowserUrl(session.page.url())
-    )
+    const url = redactor.redactUrl(toPublicBrowserUrl(session.page.url()))
     if (!isAllowedBrowserUrl(url, session.policy)) {
-      throw this.publicError(session.runId, "host_denied", "Page left allowlist")
+      throw this.publicError(
+        session.runId,
+        "host_denied",
+        "Page left allowlist"
+      )
     }
     const title = redactor.redactText(await session.page.title(), 512)
     const headings = await this.visibleTexts(
@@ -1024,9 +1066,20 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
       const raw = await locator.evaluate((element) => {
         const html = element as HTMLElement
         const input = element instanceof HTMLInputElement ? element : undefined
-        const labels = input?.labels
-          ? [...input.labels]
-              .map((label) => label.textContent ?? "")
+        const labelledControl =
+          element instanceof HTMLInputElement ||
+          element instanceof HTMLSelectElement ||
+          element instanceof HTMLTextAreaElement
+            ? element
+            : undefined
+        const labels = labelledControl?.labels
+          ? [...labelledControl.labels]
+              .map((label) =>
+                [...label.childNodes]
+                  .filter((node) => node.nodeType === Node.TEXT_NODE)
+                  .map((node) => node.textContent ?? "")
+                  .join(" ")
+              )
               .join(" ")
           : ""
         const tag = html.tagName.toLowerCase()
@@ -1044,8 +1097,10 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
           html.getAttribute("title") ||
           inputButtonName ||
           ""
-        const button = element instanceof HTMLButtonElement ? element : undefined
-        const anchor = element instanceof HTMLAnchorElement ? element : undefined
+        const button =
+          element instanceof HTMLButtonElement ? element : undefined
+        const anchor =
+          element instanceof HTMLAnchorElement ? element : undefined
         return {
           tag,
           explicitRole: html.getAttribute("role") ?? "",
@@ -1094,7 +1149,7 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         kind,
         role,
         name: descriptor.name,
-        inputSlot,
+        ...(inputSlot === undefined ? {} : { inputSlot }),
         occurrence,
       })
       result.push({
@@ -1130,7 +1185,10 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         name,
         disabled: kind === "back" && session.actionCount === 0,
         signature: hashCanonical({ kind, role: "navigation", name }),
-        policy: classifyBrowserAction({ kind, role: "navigation", name }, session.policy),
+        policy: classifyBrowserAction(
+          { kind, role: "navigation", name },
+          session.policy
+        ),
       })
     }
     return result
@@ -1229,12 +1287,14 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
     switch (candidate.kind) {
       case "click":
       case "navigate":
-        if (locator === undefined) throw new Error("Action target is unavailable")
+        if (locator === undefined)
+          throw new Error("Action target is unavailable")
         await locator.click({ timeout: session.policy.budgets.actionTimeoutMs })
         return
       case "fill":
       case "select": {
-        if (locator === undefined) throw new Error("Action target is unavailable")
+        if (locator === undefined)
+          throw new Error("Action target is unavailable")
         if (candidate.inputSlot === undefined) {
           throw this.publicError(
             session.runId,
@@ -1261,7 +1321,8 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         return
       }
       case "check":
-        if (locator === undefined) throw new Error("Action target is unavailable")
+        if (locator === undefined)
+          throw new Error("Action target is unavailable")
         await locator.check()
         return
       case "back":

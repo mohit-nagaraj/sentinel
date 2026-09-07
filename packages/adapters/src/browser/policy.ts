@@ -22,12 +22,7 @@ const browserBudgetSchema = z.strictObject({
   maxDownloads: z.number().int().min(0).max(20).default(0),
   maxInputLength: z.number().int().min(1).max(16_384).default(2_048),
   actionTimeoutMs: z.number().int().min(100).max(120_000).default(10_000),
-  navigationTimeoutMs: z
-    .number()
-    .int()
-    .min(100)
-    .max(120_000)
-    .default(30_000),
+  navigationTimeoutMs: z.number().int().min(100).max(120_000).default(30_000),
   actionExpiryMs: z.number().int().min(100).max(300_000).default(30_000),
   observationSettleMs: z.number().int().min(0).max(5_000).default(50),
 })
@@ -61,9 +56,7 @@ export interface ActionClassificationInput {
 
 function isLoopback(hostname: string): boolean {
   return (
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "[::1]"
+    hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]"
   )
 }
 
@@ -83,7 +76,9 @@ export function canonicalizeAllowedOrigin(
     if (!allowedHttp) throw new Error("Browser origins require HTTPS")
   }
   if (url.pathname !== "/" || url.search.length > 0 || url.hash.length > 0) {
-    throw new Error("Allowed origins must not include a path, query, or fragment")
+    throw new Error(
+      "Allowed origins must not include a path, query, or fragment"
+    )
   }
   return url.origin
 }
@@ -156,7 +151,9 @@ export function toPublicBrowserUrl(input: string): string {
 }
 
 function classifyUnsafeName(name: string): BrowserPolicyCategory | undefined {
-  if (/\b(delete|destroy|erase|remove|terminate|cancel account)\b/i.test(name)) {
+  if (
+    /\b(delete|destroy|erase|remove|terminate|cancel account)\b/i.test(name)
+  ) {
     return "destructive"
   }
   if (
@@ -166,7 +163,9 @@ function classifyUnsafeName(name: string): BrowserPolicyCategory | undefined {
   ) {
     return "payment"
   }
-  if (/\b(admin|administrator|permission|privilege|change role)\b/i.test(name)) {
+  if (
+    /\b(admin|administrator|permission|privilege|change role)\b/i.test(name)
+  ) {
     return "account_privilege"
   }
   if (/\b(send|email|message|notify|publish|broadcast|invite)\b/i.test(name)) {

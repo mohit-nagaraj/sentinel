@@ -181,9 +181,7 @@ export const browserRecoveryRecipeSchema = z.strictObject({
 })
 
 export type BrowserActionKind = z.infer<typeof browserActionKindSchema>
-export type BrowserPolicyCategory = z.infer<
-  typeof browserPolicyCategorySchema
->
+export type BrowserPolicyCategory = z.infer<typeof browserPolicyCategorySchema>
 export type BrowserPolicyDecision = z.infer<typeof browserPolicyDecisionSchema>
 export type BrowserActionCandidate = z.infer<
   typeof browserActionCandidateSchema
@@ -206,6 +204,4 @@ export type BrowserRuntimeFailureCode = z.infer<
 >
 export type BrowserRuntimeFailure = z.infer<typeof browserRuntimeFailureSchema>
 export type BrowserReplayStep = z.infer<typeof browserReplayStepSchema>
-export type BrowserRecoveryRecipe = z.infer<
-  typeof browserRecoveryRecipeSchema
->
+export type BrowserRecoveryRecipe = z.infer<typeof browserRecoveryRecipeSchema>

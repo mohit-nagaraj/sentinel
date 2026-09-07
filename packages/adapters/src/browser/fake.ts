@@ -55,8 +55,10 @@ export class FakeBrowserEvidenceRuntime implements BrowserEvidenceRuntime {
   async startRun(options: BrowserRunOptions): Promise<BrowserObservation> {
     const runId = runIdSchema.parse(options.runId)
     const script = this.scripts.get(runId)
-    if (script === undefined) throw new Error(`No fake browser script for ${runId}`)
-    if (this.active.has(runId)) throw new Error(`Fake browser run already active`)
+    if (script === undefined)
+      throw new Error(`No fake browser script for ${runId}`)
+    if (this.active.has(runId))
+      throw new Error(`Fake browser run already active`)
     const recovery =
       script.recovery ??
       browserRecoveryRecipeSchema.parse({
