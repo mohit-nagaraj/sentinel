@@ -12,6 +12,18 @@ namespace Fixture\Repeated {
     }
 }
 
+namespace Fixture\Other {
+    use Fixture\Models\Order;
+
+    final class Third
+    {
+        public function order(): Order
+        {
+            return new Order();
+        }
+    }
+}
+
 namespace Fixture\Repeated {
     use Fixture\Models\Order;
 

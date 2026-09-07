@@ -30,6 +30,20 @@ function rangeSize(range: PhpSourceRange): number {
   return range.endFilePos - range.startFilePos
 }
 
+function smallestContainingRange(
+  symbol: PhpSymbol,
+  startLine: number,
+  endLine: number
+): number {
+  return Math.min(
+    ...symbol.declarationRanges
+      .filter(
+        (range) => range.startLine <= startLine && range.endLine >= endLine
+      )
+      .map(rangeSize)
+  )
+}
+
 export class PhpCodeIndex {
   private readonly symbols: readonly PhpSymbol[]
   private readonly relationships: readonly PhpRelationship[]
@@ -61,13 +75,15 @@ export class PhpCodeIndex {
     }
     return this.response.files
       .find((file) => file.path === path)
-      ?.symbols.filter(
-        (symbol) =>
-          symbol.range.startLine <= startLine && symbol.range.endLine >= endLine
+      ?.symbols.filter((symbol) =>
+        symbol.declarationRanges.some(
+          (range) => range.startLine <= startLine && range.endLine >= endLine
+        )
       )
       .sort(
         (left, right) =>
-          rangeSize(left.range) - rangeSize(right.range) ||
+          smallestContainingRange(left, startLine, endLine) -
+            smallestContainingRange(right, startLine, endLine) ||
           left.qualifiedName.localeCompare(right.qualifiedName, "en")
       )[0]
   }

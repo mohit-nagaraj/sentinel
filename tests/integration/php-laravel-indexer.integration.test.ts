@@ -137,13 +137,25 @@ describe("PHP and Laravel structural indexer", () => {
       repeatedFile?.symbols.filter(
         (candidate) => candidate.kind === "namespace"
       )
-    ).toHaveLength(1)
+    ).toHaveLength(2)
     expect(
       repeatedFile?.symbols.filter((candidate) => candidate.kind === "import")
-    ).toHaveLength(1)
+    ).toHaveLength(2)
     expect(
       repeatedFile?.symbols.filter((candidate) => candidate.kind === "class")
-    ).toHaveLength(2)
+    ).toHaveLength(3)
+    const repeatedNamespace = repeatedFile?.symbols.find(
+      (candidate) =>
+        candidate.kind === "namespace" &&
+        candidate.qualifiedName === "Fixture\\Repeated"
+    )
+    expect(repeatedNamespace?.declarationRanges).toHaveLength(2)
+    expect(
+      new PhpCodeIndex(response).findSmallestEnclosingSymbol(
+        "app/Repeated/Namespaces.php",
+        27
+      )?.id
+    ).toBe(repeatedNamespace?.id)
     for (const qualifiedName of golden.symbols) {
       expect(symbol(response, qualifiedName)).toBeDefined()
     }

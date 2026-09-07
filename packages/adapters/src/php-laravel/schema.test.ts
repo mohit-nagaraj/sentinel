@@ -23,6 +23,7 @@ const symbol = {
   final: true,
   attributes: [],
   range,
+  declarationRanges: [range],
 }
 
 function response() {

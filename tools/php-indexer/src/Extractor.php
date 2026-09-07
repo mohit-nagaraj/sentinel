@@ -189,6 +189,13 @@ final class Extractor
     private function sortFile(array &$file): void
     {
         $sort = static fn (array $left, array $right): int => [$left['range']['startFilePos'], $left['id']] <=> [$right['range']['startFilePos'], $right['id']];
+        foreach ($file['symbols'] as &$symbol) {
+            usort(
+                $symbol['declarationRanges'],
+                static fn (array $left, array $right): int => [$left['startFilePos'], $left['endFilePos']] <=> [$right['startFilePos'], $right['endFilePos']],
+            );
+        }
+        unset($symbol);
         usort($file['symbols'], $sort);
         usort($file['relationships'], $sort);
         usort($file['routes'], $sort);

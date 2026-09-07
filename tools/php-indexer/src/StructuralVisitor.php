@@ -17,8 +17,8 @@ final class StructuralVisitor extends NodeVisitorAbstract
     /** @var list<array<string, mixed>> */
     private array $symbols = [];
 
-    /** @var array<string, true> */
-    private array $symbolIds = [];
+    /** @var array<string, int> */
+    private array $symbolIndexes = [];
 
     /** @var list<array<string, mixed>> */
     private array $relationships = [];
@@ -39,6 +39,8 @@ final class StructuralVisitor extends NodeVisitorAbstract
     private array $pushedFunctionContexts = [];
 
     private ?string $namespaceSymbolId = null;
+
+    private ?string $namespaceName = null;
 
     public function __construct(
         private readonly string $path,
@@ -150,6 +152,7 @@ final class StructuralVisitor extends NodeVisitorAbstract
         }
         if ($node instanceof Stmt\Namespace_) {
             $this->namespaceSymbolId = null;
+            $this->namespaceName = null;
         }
         return null;
     }
@@ -158,9 +161,11 @@ final class StructuralVisitor extends NodeVisitorAbstract
     {
         if ($node->name === null) {
             $this->namespaceSymbolId = null;
+            $this->namespaceName = null;
             return;
         }
         $name = $node->name->toString();
+        $this->namespaceName = $name;
         $this->namespaceSymbolId = $this->addSymbol($node, 'namespace', $name, $name, null);
     }
 
@@ -176,7 +181,13 @@ final class StructuralVisitor extends NodeVisitorAbstract
                 Stmt\Use_::TYPE_CONSTANT => 'constant',
                 default => 'class',
             };
-            $qualified = sprintf('%s import %s as %s', $kind, $name, $alias);
+            $qualified = sprintf(
+                '%s %s import %s as %s',
+                $this->namespaceName ?? '<global>',
+                $kind,
+                $name,
+                $alias,
+            );
             $this->addSymbol($use, 'import', $qualified, $name, $this->namespaceSymbolId);
         }
     }
@@ -577,10 +588,22 @@ final class StructuralVisitor extends NodeVisitorAbstract
         $originalName = Protocol::bounded($originalName, $this->maxStringLength);
         $range = Protocol::range($modifierNode ?? $node);
         $id = Protocol::codeSymbolId($this->path, $qualifiedName, $kind);
-        if (isset($this->symbolIds[$id])) {
+        if (isset($this->symbolIndexes[$id])) {
+            $index = $this->symbolIndexes[$id];
+            $this->symbols[$index]['declarationRanges'][] = $range;
+            if ($range['startFilePos'] < $this->symbols[$index]['range']['startFilePos']) {
+                $this->symbols[$index]['range']['startLine'] = $range['startLine'];
+                $this->symbols[$index]['range']['startFilePos'] = $range['startFilePos'];
+                $this->symbols[$index]['range']['startTokenPos'] = $range['startTokenPos'];
+            }
+            if ($range['endFilePos'] > $this->symbols[$index]['range']['endFilePos']) {
+                $this->symbols[$index]['range']['endLine'] = $range['endLine'];
+                $this->symbols[$index]['range']['endFilePos'] = $range['endFilePos'];
+                $this->symbols[$index]['range']['endTokenPos'] = $range['endTokenPos'];
+            }
             return $id;
         }
-        $this->symbolIds[$id] = true;
+        $this->symbolIndexes[$id] = count($this->symbols);
         $symbol = [
             'id' => $id,
             'kind' => $kind,
@@ -597,6 +620,7 @@ final class StructuralVisitor extends NodeVisitorAbstract
                 ? $this->attributeEvidence(($modifierNode ?? $node)->attrGroups)
                 : [],
             'range' => $range,
+            'declarationRanges' => [$range],
         ];
         if ($containerId !== null) {
             $symbol['containerSymbolId'] = $containerId;

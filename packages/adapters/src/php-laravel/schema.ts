@@ -75,21 +75,36 @@ export const phpNameEvidenceSchema = z.strictObject({
   resolvedName: z.string().min(1).max(4_096),
 })
 
-export const phpSymbolSchema = z.strictObject({
-  id: phpSymbolIdSchema,
-  kind: phpSymbolKindSchema,
-  role: phpSymbolRoleSchema,
-  name: z.string().min(1).max(1_024),
-  qualifiedName: z.string().min(1).max(4_096),
-  originalName: z.string().min(1).max(4_096),
-  containerSymbolId: phpSymbolIdSchema.optional(),
-  visibility: z.enum(["public", "protected", "private"]).optional(),
-  static: z.boolean(),
-  abstract: z.boolean(),
-  final: z.boolean(),
-  attributes: z.array(phpNameEvidenceSchema).max(100),
-  range: phpSourceRangeSchema,
-})
+export const phpSymbolSchema = z
+  .strictObject({
+    id: phpSymbolIdSchema,
+    kind: phpSymbolKindSchema,
+    role: phpSymbolRoleSchema,
+    name: z.string().min(1).max(1_024),
+    qualifiedName: z.string().min(1).max(4_096),
+    originalName: z.string().min(1).max(4_096),
+    containerSymbolId: phpSymbolIdSchema.optional(),
+    visibility: z.enum(["public", "protected", "private"]).optional(),
+    static: z.boolean(),
+    abstract: z.boolean(),
+    final: z.boolean(),
+    attributes: z.array(phpNameEvidenceSchema).max(100),
+    range: phpSourceRangeSchema,
+    declarationRanges: z.array(phpSourceRangeSchema).min(1).max(1_000),
+  })
+  .superRefine((symbol, context) => {
+    for (const occurrence of symbol.declarationRanges) {
+      if (
+        occurrence.startFilePos < symbol.range.startFilePos ||
+        occurrence.endFilePos > symbol.range.endFilePos
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Symbol declaration range escapes its envelope",
+        })
+      }
+    }
+  })
 
 export const phpRelationshipKindSchema = z.enum([
   "extends",
