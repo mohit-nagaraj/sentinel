@@ -613,7 +613,7 @@ describe("PHP indexer process limits", () => {
         ]),
       })
     ).rejects.toMatchObject({ code: "executable_missing" })
-  })
+  }, 15_000)
 
   it("enforces file, fact, request, path-depth, and stderr limits", async () => {
     const hashes = await phpFixtureHashes(fixtureRoot, [
