@@ -76,7 +76,7 @@ export async function createGitRepositoryFixture(): Promise<GitRepositoryFixture
   )
   const unsafeSymlinkSha = await commit(workPath, "unsafe symlink")
 
-  await git(workPath, "switch", "-c", "submodule", "main")
+  await git(workPath, "switch", "--force", "-c", "submodule", "main")
   await git(
     workPath,
     "update-index",
