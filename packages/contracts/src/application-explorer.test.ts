@@ -505,5 +505,26 @@ describe("Application Explorer contracts", () => {
         evidenceClaims: [],
       })
     ).toThrow()
+
+    expect(() =>
+      applicationExplorerMissionOutputSchema.parse({
+        ...base,
+        result: {
+          ...base.result,
+          claims: [
+            {
+              id: claimId("1"),
+              status: "proposed",
+              subjectId: ids.beforeScreen,
+              predicate: "fabricated_relation",
+              objectId: ids.afterScreen,
+              evidenceIds: [ids.beforeEvidence],
+              explanation: "Unsupported mission claim",
+            },
+          ],
+        },
+        evidenceClaims: screenClaims,
+      })
+    ).toThrow(/backed/)
   })
 })

@@ -1,5 +1,6 @@
 import {
   applicationExplorerCheckpointStateSchema,
+  applicationExplorerPlannerContextSchema,
   applicationExplorerPlannerDecisionSchema,
   browserActionCandidateSchema,
   browserObservationSchema,
@@ -343,28 +344,36 @@ function actionDecision(
 }
 
 function finishDecision(
-  classification: "goal_completed" | "unsafe_boundary" | "dead_end",
-  reasonCode = classification
+  classification:
+    | "goal_completed"
+    | "unsafe_boundary"
+    | "dead_end"
+    | "recoverable_branch"
+    | "login_block",
+  reasonCode: string = classification,
+  summary: string = "Checkout confirmation observed"
 ): ApplicationExplorerPlannerDecision {
   const status =
     classification === "goal_completed"
       ? "complete"
       : classification === "unsafe_boundary"
         ? "needs_human"
-        : "partial"
+        : classification === "login_block"
+          ? "blocked"
+          : "partial"
   return applicationExplorerPlannerDecisionSchema.parse({
     schemaVersion: 1,
     missionId,
     runId,
     tool: "finish_application_mission",
     reasonCode,
-    summary: "Checkout confirmation observed",
+    summary,
     terminal: {
       schemaVersion: 1,
       classification,
       status,
       reasonCode,
-      summary: "Checkout confirmation observed",
+      summary,
     },
   })
 }
@@ -375,6 +384,7 @@ function browserOptions(): TestBrowserOptions {
     runId,
     entryUrl: "https://example.test/checkout",
     storageStateReference: `secret-ref:v1:${"c".repeat(64)}`,
+    policy: { allowedOrigins: ["https://example.test"] },
     marker: "test",
   }
 }
@@ -498,6 +508,20 @@ describe("Application Explorer mission runtime", () => {
         },
       })
     ).rejects.toThrow(/outside the application mission scope/)
+    await expect(
+      createApplicationExplorer({
+        browser: new ScriptedBrowser(first, []),
+        planner: new ScriptedPlanner([]),
+      }).run({
+        mission: mission(),
+        browserOptions: {
+          ...browserOptions(),
+          policy: {
+            allowedOrigins: ["https://example.test", "https://outside.example"],
+          },
+        },
+      })
+    ).rejects.toThrow(/outside the application mission scope/)
   })
 
   it("discovers a multi-screen workflow and constructs linked evidence claims", async () => {
@@ -560,6 +584,23 @@ describe("Application Explorer mission runtime", () => {
     )
     expect(workflow).toMatchObject({ stepIds: expect.any(Array) })
     expect(events.some((event) => event.kind === "evidence_gained")).toBe(true)
+    for (const toolName of [
+      "observe_page",
+      "perform_observed_action",
+      "finish_application_mission",
+    ]) {
+      expect(
+        events.filter(
+          (event) =>
+            event.toolName === toolName && event.kind === "tool_started"
+        )
+      ).toHaveLength(
+        events.filter(
+          (event) =>
+            event.toolName === toolName && event.kind === "tool_completed"
+        ).length
+      )
+    }
   })
 
   it("keeps backtracked alternatives as separate evidence workflows", async () => {
@@ -580,14 +621,15 @@ describe("Application Explorer mission runtime", () => {
       transition("8", childA, back, rootAgain),
       transition("9", rootAgain, branchB, childB),
     ])
+    const planner = new ScriptedPlanner([
+      actionDecision("perform_observed_action", root, branchA),
+      actionDecision("navigate_history", childA, back),
+      actionDecision("perform_observed_action", rootAgain, branchB),
+      finishDecision("goal_completed"),
+    ])
     const output = await createApplicationExplorer({
       browser,
-      planner: new ScriptedPlanner([
-        actionDecision("perform_observed_action", root, branchA),
-        actionDecision("navigate_history", childA, back),
-        actionDecision("perform_observed_action", rootAgain, branchB),
-        finishDecision("goal_completed"),
-      ]),
+      planner,
     }).run({ mission: mission(), browserOptions: browserOptions() })
 
     expect(output.checkpoint.path).toHaveLength(3)
@@ -599,9 +641,43 @@ describe("Application Explorer mission runtime", () => {
         .filter((claim) => claim.claimKind === "workflow")
         .map((claim) => claim.fact.name)
     ).toEqual([
-      "Checkout confirmation observed branch 1",
-      "Checkout confirmation observed branch 2",
+      "Discover checkout and confirmation: Home to Branch A",
+      "Discover checkout and confirmation: Home to Branch B",
     ])
+    expect(
+      applicationExplorerPlannerContextSchema.parse(planner.contexts[2])
+        .progress
+    ).toMatchObject({ exploredBranchCount: 2, currentBranchDepth: 0 })
+
+    const alternateSummary = await createApplicationExplorer({
+      browser: new ScriptedBrowser(root, [
+        transition("7", root, branchA, childA),
+        transition("8", childA, back, rootAgain),
+        transition("9", rootAgain, branchB, childB),
+      ]),
+      planner: new ScriptedPlanner([
+        actionDecision("perform_observed_action", root, branchA),
+        actionDecision("navigate_history", childA, back),
+        actionDecision("perform_observed_action", rootAgain, branchB),
+        finishDecision(
+          "goal_completed",
+          "goal_completed",
+          "A differently worded completion summary"
+        ),
+      ]),
+    }).run({ mission: mission(), browserOptions: browserOptions() })
+    const productIds = (result: typeof output) =>
+      result.evidenceClaims
+        .filter(
+          (claim) =>
+            claim.claimKind === "workflow" || claim.claimKind === "flow_step"
+        )
+        .map((claim) => claim.fact.id)
+        .sort()
+    expect(productIds(alternateSummary)).toEqual(productIds(output))
+    expect(new Set(output.result.claims.map((claim) => claim.id)).size).toBe(
+      output.result.claims.length
+    )
   })
 
   it("fails closed when the planner selects outside its bounded context", async () => {
@@ -729,6 +805,23 @@ describe("Application Explorer mission runtime", () => {
     expect(safeBrowser.replayedOptions[0]?.storageStateReference).toBe(
       browserOptions().storageStateReference
     )
+    const mismatchedAuth = await createApplicationExplorer({
+      browser: safeBrowser,
+      planner: new ScriptedPlanner([]),
+    }).run({
+      mission: mission(),
+      browserOptions: {
+        ...browserOptions(),
+        storageStateReference: `secret-ref:v1:${"d".repeat(64)}`,
+      },
+      checkpoint: firstOutput.checkpoint,
+      priorEvidenceClaims: firstOutput.evidenceClaims,
+    })
+    expect(mismatchedAuth.result.status).toBe("needs_human")
+    expect(mismatchedAuth.result.stopReason.code).toBe(
+      "authentication_state_mismatch"
+    )
+    expect(safeBrowser.replayedOptions).toHaveLength(1)
 
     const mutable = candidate({
       id: "6",
@@ -808,6 +901,119 @@ describe("Application Explorer mission runtime", () => {
     expect(interrupted.result.status).toBe("needs_human")
     expect(interrupted.result.stopReason.code).toBe("non_idempotent_replay")
     expect(uncertainBrowser.replayedOptions).toHaveLength(0)
+  })
+
+  it("continues a recovered mission without colliding with prior workflow claims", async () => {
+    const firstAction = candidate({ id: "1", signature: "2", name: "First" })
+    const secondAction = candidate({ id: "3", signature: "4", name: "Second" })
+    const first = observation("1", "2", "/", "Start", [firstAction])
+    const second = observation("3", "4", "/middle", "Middle", [secondAction])
+    const third = observation("5", "6", "/done", "Done", [])
+    const browser = new ScriptedBrowser(first, [
+      transition("7", first, firstAction, second),
+      transition("8", second, secondAction, third),
+    ])
+    const initial = await createApplicationExplorer({
+      browser,
+      planner: new ScriptedPlanner([
+        actionDecision("perform_observed_action", first, firstAction),
+        finishDecision("goal_completed"),
+      ]),
+    }).run({ mission: mission(), browserOptions: browserOptions() })
+    const continued = await createApplicationExplorer({
+      browser,
+      planner: new ScriptedPlanner([
+        actionDecision("perform_observed_action", second, secondAction),
+        finishDecision("goal_completed"),
+      ]),
+    }).run({
+      mission: mission(),
+      browserOptions: browserOptions(),
+      checkpoint: initial.checkpoint,
+      priorEvidenceClaims: initial.evidenceClaims,
+    })
+
+    expect(continued.result.status).toBe("complete")
+    expect(
+      continued.evidenceClaims.filter(
+        (claim) => claim.claimKind === "flow_step"
+      )
+    ).toHaveLength(2)
+    expect(new Set(continued.result.claims.map((claim) => claim.id)).size).toBe(
+      continued.result.claims.length
+    )
+  })
+
+  it("enforces planner deadlines and cleans up after event persistence failure", async () => {
+    const first = observation("1", "2", "/", "Start", [])
+    const deadlineBrowser = new ScriptedBrowser(first, [])
+    const hangingPlanner: ApplicationExplorerPlannerGateway = {
+      async generateStructured<Output>(): Promise<{
+        readonly output: Output
+        readonly model: string
+        readonly usage: {
+          readonly inputTokens: number
+          readonly outputTokens: number
+          readonly totalTokens: number
+        }
+      }> {
+        return new Promise(() => undefined)
+      },
+    }
+    const timed = await createApplicationExplorer({
+      browser: deadlineBrowser,
+      planner: hangingPlanner,
+    }).run({
+      mission: mission({ budget: { ...budget, elapsedMs: 25 } }),
+      browserOptions: browserOptions(),
+    })
+    expect(timed.result.status).toBe("budget_exhausted")
+    expect(timed.result.stopReason.code).toBe("elapsed_budget_exhausted")
+    expect(deadlineBrowser.isActive()).toBe(false)
+
+    const eventBrowser = new ScriptedBrowser(first, [])
+    await expect(
+      createApplicationExplorer({
+        browser: eventBrowser,
+        planner: new ScriptedPlanner([]),
+        events: {
+          async append(event) {
+            if (
+              event.kind === "tool_completed" &&
+              event.toolName === "observe_page"
+            ) {
+              throw new Error("event persistence unavailable")
+            }
+          },
+        },
+      }).run({ mission: mission(), browserOptions: browserOptions() })
+    ).rejects.toThrow(/event persistence unavailable/)
+    expect(eventBrowser.isActive()).toBe(false)
+  })
+
+  it("rejects ungrounded completion and returns a typed login blocker", async () => {
+    const first = observation("1", "2", "/login", "Sign in", [])
+    const ungrounded = await createApplicationExplorer({
+      browser: new ScriptedBrowser(first, []),
+      planner: new ScriptedPlanner([finishDecision("goal_completed")]),
+    }).run({ mission: mission(), browserOptions: browserOptions() })
+    expect(ungrounded.result.status).toBe("partial")
+    expect(ungrounded.result.stopReason.code).toBe(
+      "completion_without_evidence"
+    )
+
+    const login = await createApplicationExplorer({
+      browser: new ScriptedBrowser(first, []),
+      planner: new ScriptedPlanner([
+        finishDecision("login_block", "login_required", "Sign in is required"),
+      ]),
+    }).run({ mission: mission(), browserOptions: browserOptions() })
+    expect(login.result.status).toBe("blocked")
+    expect(login.blockers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "login_required", recoverable: true }),
+      ])
+    )
   })
 
   it("truncates recovery at the first non-replay-safe path boundary", async () => {

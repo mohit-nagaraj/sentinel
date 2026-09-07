@@ -304,6 +304,7 @@ export const applicationExplorerPathStepSchema = z.strictObject({
   ordinal: z.number().int().nonnegative().max(99),
   actionId: actionIdSchema,
   actionSignature: contentHashSchema,
+  actionKind: browserActionKindSchema,
   beforeObservationEvidenceId: evidenceIdSchema,
   beforeStateFingerprint: contentHashSchema,
   afterObservationEvidenceId: evidenceIdSchema,
@@ -410,6 +411,7 @@ export const applicationExplorerCheckpointStateSchema = z
         !pathStep.replaySafe ||
         replayStep.ordinal !== index ||
         replayStep.signature !== pathStep.actionSignature ||
+        replayStep.kind !== pathStep.actionKind ||
         replayStep.expectedBeforeFingerprint !==
           pathStep.beforeStateFingerprint ||
         replayStep.expectedAfterFingerprint !== pathStep.afterStateFingerprint
@@ -660,6 +662,62 @@ export const applicationExplorerMissionOutputSchema = z
     const uiElementClaims = output.evidenceClaims.filter(
       (claim) => claim.claimKind === "ui_element"
     )
+    const resultClaimIds = new Set<string>()
+    for (const [index, claim] of output.result.claims.entries()) {
+      const backingEvidenceIds = new Set<string>()
+      for (const evidenceClaim of output.evidenceClaims) {
+        if (evidenceClaim.claimKind === "runtime_request") continue
+        const relation =
+          evidenceClaim.claimKind === "flow_step"
+            ? {
+                subjectId: evidenceClaim.fact.workflowId,
+                predicate: "contains_step",
+                objectId: evidenceClaim.fact.id,
+              }
+            : evidenceClaim.claimKind === "ui_element"
+              ? {
+                  subjectId: evidenceClaim.fact.screenId,
+                  predicate: "contains_ui_element",
+                  objectId: evidenceClaim.fact.id,
+                }
+              : {
+                  subjectId: evidenceClaim.fact.id,
+                  predicate:
+                    evidenceClaim.claimKind === "screen"
+                      ? "screen_observed"
+                      : "workflow_observed",
+                  objectId: evidenceClaim.fact.id,
+                }
+        const sameRelation =
+          String(relation.subjectId) === String(claim.subjectId) &&
+          relation.predicate === claim.predicate &&
+          String(relation.objectId) === String(claim.objectId)
+        if (sameRelation) {
+          evidenceClaim.evidenceIds.forEach((evidenceId) =>
+            backingEvidenceIds.add(evidenceId)
+          )
+        }
+      }
+      const backed = claim.evidenceIds.every((evidenceId) =>
+        backingEvidenceIds.has(evidenceId)
+      )
+      if (!backed) {
+        context.addIssue({
+          code: "custom",
+          path: ["result", "claims", index],
+          message:
+            "Mission claims must be backed by matching Application Explorer evidence claims",
+        })
+      }
+      if (resultClaimIds.has(claim.id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["result", "claims", index, "id"],
+          message: "Mission claim IDs must be unique",
+        })
+      }
+      resultClaimIds.add(claim.id)
+    }
 
     for (const [index, claim] of output.evidenceClaims.entries()) {
       if (

@@ -10,6 +10,7 @@ import {
   createStableKey,
   discoveryMissionSchema,
   flowStepIdSchema,
+  hashCanonical,
   missionResultSchema,
   navigateHistoryToolInputSchema,
   observePageToolInputSchema,
@@ -30,6 +31,7 @@ import {
   type BrowserRecoveryRecipe,
   type BrowserTransitionEvidence,
   type DiscoveryMission,
+  type EvidenceId,
   type MissionBudget,
 } from "@sentinel/contracts"
 import { z } from "zod"
@@ -38,6 +40,7 @@ const DEFAULT_CANDIDATE_LIMIT = 16
 const DEFAULT_NO_PROGRESS_LIMIT = 3
 const DEFAULT_REPEATED_STATE_LIMIT = 4
 const HARD_ITERATION_LIMIT = 100
+const MAX_TIMER_DELAY_MS = 2_147_483_647
 
 const ZERO_BUDGET: MissionBudget = {
   toolCalls: 0,
@@ -70,6 +73,9 @@ export interface ApplicationBrowserRunOptions {
   readonly runId: string
   readonly entryUrl: string
   readonly storageStateReference?: string | undefined
+  readonly policy: {
+    readonly allowedOrigins: readonly string[]
+  }
 }
 
 export interface ApplicationBrowserRuntime<
@@ -183,6 +189,13 @@ export class ApplicationExplorerToolError extends Error {
   }
 }
 
+class PlannerDeadlineError extends Error {
+  constructor() {
+    super("Application Explorer planner deadline reached")
+    this.name = "PlannerDeadlineError"
+  }
+}
+
 interface EvidenceAccumulator {
   readonly transitions: BrowserTransitionEvidence[]
   readonly priorClaims: ApplicationExplorerEvidenceClaim[]
@@ -205,6 +218,28 @@ function iso(now: () => Date): string {
 
 function utf8Length(value: string): number {
   return new TextEncoder().encode(value).byteLength
+}
+
+async function withinPlannerDeadline<Value>(
+  promise: Promise<Value>,
+  remainingMs: number
+): Promise<Value> {
+  if (remainingMs <= 0) throw new PlannerDeadlineError()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new PlannerDeadlineError()),
+          Math.min(remainingMs, MAX_TIMER_DELAY_MS)
+        )
+        timer.unref?.()
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
 }
 
 function normalizeHint(value: string): string[] {
@@ -303,6 +338,33 @@ function blocker(
 function assertMissionTool(mission: DiscoveryMission, tool: string): void {
   if (!mission.scope.allowedTools.includes(tool)) {
     throw new ApplicationExplorerToolError("tool_not_allowed", false)
+  }
+}
+
+function assertBrowserScope(
+  mission: DiscoveryMission,
+  browserOptions: ApplicationBrowserRunOptions
+): void {
+  const allowedHosts = new Set(mission.scope.allowedHosts)
+  const scopedUrls = [
+    browserOptions.entryUrl,
+    ...browserOptions.policy.allowedOrigins,
+  ]
+  for (const value of scopedUrls) {
+    const hostname = new URL(value).hostname.toLowerCase()
+    if (!allowedHosts.has(hostname)) {
+      throw new Error("Browser host is outside the application mission scope")
+    }
+  }
+}
+
+function assertObservationScope(
+  mission: DiscoveryMission,
+  observation: BrowserObservation
+): void {
+  const hostname = new URL(observation.url).hostname.toLowerCase()
+  if (!mission.scope.allowedHosts.includes(hostname)) {
+    throw new Error("Browser observation escaped the application mission scope")
   }
 }
 
@@ -576,6 +638,19 @@ export function buildApplicationExplorerPlannerContext(input: {
         outcome: visit.outcome,
       }
     })
+  const branchProgress = path.reduce(
+    (progress, step) => {
+      if (step.actionKind === "back") {
+        return {
+          depth: Math.max(0, progress.depth - 1),
+          branches: progress.branches + 1,
+        }
+      }
+      if (step.actionKind === "reload") return progress
+      return { ...progress, depth: progress.depth + 1 }
+    },
+    { depth: 0, branches: 1 }
+  )
   return applicationExplorerPlannerContextSchema.parse({
     schemaVersion: 1,
     mission,
@@ -602,12 +677,8 @@ export function buildApplicationExplorerPlannerContext(input: {
       pendingFrontierActions:
         input.checkpoint?.frontier.filter((entry) => entry.status === "pending")
           .length ?? input.observation.candidates.length,
-      exploredBranchCount:
-        input.checkpoint === undefined
-          ? 1
-          : new Set(input.checkpoint.frontier.map((entry) => entry.branchDepth))
-              .size,
-      currentBranchDepth: path.length,
+      exploredBranchCount: branchProgress.branches,
+      currentBranchDepth: branchProgress.depth,
       observedTransitionCount: path.length,
       observedRuntimeRequestCount:
         input.checkpoint?.observedRuntimeRequestCount ?? 0,
@@ -701,6 +772,7 @@ function recoveryPrefix(
     if (
       replayStep === undefined ||
       replayStep.signature !== pathStep.actionSignature ||
+      replayStep.kind !== pathStep.actionKind ||
       replayStep.expectedBeforeFingerprint !==
         pathStep.beforeStateFingerprint ||
       replayStep.expectedAfterFingerprint !== pathStep.afterStateFingerprint
@@ -895,6 +967,7 @@ function appendTransition(input: {
       ordinal: checkpoint.path.length,
       actionId: transition.action.actionId,
       actionSignature: transition.action.signature,
+      actionKind: transition.action.kind,
       beforeObservationEvidenceId: transition.before.evidenceId,
       beforeStateFingerprint: transition.before.stateFingerprint,
       afterObservationEvidenceId: transition.after.evidenceId,
@@ -1009,7 +1082,6 @@ function stableStateVisitCount(
 
 function buildEvidenceClaims(input: {
   readonly mission: DiscoveryMission
-  readonly terminal: ApplicationExplorerTerminal
   readonly transitions: readonly BrowserTransitionEvidence[]
   readonly priorClaims: readonly ApplicationExplorerEvidenceClaim[]
 }): ApplicationExplorerEvidenceClaim[] {
@@ -1025,13 +1097,11 @@ function buildEvidenceClaims(input: {
   }
   if (currentPath.length > 0) paths.push(currentPath)
   return paths.reduce<ApplicationExplorerEvidenceClaim[]>(
-    (claims, transitions, index) =>
+    (claims, transitions) =>
       buildPathEvidenceClaims({
         mission: input.mission,
-        terminal: input.terminal,
         transitions,
         priorClaims: claims,
-        ...(paths.length === 1 ? {} : { branchOrdinal: index + 1 }),
       }),
     [...input.priorClaims]
   )
@@ -1039,29 +1109,33 @@ function buildEvidenceClaims(input: {
 
 function buildPathEvidenceClaims(input: {
   readonly mission: DiscoveryMission
-  readonly terminal: ApplicationExplorerTerminal
   readonly transitions: readonly BrowserTransitionEvidence[]
   readonly priorClaims: readonly ApplicationExplorerEvidenceClaim[]
-  readonly branchOrdinal?: number | undefined
 }): ApplicationExplorerEvidenceClaim[] {
   const claims = [...input.priorClaims]
   if (input.transitions.length === 0) return claims
 
-  const baseWorkflowName =
-    input.terminal.classification === "goal_completed"
-      ? input.terminal.summary
-      : input.mission.goal
+  const firstTransition = input.transitions[0]
+  const lastTransition = input.transitions.at(-1)
+  if (firstTransition === undefined || lastTransition === undefined)
+    return claims
+  const pathFingerprint = hashCanonical({
+    kind: "observed_application_path",
+    steps: input.transitions.map((transition) => ({
+      actionSignature: transition.action.signature,
+      beforeStateFingerprint: transition.before.stateFingerprint,
+      afterStateFingerprint: transition.after.stateFingerprint,
+    })),
+  })
   const workflowName = boundedLabel(
-    input.branchOrdinal === undefined
-      ? baseWorkflowName
-      : `${baseWorkflowName} branch ${input.branchOrdinal}`
+    `${input.mission.goal}: ${firstTransition.before.title} to ${lastTransition.after.title}`
   )
   const workflowId = workflowIdSchema.parse(
     createStableKey({
       kind: "workflow",
       applicationId: input.mission.applicationId,
       actor: "user",
-      normalizedName: workflowName,
+      normalizedName: `observed-path-${pathFingerprint.slice("sha256:".length)}`,
     })
   )
   const screens = new Map<
@@ -1302,50 +1376,69 @@ function genericClaims(
   applicationId: string,
   missionId: string
 ) {
-  return claims
-    .filter(
-      (
-        claim
-      ): claim is Exclude<
-        ApplicationExplorerEvidenceClaim,
-        { claimKind: "runtime_request" }
-      > => claim.claimKind !== "runtime_request"
-    )
-    .map((claim) => {
-      const relation =
-        claim.claimKind === "flow_step"
+  const relations = new Map<
+    string,
+    {
+      readonly subjectId: string
+      readonly predicate: string
+      readonly objectId: string
+      readonly claimKind: string
+      readonly evidenceIds: Set<EvidenceId>
+    }
+  >()
+  for (const claim of claims) {
+    if (claim.claimKind === "runtime_request") continue
+    const relation =
+      claim.claimKind === "flow_step"
+        ? {
+            subjectId: claim.fact.workflowId,
+            predicate: "contains_step",
+            objectId: claim.fact.id,
+          }
+        : claim.claimKind === "ui_element"
           ? {
-              subjectId: claim.fact.workflowId,
-              predicate: "contains_step",
+              subjectId: claim.fact.screenId,
+              predicate: "contains_ui_element",
               objectId: claim.fact.id,
             }
-          : claim.claimKind === "ui_element"
-            ? {
-                subjectId: claim.fact.screenId,
-                predicate: "contains_ui_element",
-                objectId: claim.fact.id,
-              }
-            : {
-                subjectId: claim.fact.id,
-                predicate:
-                  claim.claimKind === "screen"
-                    ? "screen_observed"
-                    : "workflow_observed",
-                objectId: claim.fact.id,
-              }
-      return {
-        id: createClaimId({
-          applicationId,
-          missionId,
-          ...relation,
-          ordinal: 0,
-        }),
-        status: "proposed" as const,
+          : {
+              subjectId: claim.fact.id,
+              predicate:
+                claim.claimKind === "screen"
+                  ? "screen_observed"
+                  : "workflow_observed",
+              objectId: claim.fact.id,
+            }
+    const key = `${relation.subjectId}:${relation.predicate}:${relation.objectId}`
+    const existing = relations.get(key)
+    if (existing === undefined) {
+      relations.set(key, {
         ...relation,
-        evidenceIds: [...claim.evidenceIds],
-        explanation: `Observed ${claim.claimKind.replace("_", " ")} from browser evidence`,
-      }
-    })
+        claimKind: claim.claimKind,
+        evidenceIds: new Set(claim.evidenceIds),
+      })
+    } else {
+      claim.evidenceIds.forEach((evidenceId) =>
+        existing.evidenceIds.add(evidenceId)
+      )
+    }
+  }
+  return [...relations.values()].map((relation) => ({
+    id: createClaimId({
+      applicationId,
+      missionId,
+      subjectId: relation.subjectId,
+      predicate: relation.predicate,
+      objectId: relation.objectId,
+      ordinal: 0,
+    }),
+    status: "proposed" as const,
+    subjectId: relation.subjectId,
+    predicate: relation.predicate,
+    objectId: relation.objectId,
+    evidenceIds: [...relation.evidenceIds],
+    explanation: `Observed ${relation.claimKind.replace("_", " ")} from browser evidence`,
+  }))
 }
 
 function missionOutput(input: {
@@ -1355,7 +1448,6 @@ function missionOutput(input: {
 }): ApplicationExplorerMissionOutput {
   const evidenceClaims = buildEvidenceClaims({
     mission: input.mission,
-    terminal: input.terminal,
     transitions: input.active.evidence.transitions,
     priorClaims: input.active.evidence.priorClaims,
   })
@@ -1438,6 +1530,30 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
     active: ActiveExploration,
     finished: ApplicationExplorerTerminal
   ): Promise<ApplicationExplorerMissionOutput> {
+    if (
+      finished.classification !== "goal_completed" &&
+      active.blockers.length === 0
+    ) {
+      const details = {
+        dead_end: ["dead_end", false],
+        recoverable_branch: ["dead_end", true],
+        login_block: ["login_required", true],
+        unsafe_boundary: ["unsafe_action", false],
+        budget_exhausted: ["budget_exhausted", false],
+        recovery_review: ["recovery_mismatch", false],
+        failure: ["planner_failure", false],
+      } as const
+      const [kind, recoverable] = details[finished.classification]
+      active.blockers.push(
+        blocker(
+          kind,
+          finished.reasonCode,
+          finished.summary,
+          recoverable,
+          active.observation === undefined ? undefined : active.observation
+        )
+      )
+    }
     active.checkpoint = applicationExplorerCheckpointStateSchema.parse({
       ...active.checkpoint,
       budgetUsed: withElapsed(
@@ -1481,6 +1597,44 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
       evidence: { transitions: [], priorClaims: [...priorClaims] },
       blockers: [],
     }
+    await this.emit(mission, {
+      kind: "tool_started",
+      toolName: "observe_page",
+      status: "started",
+      reasonCode: "safe_recovery_started",
+      summary: "Browser recovery started from the safe replay boundary",
+      evidenceIds: [checkpoint.currentObservationEvidenceId],
+    })
+    if (
+      checkpoint.replayBoundary.authenticationStateReference !==
+      browserOptions.storageStateReference
+    ) {
+      active.blockers.push(
+        blocker(
+          "recovery_mismatch",
+          "authentication_state_mismatch",
+          "Recovery authentication state did not match the checkpoint",
+          false
+        )
+      )
+      await this.emit(mission, {
+        kind: "tool_completed",
+        toolName: "observe_page",
+        status: "blocked",
+        reasonCode: "authentication_state_mismatch",
+        summary: "Browser recovery stopped at an authentication mismatch",
+        evidenceIds: [checkpoint.currentObservationEvidenceId],
+      })
+      return this.finish(
+        mission,
+        active,
+        terminal(
+          "recovery_review",
+          "authentication_state_mismatch",
+          "Human review is required for changed recovery authentication"
+        )
+      )
+    }
     if (checkpoint.replayBoundary.requiresHumanReview) {
       active.blockers.push(
         blocker(
@@ -1490,6 +1644,14 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
           false
         )
       )
+      await this.emit(mission, {
+        kind: "tool_completed",
+        toolName: "observe_page",
+        status: "blocked",
+        reasonCode: "non_idempotent_replay",
+        summary: "Browser recovery stopped at a non-idempotent boundary",
+        evidenceIds: [checkpoint.currentObservationEvidenceId],
+      })
       return this.finish(
         mission,
         active,
@@ -1511,6 +1673,7 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
       ) {
         throw new Error("recovery fingerprint mismatch")
       }
+      assertObservationScope(mission, replay.finalObservation)
       const context = buildApplicationExplorerPlannerContext({
         mission,
         observation: replay.finalObservation,
@@ -1537,6 +1700,14 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
       })
       return active
     } catch {
+      await this.emit(mission, {
+        kind: "tool_completed",
+        toolName: "observe_page",
+        status: "failed",
+        reasonCode: "recovery_mismatch",
+        summary: "Browser recovery could not confirm the checkpoint",
+        evidenceIds: [checkpoint.currentObservationEvidenceId],
+      })
       active.blockers.push(
         blocker(
           "recovery_mismatch",
@@ -1560,6 +1731,23 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
   async run(
     input: ApplicationExplorerRunInput<Options>
   ): Promise<ApplicationExplorerMissionOutput> {
+    try {
+      return await this.execute(input)
+    } catch (error) {
+      try {
+        if (this.browser.isActive(input.browserOptions.runId)) {
+          await this.browser.cancelRun(input.browserOptions.runId)
+        }
+      } catch {
+        // Preserve the original orchestration failure after best-effort cleanup.
+      }
+      throw error
+    }
+  }
+
+  private async execute(
+    input: ApplicationExplorerRunInput<Options>
+  ): Promise<ApplicationExplorerMissionOutput> {
     const mission = discoveryMissionSchema.parse(input.mission)
     if (mission.agent !== "application") {
       throw new Error("Application Explorer requires an application mission")
@@ -1570,14 +1758,7 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
     ) {
       throw new Error("Browser options must belong to the application mission")
     }
-    const entryHostname = new URL(
-      input.browserOptions.entryUrl
-    ).hostname.toLowerCase()
-    if (!mission.scope.allowedHosts.includes(entryHostname)) {
-      throw new Error(
-        "Browser entry host is outside the application mission scope"
-      )
-    }
+    assertBrowserScope(mission, input.browserOptions)
     const candidateLimit = z
       .number()
       .int()
@@ -1632,7 +1813,29 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
       )
       if ("result" in active) return active
     } else {
-      const observation = await this.browser.startRun(input.browserOptions)
+      await this.emit(mission, {
+        kind: "tool_started",
+        toolName: "observe_page",
+        status: "started",
+        reasonCode: "initial_observation",
+        summary: "Initial sanitized page observation started",
+        evidenceIds: mission.seedEvidenceIds,
+      })
+      let observation: BrowserObservation
+      try {
+        observation = await this.browser.startRun(input.browserOptions)
+        assertObservationScope(mission, observation)
+      } catch (error) {
+        await this.emit(mission, {
+          kind: "tool_completed",
+          toolName: "observe_page",
+          status: "failed",
+          reasonCode: "initial_observation_failed",
+          summary: "Initial sanitized page observation failed",
+          evidenceIds: mission.seedEvidenceIds,
+        })
+        throw error
+      }
       const context = buildApplicationExplorerPlannerContext({
         mission,
         observation,
@@ -1791,13 +1994,16 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
 
       let decision: ApplicationExplorerPlannerDecision
       try {
-        const planned = await this.planner.generateStructured({
-          input: prompt,
-          instructions: APPLICATION_EXPLORER_INSTRUCTIONS,
-          maxOutputTokens: 512,
-          schemaName: "application_explorer_decision",
-          schema: applicationExplorerPlannerDecisionSchema,
-        })
+        const planned = await withinPlannerDeadline(
+          this.planner.generateStructured({
+            input: prompt,
+            instructions: APPLICATION_EXPLORER_INSTRUCTIONS,
+            maxOutputTokens: 512,
+            schemaName: "application_explorer_decision",
+            schema: applicationExplorerPlannerDecisionSchema,
+          }),
+          mission.budget.elapsedMs - active.checkpoint.budgetUsed.elapsedMs
+        )
         active.checkpoint = applicationExplorerCheckpointStateSchema.parse({
           ...active.checkpoint,
           budgetUsed: incrementBudget(active.checkpoint.budgetUsed, {
@@ -1811,7 +2017,27 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
         decision = applicationExplorerPlannerDecisionSchema.parse(
           planned.output
         )
-      } catch {
+      } catch (error) {
+        if (error instanceof PlannerDeadlineError) {
+          active.blockers.push(
+            blocker(
+              "budget_exhausted",
+              "elapsed_budget_exhausted",
+              "Application planning exceeded the remaining elapsed budget",
+              false,
+              active.observation
+            )
+          )
+          return this.finish(
+            mission,
+            active,
+            terminal(
+              "budget_exhausted",
+              "elapsed_budget_exhausted",
+              "Application planning exceeded the remaining elapsed budget"
+            )
+          )
+        }
         active.blockers.push(
           blocker(
             "planner_failure",
@@ -1893,17 +2119,60 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
         )
       }
       if (decision.tool === "finish_application_mission") {
+        await this.emit(mission, {
+          kind: "tool_started",
+          toolName: decision.tool,
+          status: "started",
+          reasonCode: decision.reasonCode,
+          summary: "Application mission completion validation started",
+          evidenceIds: [active.observation.evidenceId],
+        })
         active.checkpoint = applicationExplorerCheckpointStateSchema.parse({
           ...active.checkpoint,
           budgetUsed: incrementBudget(active.checkpoint.budgetUsed, {
             toolCalls: 1,
           }),
         })
-        return this.finish(
+        let selectedTerminal = this.tools.finishApplicationMission(
           mission,
-          active,
-          this.tools.finishApplicationMission(mission, decision)
+          decision
         )
+        const hasExecutedEvidence =
+          active.evidence.transitions.length > 0 ||
+          active.evidence.priorClaims.some(
+            (claim) => claim.claimKind === "flow_step"
+          )
+        if (
+          selectedTerminal.classification === "goal_completed" &&
+          !hasExecutedEvidence
+        ) {
+          active.blockers.push(
+            blocker(
+              "dead_end",
+              "completion_without_evidence",
+              "Goal completion requires executed browser transition evidence",
+              false,
+              active.observation
+            )
+          )
+          selectedTerminal = terminal(
+            "dead_end",
+            "completion_without_evidence",
+            "Goal completion was rejected without executed evidence"
+          )
+        }
+        await this.emit(mission, {
+          kind: "tool_completed",
+          toolName: decision.tool,
+          status:
+            selectedTerminal.classification === "goal_completed"
+              ? "completed"
+              : "blocked",
+          reasonCode: selectedTerminal.reasonCode,
+          summary: selectedTerminal.summary,
+          evidenceIds: [active.observation.evidenceId],
+        })
+        return this.finish(mission, active, selectedTerminal)
       }
 
       active.checkpoint = applicationExplorerCheckpointStateSchema.parse({
@@ -1929,6 +2198,7 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
             decision,
             active.observation
           )
+          assertObservationScope(mission, observation)
           active.observation = observation
           const nextContext = buildApplicationExplorerPlannerContext({
             mission,
@@ -1955,6 +2225,14 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
           })
           continue
         } catch {
+          await this.emit(mission, {
+            kind: "tool_completed",
+            toolName: decision.tool,
+            status: "failed",
+            reasonCode: "observation_failed",
+            summary: "Browser re-observation failed",
+            evidenceIds: [active.observation.evidenceId],
+          })
           active.blockers.push(
             blocker(
               "browser_failure",
@@ -1992,6 +2270,8 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
                 decision,
                 active.observation
               )
+        assertObservationScope(mission, transition.before)
+        assertObservationScope(mission, transition.after)
         active.evidence.transitions.push(transition)
         active.observation = transition.after
         active.checkpoint = appendTransition({
@@ -2028,6 +2308,14 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
             transition.after.evidenceId,
           ],
         })
+        await this.emit(mission, {
+          kind: "tool_completed",
+          toolName: decision.tool,
+          status: "completed",
+          reasonCode: "browser_transition_observed",
+          summary: "Application Explorer tool execution completed",
+          evidenceIds: [transition.evidenceId],
+        })
       } catch (error) {
         const code =
           error instanceof ApplicationExplorerToolError
@@ -2043,6 +2331,17 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
           code === "unsafe_action" ||
           code === "policy_denied" ||
           selected?.policy.allowed === false
+        await this.emit(mission, {
+          kind: "tool_completed",
+          toolName: decision.tool,
+          status: isDenied || isStale || isUsed ? "blocked" : "failed",
+          reasonCode: code ?? "browser_action_failed",
+          summary:
+            isDenied || isStale || isUsed
+              ? "Application Explorer tool execution was rejected"
+              : "Application Explorer tool execution failed",
+          evidenceIds: [active.observation.evidenceId],
+        })
         if (selected !== undefined && (isStale || isUsed || isDenied)) {
           active.checkpoint = recordDeniedVisit(
             active.checkpoint,
@@ -2118,6 +2417,7 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
             ) {
               throw new Error("recovery fingerprint mismatch")
             }
+            assertObservationScope(mission, replay.finalObservation)
             active.observation = replay.finalObservation
             const recoveredContext = buildApplicationExplorerPlannerContext({
               mission,

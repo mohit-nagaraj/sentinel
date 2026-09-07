@@ -129,6 +129,9 @@ describeHiEvents("Hi.Events Application Explorer smoke", () => {
       .map((value) => value.trim())
       .filter((value) => value.length > 0)
     const allowedOrigins = [...new Set([parsedEntry.origin, ...extraOrigins])]
+    const allowedHosts = [
+      ...new Set(allowedOrigins.map((origin) => new URL(origin).hostname)),
+    ]
     const allowInsecureLocalhost = ["127.0.0.1", "localhost", "[::1]"].includes(
       parsedEntry.hostname
     )
@@ -154,7 +157,7 @@ describeHiEvents("Hi.Events Application Explorer smoke", () => {
       scope: {
         repositoryPaths: [],
         sourceUris: [],
-        allowedHosts: [parsedEntry.hostname],
+        allowedHosts,
         allowedTools: [
           "observe_page",
           "perform_observed_action",
