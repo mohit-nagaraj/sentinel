@@ -11,6 +11,7 @@ import {
   repositoryIdentitySchema,
   repositoryPathSchema,
   sourceUriSchema,
+  timestampSchema,
 } from "@sentinel/contracts"
 import { z } from "zod"
 
@@ -41,6 +42,13 @@ export const endpointProvenanceSchema = z.strictObject({
   commitSha: commitShaSchema.optional(),
   filePath: repositoryPathSchema.optional(),
   range: lineRangeSchema.optional(),
+  observedAt: timestampSchema.optional(),
+})
+
+export const endpointHandlerSchema = z.strictObject({
+  qualifiedName: z.string().trim().min(1).max(4_096),
+  method: z.string().trim().min(1).max(1_024).optional(),
+  symbolId: z.string().trim().min(1).max(256).optional(),
 })
 
 export const endpointOperationMetadataSchema = apiEndpointFactSchema.pick({
@@ -55,6 +63,7 @@ export const endpointEvidenceSchema = z.strictObject({
   sourceKind: endpointSourceKindSchema,
   provenance: endpointProvenanceSchema,
   operation: endpointOperationMetadataSchema.optional(),
+  handler: endpointHandlerSchema.optional(),
 })
 
 export const unresolvedEndpointEvidenceSchema = z.strictObject({
@@ -73,6 +82,7 @@ export type EndpointProvenance = z.infer<typeof endpointProvenanceSchema>
 export type EndpointOperationMetadata = z.infer<
   typeof endpointOperationMetadataSchema
 >
+export type EndpointHandler = z.infer<typeof endpointHandlerSchema>
 export type EndpointEvidence = z.infer<typeof endpointEvidenceSchema>
 export type UnresolvedEndpointEvidence = z.infer<
   typeof unresolvedEndpointEvidenceSchema
