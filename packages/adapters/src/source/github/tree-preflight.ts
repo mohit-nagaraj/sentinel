@@ -1,4 +1,5 @@
-const verifiedTreePreflight = Symbol("sentinel.verified-tree-preflight")
+declare const verifiedTreePreflightBrand: unique symbol
+const verifiedTreePreflights = new WeakSet<object>()
 
 export interface TreePreflightShape {
   readonly treeObjectId: string
@@ -10,19 +11,14 @@ export interface TreePreflightShape {
   readonly truncated: boolean
 }
 
-type VerifiedTreePreflight = TreePreflightShape & {
-  readonly [verifiedTreePreflight]: true
+export type VerifiedTreePreflight = TreePreflightShape & {
+  readonly [verifiedTreePreflightBrand]: never
 }
 
 export function markTreePreflight(
   value: TreePreflightShape
 ): VerifiedTreePreflight {
-  Object.defineProperty(value, verifiedTreePreflight, {
-    configurable: false,
-    enumerable: false,
-    value: true,
-    writable: false,
-  })
+  verifiedTreePreflights.add(value)
   return Object.freeze(value) as VerifiedTreePreflight
 }
 
@@ -32,9 +28,6 @@ export function isVerifiedTreePreflight(
   return (
     typeof value === "object" &&
     value !== null &&
-    verifiedTreePreflight in value &&
-    (value as { readonly [verifiedTreePreflight]?: unknown })[
-      verifiedTreePreflight
-    ] === true
+    verifiedTreePreflights.has(value)
   )
 }

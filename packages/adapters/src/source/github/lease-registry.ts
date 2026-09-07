@@ -225,7 +225,24 @@ export class CheckoutLeaseRegistry {
           JSON.parse(await readFile(join(candidate, LEASE_FILE), "utf8"))
         )
       } catch {
-        const status = await lstat(candidate)
+        let status
+        try {
+          status = await lstat(candidate)
+        } catch (error) {
+          if (
+            typeof error === "object" &&
+            error !== null &&
+            "code" in error &&
+            error.code === "ENOENT"
+          ) {
+            continue
+          }
+          throw new SourceConnectorError(
+            "provider_unavailable",
+            "Unable to inspect an incomplete checkout lease",
+            { retryable: true }
+          )
+        }
         if (this.now().getTime() - status.mtimeMs >= olderThanMs) {
           await this.removeOwned(candidate)
           reclaimed += 1

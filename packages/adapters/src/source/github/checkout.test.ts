@@ -4,18 +4,15 @@ import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 
 import { CheckoutLeaseRegistry } from "./lease-registry.ts"
-import {
-  EphemeralCheckoutManager,
-  type CheckoutTreePreflight,
-} from "./checkout.ts"
+import { EphemeralCheckoutManager } from "./checkout.ts"
 import type { GitRunner } from "./git-runner.ts"
 import { parseGitHubRepository } from "./normalization.ts"
-import { markTreePreflight } from "./tree-preflight.ts"
+import { markTreePreflight, type TreePreflightShape } from "./tree-preflight.ts"
 
 const sha = "1".repeat(40)
 const treeObjectId = "2".repeat(40)
 
-const boundedTree: CheckoutTreePreflight = {
+const boundedTree: TreePreflightShape = {
   treeObjectId,
   fileCount: 1,
   totalBytes: 10,
@@ -56,7 +53,7 @@ describe("EphemeralCheckoutManager preflight", () => {
     await expect(
       manager.materialize({
         repository: parseGitHubRepository("owner/repo"),
-        targets: [{ label: "source", sha, preflight: boundedTree }],
+        targets: [{ label: "source", sha, preflight: boundedTree as never }],
       })
     ).rejects.toMatchObject({ code: "invalid_input" })
     expect(run).not.toHaveBeenCalled()

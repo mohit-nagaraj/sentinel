@@ -13,7 +13,10 @@ import {
   sameRepository,
   type GitHubRepositoryIdentity,
 } from "./normalization.ts"
-import { markTreePreflight, type TreePreflightShape } from "./tree-preflight.ts"
+import {
+  markTreePreflight,
+  type VerifiedTreePreflight,
+} from "./tree-preflight.ts"
 
 interface GitHubRequester {
   request(
@@ -122,7 +125,7 @@ export interface GitHubComparisonMetadata {
   readonly baseIsAncestor: boolean
 }
 
-export type GitHubTreeSummary = TreePreflightShape
+export type GitHubTreeSummary = VerifiedTreePreflight
 
 export interface GitHubMetadataClientOptions {
   readonly token?: string

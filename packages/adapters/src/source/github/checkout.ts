@@ -30,7 +30,7 @@ import {
 } from "./normalization.ts"
 import {
   isVerifiedTreePreflight,
-  type TreePreflightShape,
+  type VerifiedTreePreflight,
 } from "./tree-preflight.ts"
 
 const checkoutLimitsSchema = z.strictObject({
@@ -70,7 +70,7 @@ export interface CheckoutTarget {
   readonly preflight?: CheckoutTreePreflight
 }
 
-export type CheckoutTreePreflight = TreePreflightShape
+export type CheckoutTreePreflight = VerifiedTreePreflight
 
 export interface CheckoutRequest {
   readonly repository: GitHubRepositoryIdentity
@@ -204,7 +204,13 @@ function validatePreflight(
       `Repository path depth exceeds the configured limit of ${limits.maxDepth}`
     )
   }
-  return { ...preflight, treeObjectId }
+  if (preflight.treeObjectId !== treeObjectId) {
+    throw new SourceConnectorError(
+      "invalid_input",
+      "Checkout tree preflight object identity is not normalized"
+    )
+  }
+  return input
 }
 
 function assertContained(root: string, candidate: string): void {
