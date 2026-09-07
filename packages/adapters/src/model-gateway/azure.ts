@@ -5,7 +5,6 @@ import OpenAI, {
   APIError,
   RateLimitError,
 } from "openai"
-import { zodTextFormat } from "openai/helpers/zod"
 import type {
   ResponseCreateParamsNonStreaming,
   ResponseCreateParamsStreaming,
@@ -37,6 +36,7 @@ import {
   type ModelToolRequest,
   type ModelUsage,
 } from "./contracts.ts"
+import { createStrictModelJsonSchema } from "./schema.ts"
 
 export interface AzureResponsesTransport {
   create(request: Readonly<Record<string, unknown>>): Promise<unknown>
@@ -122,41 +122,44 @@ function usageFromProvider(input: unknown): ModelUsage {
   }
 }
 
-function jsonSchemaFor(
-  schema: z.ZodType,
-  schemaName: string
-): Record<string, unknown> {
-  try {
-    const format = z
-      .looseObject({
-        type: z.literal("json_schema"),
-        name: z.string(),
-        strict: z.literal(true),
-        schema: z.record(z.string(), z.unknown()),
-      })
-      .parse(zodTextFormat(schema, schemaName))
-    assertModelSafeValue(format.schema)
-    if (JSON.stringify(format.schema).length > 32_768) {
-      throw new ModelGatewayError("limit_exceeded", false)
-    }
-    return format.schema
-  } catch (error) {
-    if (error instanceof ModelGatewayError) throw error
-    throw new ModelGatewayError("invalid_request", false)
+function errorFromProviderCode(
+  codeInput: string | null | undefined
+): ModelGatewayError {
+  const code = codeInput?.toLowerCase() ?? ""
+  if (code.includes("content_filter")) {
+    return new ModelGatewayError("content_filtered", false)
   }
+  if (code.includes("rate_limit")) {
+    return new ModelGatewayError("rate_limited", true)
+  }
+  if (code.includes("timeout")) {
+    return new ModelGatewayError("timeout", true)
+  }
+  if (code.includes("auth") || code.includes("unauthorized")) {
+    return new ModelGatewayError("authentication_failed", false)
+  }
+  if (
+    code.includes("invalid_prompt") ||
+    code.includes("invalid_request") ||
+    code.includes("bad_request")
+  ) {
+    return new ModelGatewayError("invalid_request", false)
+  }
+  return new ModelGatewayError("provider_unavailable", true)
 }
 
 function parseResponse(input: unknown) {
   const parsed = responseSchema.safeParse(input)
   if (!parsed.success) throw new ModelGatewayError("malformed_output", false)
   const response = parsed.data
-  const failureCode =
-    response.error?.code ?? response.incomplete_details?.reason
-  if (failureCode === "content_filter") {
-    throw new ModelGatewayError("content_filtered", false)
+  if (response.error?.code !== undefined && response.error.code !== null) {
+    throw errorFromProviderCode(response.error.code)
   }
   if (response.status === "incomplete") {
-    throw new ModelGatewayError("limit_exceeded", false)
+    if (response.incomplete_details?.reason === "max_output_tokens") {
+      throw new ModelGatewayError("limit_exceeded", false)
+    }
+    throw errorFromProviderCode(response.incomplete_details?.reason)
   }
   if (response.status !== "completed") {
     throw new ModelGatewayError("provider_unavailable", true)
@@ -164,41 +167,40 @@ function parseResponse(input: unknown) {
   return response
 }
 
+function extractMessageText(input: unknown): string {
+  const message = messageItemSchema.safeParse(input)
+  if (!message.success) throw new ModelGatewayError("malformed_output", false)
+  const textParts: string[] = []
+  for (const rawContent of message.data.content) {
+    const content = contentItemSchema.safeParse(rawContent)
+    if (!content.success) {
+      throw new ModelGatewayError("malformed_output", false)
+    }
+    if (content.data.type === "refusal") {
+      throw new ModelGatewayError("refused", false)
+    }
+    if (
+      content.data.type === "output_text" &&
+      content.data.text !== undefined
+    ) {
+      textParts.push(content.data.text)
+    }
+  }
+  return textParts.join("")
+}
+
 function extractText(responseInput: unknown): {
   readonly text: string
   readonly model: string
   readonly usage: ModelUsage
-  readonly continuationItems: readonly ModelContinuationItem[]
 } {
   const response = parseResponse(responseInput)
   const textParts: string[] = []
-  const continuationItems: ModelContinuationItem[] = []
   for (const rawItem of response.output) {
     const item = outputItemSchema.safeParse(rawItem)
     if (!item.success) throw new ModelGatewayError("malformed_output", false)
     if (item.data.type === "message") {
-      const message = messageItemSchema.safeParse(item.data)
-      if (!message.success)
-        throw new ModelGatewayError("malformed_output", false)
-      for (const rawContent of message.data.content) {
-        const content = contentItemSchema.safeParse(rawContent)
-        if (!content.success) {
-          throw new ModelGatewayError("malformed_output", false)
-        }
-        if (content.data.type === "refusal") {
-          throw new ModelGatewayError("refused", false)
-        }
-        if (
-          content.data.type === "output_text" &&
-          content.data.text !== undefined
-        ) {
-          textParts.push(content.data.text)
-          continuationItems.push({
-            type: "assistant_text",
-            text: content.data.text,
-          })
-        }
-      }
+      textParts.push(extractMessageText(item.data))
     }
   }
   const text = response.output_text ?? textParts.join("")
@@ -206,7 +208,6 @@ function extractText(responseInput: unknown): {
     text,
     model: response.model,
     usage: usageFromProvider(response.usage),
-    continuationItems,
   }
 }
 
@@ -347,7 +348,7 @@ export class AzureOpenAIModelGateway implements ModelGateway {
         format: {
           type: "json_schema",
           name: schemaName,
-          schema: jsonSchemaFor(request.schema, schemaName),
+          schema: createStrictModelJsonSchema(request.schema, schemaName),
           strict: true,
         },
       },
@@ -393,7 +394,7 @@ export class AzureOpenAIModelGateway implements ModelGateway {
     const tools = request.tools.map((tool) => ({
       name: tool.name,
       description: parseModelSafeText(tool.description, 1_024),
-      parameters: jsonSchemaFor(tool.parameters, tool.name),
+      parameters: createStrictModelJsonSchema(tool.parameters, tool.name),
     }))
     const response = parseResponse(
       await this.create({
@@ -457,19 +458,22 @@ export class AzureOpenAIModelGateway implements ModelGateway {
         if (!reasoning.success) {
           throw new ModelGatewayError("malformed_output", false)
         }
+        if (
+          reasoning.data.encrypted_content === undefined ||
+          reasoning.data.encrypted_content === null
+        ) {
+          throw new ModelGatewayError("tool_protocol_invalid", false)
+        }
         items.push({
           type: "reasoning",
           id: reasoning.data.id,
-          ...(reasoning.data.encrypted_content === undefined ||
-          reasoning.data.encrypted_content === null
-            ? {}
-            : { encryptedContent: reasoning.data.encrypted_content }),
+          encryptedContent: reasoning.data.encrypted_content,
         })
       } else if (item.data.type === "message") {
-        const extracted = extractText({ ...response, output: [item.data] })
-        if (extracted.text.length > 0) {
+        const extracted = extractMessageText(item.data)
+        if (extracted.length > 0) {
           const text = parseModelSafeText(
-            extracted.text,
+            extracted,
             this.limits.maxInputCharacters
           )
           assistantText.push(text)
@@ -479,7 +483,11 @@ export class AzureOpenAIModelGateway implements ModelGateway {
     }
     if (
       calls.length > this.limits.maxToolCalls ||
-      items.length > this.limits.maxToolCalls * 3 + 2
+      items.length > this.limits.maxToolCalls * 3 + 2 ||
+      input.length +
+        (instructions?.length ?? 0) +
+        assistantText.join("").length >
+        this.limits.maxInputCharacters
     ) {
       throw new ModelGatewayError("limit_exceeded", false)
     }
@@ -718,40 +726,51 @@ export class AzureOpenAIModelGateway implements ModelGateway {
     const parts: string[] = []
     let completed: ReturnType<typeof parseResponse> | undefined
     const iterator = stream[Symbol.asyncIterator]()
-    while (true) {
-      let iteration: IteratorResult<unknown>
-      try {
-        iteration = await iterator.next()
-      } catch (error) {
-        throw normalizeModelGatewayError(error)
-      }
-      if (iteration.done) break
-      const event = streamEventSchema.safeParse(iteration.value)
-      if (!event.success) {
-        throw new ModelGatewayError("malformed_output", false)
-      }
-      if (event.data.type === "response.output_text.delta") {
-        const delta = z.string().safeParse(event.data["delta"])
-        if (!delta.success) {
+    let exhausted = false
+    try {
+      while (true) {
+        let iteration: IteratorResult<unknown>
+        try {
+          iteration = await iterator.next()
+        } catch (error) {
+          throw normalizeModelGatewayError(error)
+        }
+        if (iteration.done) {
+          exhausted = true
+          break
+        }
+        const event = streamEventSchema.safeParse(iteration.value)
+        if (!event.success) {
           throw new ModelGatewayError("malformed_output", false)
         }
-        parts.push(delta.data)
-        await onEvent({ type: "text_delta", delta: delta.data })
-      } else if (event.data.type === "response.refusal.delta") {
-        throw new ModelGatewayError("refused", false)
-      } else if (event.data.type === "response.completed") {
-        completed = parseResponse(event.data["response"])
-      } else if (
-        event.data.type === "response.failed" ||
-        event.data.type === "response.incomplete"
-      ) {
-        parseResponse(event.data["response"])
-      } else if (event.data.type === "error") {
-        const code = z.string().nullable().safeParse(event.data["code"])
-        if (code.success && code.data?.includes("content_filter")) {
-          throw new ModelGatewayError("content_filtered", false)
+        if (event.data.type === "response.output_text.delta") {
+          const delta = z.string().safeParse(event.data["delta"])
+          if (!delta.success) {
+            throw new ModelGatewayError("malformed_output", false)
+          }
+          parts.push(delta.data)
+          await onEvent({ type: "text_delta", delta: delta.data })
+        } else if (event.data.type === "response.refusal.delta") {
+          throw new ModelGatewayError("refused", false)
+        } else if (event.data.type === "response.completed") {
+          completed = parseResponse(event.data["response"])
+        } else if (
+          event.data.type === "response.failed" ||
+          event.data.type === "response.incomplete"
+        ) {
+          parseResponse(event.data["response"])
+        } else if (event.data.type === "error") {
+          const code = z.string().nullable().safeParse(event.data["code"])
+          throw errorFromProviderCode(code.success ? code.data : undefined)
         }
-        throw new ModelGatewayError("provider_unavailable", true)
+      }
+    } finally {
+      if (!exhausted && iterator.return !== undefined) {
+        try {
+          await iterator.return()
+        } catch {
+          // Preserve the original callback or protocol failure.
+        }
       }
     }
     if (completed === undefined || parts.length === 0) {

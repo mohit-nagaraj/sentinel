@@ -6,7 +6,11 @@ import {
   normalizeModelGatewayError,
   type AzureResponsesTransport,
 } from "./azure.ts"
-import { ModelGatewayError, type ModelUsage } from "./contracts.ts"
+import {
+  defaultModelCallLimits,
+  ModelGatewayError,
+  type ModelUsage,
+} from "./contracts.ts"
 
 const providerUsage = {
   input_tokens: 10,
@@ -35,6 +39,7 @@ function completed(
 
 class QueueTransport implements AzureResponsesTransport {
   readonly requests: Readonly<Record<string, unknown>>[] = []
+  streamReturned = false
 
   constructor(
     private readonly responses: unknown[] = [],
@@ -53,9 +58,16 @@ class QueueTransport implements AzureResponsesTransport {
   ): Promise<AsyncIterable<unknown>> {
     this.requests.push(request)
     const events = this.events
+    const markReturned = () => {
+      this.streamReturned = true
+    }
     return {
       async *[Symbol.asyncIterator]() {
-        for (const event of events) yield event
+        try {
+          for (const event of events) yield event
+        } finally {
+          markReturned()
+        }
       },
     }
   }
@@ -202,7 +214,18 @@ describe("Azure OpenAI model gateway", () => {
 
   it("returns a direct terminal answer when auto tool choice uses no tool", async () => {
     const gateway = new AzureOpenAIModelGateway(
-      new QueueTransport([completed("No lookup is needed.")]),
+      new QueueTransport([
+        completed("First.Second.", [
+          {
+            type: "message",
+            content: [{ type: "output_text", text: "First." }],
+          },
+          {
+            type: "message",
+            content: [{ type: "output_text", text: "Second." }],
+          },
+        ]),
+      ]),
       "deployment"
     )
     await expect(
@@ -219,8 +242,59 @@ describe("Azure OpenAI model gateway", () => {
       })
     ).resolves.toMatchObject({
       kind: "final_text",
-      output: "No lookup is needed.",
+      output: "First.Second.",
     })
+  })
+
+  it("returns only compact, replayable continuation state", async () => {
+    const call = {
+      type: "function_call",
+      call_id: "call-1",
+      name: "lookup",
+      arguments: "{}",
+    }
+    const limits = { ...defaultModelCallLimits, maxInputCharacters: 5 }
+    const oversized = new AzureOpenAIModelGateway(
+      new QueueTransport([
+        completed("x", [
+          { type: "message", content: [{ type: "output_text", text: "x" }] },
+          call,
+        ]),
+      ]),
+      "deployment",
+      limits
+    )
+    await expect(
+      oversized.decideTools({
+        input: "12345",
+        tools: [
+          {
+            name: "lookup",
+            description: "Look up a value.",
+            parameters: z.strictObject({}),
+          },
+        ],
+      })
+    ).rejects.toMatchObject({ code: "limit_exceeded" })
+
+    const missingReasoning = new AzureOpenAIModelGateway(
+      new QueueTransport([
+        completed("", [{ type: "reasoning", id: "reason-1" }, call]),
+      ]),
+      "deployment"
+    )
+    await expect(
+      missingReasoning.decideTools({
+        input: "look up",
+        tools: [
+          {
+            name: "lookup",
+            description: "Look up a value.",
+            parameters: z.strictObject({}),
+          },
+        ],
+      })
+    ).rejects.toMatchObject({ code: "tool_protocol_invalid" })
   })
 
   it("rejects malformed tool arguments before returning a decision", async () => {
@@ -310,14 +384,15 @@ describe("Azure OpenAI model gateway", () => {
     ).rejects.toMatchObject({ code: "content_filtered" })
 
     const callbackError = new Error("event persistence failed")
+    const callbackTransport = new QueueTransport(
+      [],
+      [
+        { type: "response.output_text.delta", delta: "hello" },
+        { type: "response.completed", response: completed("hello") },
+      ]
+    )
     const callbackGateway = new AzureOpenAIModelGateway(
-      new QueueTransport(
-        [],
-        [
-          { type: "response.output_text.delta", delta: "hello" },
-          { type: "response.completed", response: completed("hello") },
-        ]
-      ),
+      callbackTransport,
       "deployment"
     )
     await expect(
@@ -325,6 +400,23 @@ describe("Azure OpenAI model gateway", () => {
         throw callbackError
       })
     ).rejects.toBe(callbackError)
+    expect(callbackTransport.streamReturned).toBe(true)
+
+    const rateLimited = new AzureOpenAIModelGateway(
+      new QueueTransport([], [{ type: "error", code: "rate_limit_exceeded" }]),
+      "deployment"
+    )
+    await expect(
+      rateLimited.streamText({ input: "hello" }, () => undefined)
+    ).rejects.toMatchObject({ code: "rate_limited", retryable: true })
+
+    const invalidPrompt = new AzureOpenAIModelGateway(
+      new QueueTransport([], [{ type: "error", code: "invalid_prompt" }]),
+      "deployment"
+    )
+    await expect(
+      invalidPrompt.streamText({ input: "hello" }, () => undefined)
+    ).rejects.toMatchObject({ code: "invalid_request", retryable: false })
   })
 
   it("normalizes refusals, filters, limits, timeouts, and rate limits", async () => {

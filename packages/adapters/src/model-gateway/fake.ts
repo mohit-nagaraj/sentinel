@@ -1,3 +1,4 @@
+import { canonicalSerialize } from "@sentinel/contracts"
 import type {
   ModelContinuation,
   ModelGateway,
@@ -9,7 +10,6 @@ import type {
   ModelToolOutput,
   ModelToolRequest,
 } from "./contracts.ts"
-import { z } from "zod"
 import {
   assertModelSafeValue,
   defaultModelCallLimits,
@@ -17,6 +17,7 @@ import {
   parseModelOperation,
   parseModelSafeText,
 } from "./contracts.ts"
+import { createStrictModelJsonSchema } from "./schema.ts"
 
 function validateRequest(request: ModelTextRequest): void {
   const input = parseModelSafeText(
@@ -30,29 +31,64 @@ function validateRequest(request: ModelTextRequest): void {
           request.instructions,
           defaultModelCallLimits.maxInputCharacters
         )
+  const outputTokens =
+    request.maxOutputTokens ?? defaultModelCallLimits.maxOutputTokens
   if (
     input.length + instructions.length >
       defaultModelCallLimits.maxInputCharacters ||
-    (request.maxOutputTokens ?? defaultModelCallLimits.maxOutputTokens) >
-      defaultModelCallLimits.maxOutputTokens
+    !Number.isInteger(outputTokens) ||
+    outputTokens < 1 ||
+    outputTokens > defaultModelCallLimits.maxOutputTokens
   ) {
     throw new ModelGatewayError("limit_exceeded", false)
   }
 }
 
-function assertCorrelatedOutputs(
-  continuation: ModelContinuation,
-  outputs: readonly ModelToolOutput[]
-): void {
+function validateContinuation(continuation: ModelContinuation): void {
+  if (
+    continuation.items.length > defaultModelCallLimits.maxToolCalls * 3 + 2 ||
+    continuation.calls.length > defaultModelCallLimits.maxToolCalls ||
+    continuation.tools.length > defaultModelCallLimits.maxTools
+  ) {
+    throw new ModelGatewayError("limit_exceeded", false)
+  }
+  let textCharacters = 0
   if (continuation.instructions !== undefined) {
-    parseModelSafeText(
+    textCharacters += parseModelSafeText(
       continuation.instructions,
       defaultModelCallLimits.maxInputCharacters
-    )
+    ).length
   }
+  const calls = new Map<string, (typeof continuation.calls)[number]>()
+  for (const call of continuation.calls) {
+    parseModelOperation(call.name)
+    assertModelSafeValue(call.arguments)
+    if (
+      call.callId.length < 1 ||
+      call.callId.length > 256 ||
+      calls.has(call.callId)
+    ) {
+      throw new ModelGatewayError("tool_protocol_invalid", false)
+    }
+    calls.set(call.callId, call)
+  }
+  const toolNames = new Set<string>()
+  for (const tool of continuation.tools) {
+    parseModelOperation(tool.name)
+    parseModelSafeText(tool.description, 1_024)
+    assertModelSafeValue(tool.parameters)
+    if (toolNames.has(tool.name)) {
+      throw new ModelGatewayError("tool_protocol_invalid", false)
+    }
+    toolNames.add(tool.name)
+  }
+  const itemCallIds = new Set<string>()
   for (const item of continuation.items) {
     if (item.type === "user_text" || item.type === "assistant_text") {
-      parseModelSafeText(item.text, defaultModelCallLimits.maxInputCharacters)
+      textCharacters += parseModelSafeText(
+        item.text,
+        defaultModelCallLimits.maxInputCharacters
+      ).length
     } else if (item.type === "function_call") {
       let parsed: unknown
       try {
@@ -60,9 +96,42 @@ function assertCorrelatedOutputs(
       } catch {
         throw new ModelGatewayError("tool_protocol_invalid", false)
       }
+      const call = calls.get(item.callId)
+      if (
+        call === undefined ||
+        call.name !== item.name ||
+        canonicalSerialize(call.arguments) !== canonicalSerialize(parsed) ||
+        itemCallIds.has(item.callId)
+      ) {
+        throw new ModelGatewayError("tool_protocol_invalid", false)
+      }
       assertModelSafeValue(parsed)
+      itemCallIds.add(item.callId)
+    } else if (
+      item.id.length < 1 ||
+      item.id.length > 256 ||
+      item.encryptedContent === undefined ||
+      item.encryptedContent.length > 65_536
+    ) {
+      throw new ModelGatewayError("tool_protocol_invalid", false)
     }
   }
+  if (
+    textCharacters > defaultModelCallLimits.maxInputCharacters ||
+    calls.size !== itemCallIds.size ||
+    [...calls.values()].some(
+      (call) => !itemCallIds.has(call.callId) || !toolNames.has(call.name)
+    )
+  ) {
+    throw new ModelGatewayError("tool_protocol_invalid", false)
+  }
+}
+
+function assertCorrelatedOutputs(
+  continuation: ModelContinuation,
+  outputs: readonly ModelToolOutput[]
+): void {
+  validateContinuation(continuation)
   const expected = continuation.calls.map((call) => call.callId).sort()
   const supplied = outputs.map((output) => output.callId).sort()
   if (
@@ -72,7 +141,20 @@ function assertCorrelatedOutputs(
   ) {
     throw new ModelGatewayError("tool_protocol_invalid", false)
   }
-  outputs.forEach((output) => assertModelSafeValue(output.output))
+  let outputCharacters = 0
+  outputs.forEach((output) => {
+    assertModelSafeValue(output.output)
+    let serialized: string | undefined
+    try {
+      serialized = JSON.stringify(output.output)
+    } catch {
+      throw new ModelGatewayError("invalid_request", false)
+    }
+    outputCharacters += serialized?.length ?? 0
+  })
+  if (outputCharacters > defaultModelCallLimits.maxToolOutputCharacters) {
+    throw new ModelGatewayError("limit_exceeded", false)
+  }
 }
 
 type ScriptedStep =
@@ -120,6 +202,7 @@ export class ScriptedModelGateway implements ModelGateway {
     request: ModelStructuredRequest<Output>
   ): Promise<ModelResult<Output>> {
     validateRequest(request)
+    createStrictModelJsonSchema(request.schema, request.schemaName)
     const step = this.take("structured")
     if (step.kind !== "structured" || !("result" in step)) {
       throw new Error("unreachable")
@@ -147,12 +230,7 @@ export class ScriptedModelGateway implements ModelGateway {
     for (const tool of request.tools) {
       parseModelOperation(tool.name)
       parseModelSafeText(tool.description, 1_024)
-      try {
-        assertModelSafeValue(z.toJSONSchema(tool.parameters))
-      } catch (error) {
-        if (error instanceof ModelGatewayError) throw error
-        throw new ModelGatewayError("invalid_request", false)
-      }
+      createStrictModelJsonSchema(tool.parameters, tool.name)
     }
     const step = this.take("tools")
     if (step.kind !== "tools" || !("result" in step))
@@ -190,6 +268,7 @@ export class ScriptedModelGateway implements ModelGateway {
       ) {
         throw new ModelGatewayError("tool_protocol_invalid", false)
       }
+      validateContinuation(step.result.continuation)
     } else if (step.result.output.length === 0) {
       throw new ModelGatewayError("malformed_output", false)
     }
@@ -198,8 +277,24 @@ export class ScriptedModelGateway implements ModelGateway {
 
   async continueTools(
     continuation: ModelContinuation,
-    outputs: readonly ModelToolOutput[]
+    outputs: readonly ModelToolOutput[],
+    request: Omit<ModelTextRequest, "input"> = {}
   ): Promise<ModelResult<string>> {
+    const outputTokens =
+      request.maxOutputTokens ?? defaultModelCallLimits.maxOutputTokens
+    if (
+      !Number.isInteger(outputTokens) ||
+      outputTokens < 1 ||
+      outputTokens > defaultModelCallLimits.maxOutputTokens
+    ) {
+      throw new ModelGatewayError("limit_exceeded", false)
+    }
+    if (request.instructions !== undefined) {
+      parseModelSafeText(
+        request.instructions,
+        defaultModelCallLimits.maxInputCharacters
+      )
+    }
     assertCorrelatedOutputs(continuation, outputs)
     const step = this.take("continuation")
     if (step.kind !== "continuation" || !("result" in step)) {

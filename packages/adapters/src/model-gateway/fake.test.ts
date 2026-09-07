@@ -127,11 +127,46 @@ describe("scripted model gateway", () => {
       },
     ])
     await expect(
+      gateway.continueTools(
+        {
+          ...continuation,
+          items: continuation.items.map((item) =>
+            item.type === "function_call"
+              ? { ...item, argumentsJson: '{"changed":true}' }
+              : item
+          ),
+        },
+        [{ callId: "call-1", output: {} }]
+      )
+    ).rejects.toMatchObject({ code: "tool_protocol_invalid" })
+    await expect(
       gateway.continueTools(continuation, [{ callId: "wrong", output: {} }])
     ).rejects.toMatchObject({ code: "tool_protocol_invalid" })
     await expect(
       gateway.continueTools(continuation, [{ callId: "call-1", output: {} }])
     ).resolves.toMatchObject({ output: "done" })
+    gateway.assertComplete()
+  })
+
+  it("enforces production request limits before consuming a step", async () => {
+    const gateway = new ScriptedModelGateway([
+      {
+        kind: "text",
+        result: {
+          output: "ok",
+          model: "fake",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        },
+      },
+    ])
+    await expect(
+      gateway.generateText({ input: "hello", maxOutputTokens: -1 })
+    ).rejects.toMatchObject({ code: "limit_exceeded" })
+    await expect(
+      gateway.generateText({ input: "hello" })
+    ).resolves.toMatchObject({
+      output: "ok",
+    })
     gateway.assertComplete()
   })
 
