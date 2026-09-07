@@ -56,10 +56,17 @@ function validateContinuation(
     throw new ModelGatewayError("limit_exceeded", false)
   }
   let textCharacters = 0
-  const instructions = instructionsOverride ?? continuation.instructions
-  if (instructions !== undefined) {
+  if (continuation.instructions !== undefined) {
+    parseModelSafeText(
+      continuation.instructions,
+      defaultModelCallLimits.maxInputCharacters
+    )
+  }
+  const effectiveInstructions =
+    instructionsOverride ?? continuation.instructions
+  if (effectiveInstructions !== undefined) {
     textCharacters += parseModelSafeText(
-      instructions,
+      effectiveInstructions,
       defaultModelCallLimits.maxInputCharacters
     ).length
   }
@@ -71,6 +78,8 @@ function validateContinuation(
       call.callId.length < 1 ||
       call.callId.length > 256 ||
       !contentHashSchema.safeParse(call.argumentsHash).success ||
+      !contentHashSchema.safeParse(call.rawArgumentsHash).success ||
+      hashCanonical(call.arguments) !== call.argumentsHash ||
       calls.has(call.callId)
     ) {
       throw new ModelGatewayError("tool_protocol_invalid", false)
@@ -105,7 +114,7 @@ function validateContinuation(
       if (
         call === undefined ||
         call.name !== item.name ||
-        call.argumentsHash !== hashCanonical(parsed) ||
+        call.rawArgumentsHash !== hashCanonical(parsed) ||
         itemCallIds.has(item.callId)
       ) {
         throw new ModelGatewayError("tool_protocol_invalid", false)
@@ -121,8 +130,10 @@ function validateContinuation(
       throw new ModelGatewayError("tool_protocol_invalid", false)
     }
   }
+  if (textCharacters > defaultModelCallLimits.maxInputCharacters) {
+    throw new ModelGatewayError("limit_exceeded", false)
+  }
   if (
-    textCharacters > defaultModelCallLimits.maxInputCharacters ||
     calls.size !== itemCallIds.size ||
     [...calls.values()].some(
       (call) => !itemCallIds.has(call.callId) || !toolNames.has(call.name)
@@ -289,6 +300,22 @@ export class ScriptedModelGateway implements ModelGateway {
         throw new ModelGatewayError("tool_protocol_invalid", false)
       }
       validateContinuation(step.result.continuation)
+      const continuationCalls = new Map(
+        step.result.continuation.calls.map((call) => [call.callId, call])
+      )
+      for (const call of step.result.output) {
+        const continuationCall = continuationCalls.get(call.callId)
+        if (
+          continuationCall === undefined ||
+          continuationCall.name !== call.name ||
+          continuationCall.argumentsHash !== call.argumentsHash ||
+          continuationCall.rawArgumentsHash !== call.rawArgumentsHash ||
+          hashCanonical(continuationCall.arguments) !==
+            hashCanonical(call.arguments)
+        ) {
+          throw new ModelGatewayError("tool_protocol_invalid", false)
+        }
+      }
       for (const tool of step.result.continuation.tools) {
         const expected = expectedTools.get(tool.name)
         if (

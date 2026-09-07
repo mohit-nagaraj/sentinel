@@ -433,6 +433,7 @@ export class AzureOpenAIModelGateway implements ModelGateway {
         } catch {
           throw new ModelGatewayError("tool_arguments_invalid", false)
         }
+        assertModelSafeValue(rawArguments)
         const argumentsResult = tool.parameters.safeParse(rawArguments)
         if (!argumentsResult.success) {
           throw new ModelGatewayError("tool_arguments_invalid", false)
@@ -446,7 +447,8 @@ export class AzureOpenAIModelGateway implements ModelGateway {
           callId: call.data.call_id,
           name: call.data.name,
           arguments: argumentsResult.data,
-          argumentsHash: hashCanonical(rawArguments),
+          argumentsHash: hashCanonical(argumentsResult.data),
+          rawArgumentsHash: hashCanonical(rawArguments),
         })
         items.push({
           type: "function_call",
@@ -551,6 +553,8 @@ export class AzureOpenAIModelGateway implements ModelGateway {
       assertModelSafeValue(call.arguments)
       if (
         !contentHashSchema.safeParse(call.argumentsHash).success ||
+        !contentHashSchema.safeParse(call.rawArgumentsHash).success ||
+        hashCanonical(call.arguments) !== call.argumentsHash ||
         continuationCalls.has(callId.data)
       ) {
         throw new ModelGatewayError("tool_protocol_invalid", false)
@@ -582,7 +586,7 @@ export class AzureOpenAIModelGateway implements ModelGateway {
         assertModelSafeValue(parsedArguments)
         if (
           hashCanonical(parsedArguments) !==
-          continuationCalls.get(item.callId)?.argumentsHash
+          continuationCalls.get(item.callId)?.rawArgumentsHash
         ) {
           throw new ModelGatewayError("tool_protocol_invalid", false)
         }
@@ -599,8 +603,10 @@ export class AzureOpenAIModelGateway implements ModelGateway {
         throw new ModelGatewayError("tool_protocol_invalid", false)
       }
     }
+    if (continuationTextCharacters > this.limits.maxInputCharacters) {
+      throw new ModelGatewayError("limit_exceeded", false)
+    }
     if (
-      continuationTextCharacters > this.limits.maxInputCharacters ||
       itemCallIds.size !== continuationCalls.size ||
       [...continuationCalls.keys()].some((callId) => !itemCallIds.has(callId))
     ) {

@@ -175,6 +175,7 @@ describe("Azure OpenAI model gateway", () => {
         name: "lookup_count",
         arguments: { scope: "orders" },
         argumentsHash: hashCanonical({ scope: "orders" }),
+        rawArgumentsHash: hashCanonical({ scope: "orders" }),
       },
     ])
     await expect(
@@ -199,6 +200,18 @@ describe("Azure OpenAI model gateway", () => {
       (item) => item.type === "function_call"
     )
     if (functionItem === undefined) throw new Error("missing function item")
+    await expect(
+      gateway.continueTools(
+        {
+          ...decision.continuation,
+          calls: decision.continuation.calls.map((call) => ({
+            ...call,
+            arguments: { scope: "changed" },
+          })),
+        },
+        [{ callId: "call-1", output: 42 }]
+      )
+    ).rejects.toMatchObject({ code: "tool_protocol_invalid" })
     await expect(
       gateway.continueTools(
         {
@@ -381,13 +394,40 @@ describe("Azure OpenAI model gateway", () => {
     if (decision.kind !== "tool_calls") throw new Error("expected tool calls")
     expect(decision.output[0]).toMatchObject({
       arguments: { query: "value" },
-      argumentsHash: hashCanonical({ query: " VALUE " }),
+      argumentsHash: hashCanonical({ query: "value" }),
+      rawArgumentsHash: hashCanonical({ query: " VALUE " }),
     })
     await expect(
       gateway.continueTools(decision.continuation, [
         { callId: "call-normalized", output: { found: true } },
       ])
     ).resolves.toMatchObject({ output: "done" })
+  })
+
+  it("rejects sensitive raw arguments before a schema can strip them", async () => {
+    const transport = new QueueTransport([
+      completed("", [
+        {
+          type: "function_call",
+          call_id: "call-secret",
+          name: "search",
+          arguments: '{"query":"value","apiKeyValue":"plaintext"}',
+        },
+      ]),
+    ])
+    const gateway = new AzureOpenAIModelGateway(transport, "deployment")
+    await expect(
+      gateway.decideTools({
+        input: "Search for the value.",
+        tools: [
+          {
+            name: "search",
+            description: "Search for one value.",
+            parameters: z.object({ query: z.string() }),
+          },
+        ],
+      })
+    ).rejects.toMatchObject({ code: "invalid_request", retryable: false })
   })
 
   it("adapts text deltas without exposing reasoning events", async () => {

@@ -56,6 +56,7 @@ export interface ModelToolCall<Arguments = unknown> {
   readonly name: string
   readonly arguments: Arguments
   readonly argumentsHash: string
+  readonly rawArgumentsHash: string
 }
 
 export type ModelContinuationItem =

@@ -26,6 +26,7 @@ describe("scripted model gateway", () => {
           name: "lookup_count",
           arguments: {},
           argumentsHash: hashCanonical({}),
+          rawArgumentsHash: hashCanonical({}),
         },
       ],
       tools: [
@@ -59,6 +60,16 @@ describe("scripted model gateway", () => {
         result: { output: { count: 42 }, model: "fake", usage },
       },
     ])
+    await expect(
+      gateway.continueTools(
+        {
+          ...continuation,
+          instructions: "password=must-not-hide-behind-override",
+        },
+        [{ callId: "call-1", output: {} }],
+        { instructions: "Use the supplied result." }
+      )
+    ).rejects.toMatchObject({ code: "invalid_request" })
 
     const decision = await gateway.decideTools({
       input: "Find the count",
@@ -84,6 +95,69 @@ describe("scripted model gateway", () => {
         schema: z.strictObject({ count: z.number() }),
       })
     ).resolves.toMatchObject({ output: { count: 42 } })
+    gateway.assertComplete()
+  })
+
+  it("rejects scripted calls that disagree with continuation state", async () => {
+    const emptyHash = hashCanonical({})
+    const continuation = {
+      items: [
+        { type: "user_text" as const, text: "look up" },
+        {
+          type: "function_call" as const,
+          callId: "call-1",
+          name: "tool_b",
+          argumentsJson: "{}",
+        },
+      ],
+      calls: [
+        {
+          callId: "call-1",
+          name: "tool_b",
+          arguments: {},
+          argumentsHash: emptyHash,
+          rawArgumentsHash: emptyHash,
+        },
+      ],
+      tools: [
+        {
+          name: "tool_b",
+          description: "Use tool B.",
+          parameters: createStrictModelJsonSchema(z.strictObject({}), "tool_b"),
+        },
+      ],
+    }
+    const gateway = new ScriptedModelGateway([
+      {
+        kind: "tools",
+        result: {
+          kind: "tool_calls",
+          output: [
+            {
+              callId: "call-1",
+              name: "tool_a",
+              arguments: {},
+              argumentsHash: emptyHash,
+              rawArgumentsHash: emptyHash,
+            },
+          ],
+          continuation,
+          model: "fake",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        },
+      },
+    ])
+    const tool = (name: string) => ({
+      name,
+      description: name === "tool_a" ? "Use tool A." : "Use tool B.",
+      parameters: z.strictObject({}),
+    })
+    await expect(
+      gateway.decideTools({
+        input: "look up",
+        tools: [tool("tool_a"), tool("tool_b")],
+      })
+    ).rejects.toMatchObject({ code: "tool_protocol_invalid" })
     gateway.assertComplete()
   })
 
@@ -176,6 +250,7 @@ describe("scripted model gateway", () => {
           name: "lookup",
           arguments: {},
           argumentsHash: hashCanonical({}),
+          rawArgumentsHash: hashCanonical({}),
         },
       ],
       tools: [
@@ -205,7 +280,7 @@ describe("scripted model gateway", () => {
         [{ callId: "call-1", output: {} }],
         { instructions: "y".repeat(20) }
       )
-    ).rejects.toMatchObject({ code: "tool_protocol_invalid" })
+    ).rejects.toMatchObject({ code: "limit_exceeded" })
     await expect(
       gateway.continueTools(
         {
