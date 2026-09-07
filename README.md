@@ -234,3 +234,36 @@ Run focused endpoint checks with:
 pnpm exec vitest run --project unit packages/adapters/src/source/endpoint
 pnpm exec vitest run --project integration tests/integration/endpoint-normalization.integration.test.ts
 ```
+
+## Playwright Evidence Runtime
+
+`@sentinel/adapters` exposes an injectable browser evidence runtime with real
+Playwright and scripted-fake implementations. Each run owns a fresh
+non-persistent browser context. Models receive only bounded, schema-validated
+observations and opaque action IDs; Playwright locators, storage state, input
+values, raw URLs, and browser handles remain inside the adapter.
+
+Actions are bound to the run, a random session nonce, the observed semantic
+state, the candidate behavior, an expiry, and single-use state. The runtime
+re-reads the page and executes the refreshed locator only after the public state
+and private behavior fingerprints still match. Unknown submissions and
+destructive, payment, privilege, message, popup, download, or external-origin
+actions fail closed by default. Run, action, screen, redirect, tab, download,
+input, navigation, and wall-clock limits apply through setup, execution,
+observation, completion, cancellation, and replay.
+
+Browser contexts block service workers and WebRTC, route HTTP and WebSocket
+traffic through the exact-origin policy, and close on every terminal path.
+Observations and transitions retain only query-free, token-redacted URLs,
+normalized network metadata, redacted console/page errors, and private artifact
+IDs. Screenshots mask editable controls and known PII/secrets in every frame.
+Failure trace artifacts are minimized JSON assembled from already-redacted
+runtime evidence; native Playwright archives are not retained because they can
+contain request, DOM, and locator material outside the evidence contract.
+
+Run focused browser-runtime checks with:
+
+```sh
+pnpm exec vitest run --project unit packages/adapters/src/browser packages/contracts/src/browser-runtime.test.ts packages/contracts/src/identity.test.ts
+pnpm exec vitest run --project integration tests/integration/playwright-evidence-runtime.integration.test.ts --maxWorkers=1
+```
