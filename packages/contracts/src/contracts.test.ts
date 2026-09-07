@@ -17,6 +17,9 @@ import {
   parseAssessmentFinding,
   parseBrowserFactEnvelope,
   parseBrowserTransition,
+  parseBaselineCompatibility,
+  parseChangedFile,
+  parseChangedSymbol,
   parseCodeFactEnvelope,
   parseCodeSymbolFact,
   parseDiscoveryMission,
@@ -25,6 +28,7 @@ import {
   parseEvidenceReference,
   parseMissionResult,
   parsePrChange,
+  parsePrDiffAnalysis,
   parseRequirementCandidate,
   parseRun,
   parseRunEvent,
@@ -572,6 +576,128 @@ describe("versioned wire contracts", () => {
         headSymbolIds: [codeSymbolFixture.id],
       })
     ).toThrow("cannot contain head-side")
+  })
+
+  it("validates complete PR diff evidence and provenance", () => {
+    const sha = codeSymbolFixture.commitSha
+    const headSha = "c".repeat(40)
+    const diffHash = requirementCandidateFixture.source.contentHash
+    const provenance = {
+      pullRequestId: assessmentFindingFixture.pullRequestId,
+      baseSha: sha,
+      headSha,
+      diffHash,
+    }
+    const baseline = parseBaselineCompatibility({
+      status: "exact",
+      assessmentAllowed: true,
+      graphCommitSha: sha,
+      baseSha: sha,
+      reason: "graph_matches_pr_base",
+      relevantInterveningPaths: [],
+    })
+    const changedFile = parseChangedFile({
+      operation: "modified",
+      oldPath: codeSymbolFixture.filePath,
+      newPath: codeSymbolFixture.filePath,
+      language: "tsx",
+      classifications: ["source"],
+      baseRanges: [{ startLine: 10, endLine: 10 }],
+      headRanges: [{ startLine: 10, endLine: 11 }],
+      binary: false,
+      noNewlineAtEnd: false,
+      mappingStatus: "mapped",
+      baseSymbolIds: [codeSymbolFixture.id],
+      headSymbolIds: [codeSymbolFixture.id],
+      unresolvedReasons: [],
+      provenance,
+    })
+    const symbolSide = {
+      id: codeSymbolFixture.id,
+      filePath: codeSymbolFixture.filePath,
+      qualifiedName: codeSymbolFixture.qualifiedName,
+      name: "Checkout",
+      kind: "component",
+      language: "tsx",
+      range: codeSymbolFixture.range,
+      parentSymbolIds: [],
+      contentHash: diffHash,
+    }
+    const changedSymbol = parseChangedSymbol({
+      operation: "modified",
+      base: symbolSide,
+      head: { ...symbolSide, contentHash: diffHash },
+      baseRanges: changedFile.baseRanges,
+      headRanges: changedFile.headRanges,
+      matchStrategy: "same_structure",
+      unresolvedReasons: [],
+      provenance,
+    })
+
+    const analysis = {
+      schemaVersion: 1,
+      pullRequestId: provenance.pullRequestId,
+      repository: codeSymbolFixture.repository,
+      baseSha: sha,
+      headSha,
+      diffHash,
+      ancestry: "base_is_ancestor",
+      baseline,
+      files: [changedFile],
+      symbols: [changedSymbol],
+      summary: {
+        fileCount: 1,
+        symbolCount: 1,
+        mappedFileCount: 1,
+        unmappedFileCount: 0,
+      },
+    }
+    expect(parsePrDiffAnalysis(analysis).summary).toStrictEqual({
+      fileCount: 1,
+      symbolCount: 1,
+      mappedFileCount: 1,
+      unmappedFileCount: 0,
+    })
+    expect(() =>
+      parsePrDiffAnalysis({
+        ...analysis,
+        files: [
+          {
+            ...changedFile,
+            baseSymbolIds: [`code-symbol:v1:${"9".repeat(64)}`],
+          },
+        ],
+      })
+    ).toThrow("unknown base symbol")
+  })
+
+  it("rejects contradictory baseline and changed-symbol states", () => {
+    const sha = codeSymbolFixture.commitSha
+    expect(() =>
+      parseBaselineCompatibility({
+        status: "stale_relevant",
+        assessmentAllowed: true,
+        graphCommitSha: "c".repeat(40),
+        baseSha: sha,
+        reason: "ancestor_with_relevant_changes",
+        relevantInterveningPaths: ["src/changed.ts"],
+      })
+    ).toThrow("assessmentAllowed")
+    expect(() =>
+      parseChangedSymbol({
+        operation: "moved",
+        baseRanges: [],
+        headRanges: [],
+        matchStrategy: "same_structure",
+        unresolvedReasons: [],
+        provenance: {
+          pullRequestId: assessmentFindingFixture.pullRequestId,
+          baseSha: sha,
+          headSha: "c".repeat(40),
+          diffHash: requirementCandidateFixture.source.contentHash,
+        },
+      })
+    ).toThrow("require both sides")
   })
 
   it("separates unavailable verification from executed deterministic verdicts", () => {

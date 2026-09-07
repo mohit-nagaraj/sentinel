@@ -1,8 +1,12 @@
 import {
   assessmentFindingSchema,
+  baselineCompatibilitySchema,
+  changedFileSchema,
+  changedSymbolSchema,
   coverageAssessmentSchema,
   evidenceLinkSchema,
   prChangeSchema,
+  prDiffAnalysisSchema,
   pullRequestSchema,
   verificationResultSchema,
 } from "./assessment.ts"
@@ -57,6 +61,14 @@ export const parsePullRequest = (input: unknown) =>
   parseContract("pull request", pullRequestSchema, input)
 export const parsePrChange = (input: unknown) =>
   parseContract("PR change", prChangeSchema, input)
+export const parseBaselineCompatibility = (input: unknown) =>
+  parseContract("baseline compatibility", baselineCompatibilitySchema, input)
+export const parseChangedFile = (input: unknown) =>
+  parseContract("changed file", changedFileSchema, input)
+export const parseChangedSymbol = (input: unknown) =>
+  parseContract("changed symbol", changedSymbolSchema, input)
+export const parsePrDiffAnalysis = (input: unknown) =>
+  parseContract("PR diff analysis", prDiffAnalysisSchema, input)
 export const parseAssessmentFinding = (input: unknown) =>
   parseContract("assessment finding", assessmentFindingSchema, input)
 export const parseVerificationResult = (input: unknown) =>
