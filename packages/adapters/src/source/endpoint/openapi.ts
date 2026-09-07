@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto"
+import { types as utilTypes } from "node:util"
 
 import {
   applicationIdSchema,
-  canonicalSerialize,
   commitShaSchema,
   contentHashSchema,
   parseCodeFactEnvelope,
@@ -122,6 +122,21 @@ export interface OpenApiImportResult {
 
 type JsonRecord = Record<string, unknown>
 
+interface MetadataTraversalBudget {
+  nodes: number
+}
+
+function chargeMetadataBudget(
+  budget: MetadataTraversalBudget,
+  limits: OpenApiImportLimits,
+  count = 1
+): void {
+  budget.nodes += count
+  if (budget.nodes > limits.maxNodes) {
+    throw new OpenApiImportError("reference_limit_exceeded")
+  }
+}
+
 const operationMethods = [
   "delete",
   "get",
@@ -142,6 +157,27 @@ function isRecord(value: unknown): value is JsonRecord {
   return prototype === Object.prototype || prototype === null
 }
 
+function dataEntries(value: object): readonly [string, unknown][] {
+  const keys = Object.keys(value)
+  if (Array.isArray(value)) {
+    if (
+      Object.getPrototypeOf(value) !== Array.prototype ||
+      keys.length !== value.length ||
+      keys.some((key, index) => key !== String(index)) ||
+      Object.getOwnPropertyNames(value).length !== value.length + 1
+    ) {
+      throw new OpenApiImportError("invalid_document")
+    }
+  }
+  return keys.map((key) => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
+    if (descriptor === undefined || !("value" in descriptor)) {
+      throw new OpenApiImportError("invalid_document")
+    }
+    return [key, descriptor.value]
+  })
+}
+
 function mergeLimits(
   overrides: Partial<OpenApiImportLimits> | undefined
 ): OpenApiImportLimits {
@@ -157,22 +193,97 @@ function hashBytes(value: string | Uint8Array): ContentHash {
   )
 }
 
+function hashCanonicalObject(value: JsonRecord, maxBytes: number): ContentHash {
+  const hash = createHash("sha256")
+  const ancestors = new WeakSet<object>()
+  let bytes = 0
+
+  const write = (chunk: string): void => {
+    bytes += Buffer.byteLength(chunk, "utf8")
+    if (bytes > maxBytes) {
+      throw new OpenApiImportError("byte_limit_exceeded")
+    }
+    hash.update(chunk, "utf8")
+  }
+
+  const serialize = (current: unknown): void => {
+    if (
+      current === null ||
+      typeof current === "boolean" ||
+      typeof current === "string"
+    ) {
+      write(JSON.stringify(current))
+      return
+    }
+    if (typeof current === "number") {
+      if (!Number.isFinite(current)) {
+        throw new OpenApiImportError("invalid_document")
+      }
+      write(Object.is(current, -0) ? "0" : JSON.stringify(current))
+      return
+    }
+    if (typeof current !== "object") {
+      throw new OpenApiImportError("invalid_document")
+    }
+    if (ancestors.has(current)) {
+      throw new OpenApiImportError("invalid_document")
+    }
+    ancestors.add(current)
+    if (Object.getOwnPropertySymbols(current).length > 0) {
+      throw new OpenApiImportError("invalid_document")
+    }
+    if (Array.isArray(current)) {
+      const entries = dataEntries(current)
+      write("[")
+      for (const [index, [, child]] of entries.entries()) {
+        if (index > 0) write(",")
+        serialize(child)
+      }
+      write("]")
+    } else {
+      if (!isRecord(current)) {
+        throw new OpenApiImportError("invalid_document")
+      }
+      const keys = Object.keys(current).sort()
+      if (Object.getOwnPropertyNames(current).length !== keys.length) {
+        throw new OpenApiImportError("invalid_document")
+      }
+      write("{")
+      for (const [index, key] of keys.entries()) {
+        if (index > 0) write(",")
+        const descriptor = Object.getOwnPropertyDescriptor(current, key)
+        if (descriptor === undefined || !("value" in descriptor)) {
+          throw new OpenApiImportError("invalid_document")
+        }
+        write(JSON.stringify(key))
+        write(":")
+        serialize(descriptor.value)
+      }
+      write("}")
+    }
+    ancestors.delete(current)
+  }
+
+  serialize(value)
+  return contentHashSchema.parse(`sha256:${hash.digest("hex")}`)
+}
+
 function parseInput(
   input: OpenApiImportRequest["document"],
   limits: OpenApiImportLimits
 ): { readonly root: JsonRecord; readonly sourceHash: ContentHash } {
   if (typeof input !== "string" && !(input instanceof Uint8Array)) {
-    let serialized: string
     try {
-      serialized = canonicalSerialize(input)
-    } catch {
+      if (!isRecord(input)) throw new OpenApiImportError("invalid_document")
+      inspectDocument(input, limits)
+      return {
+        root: input,
+        sourceHash: hashCanonicalObject(input, limits.maxBytes),
+      }
+    } catch (error) {
+      if (error instanceof OpenApiImportError) throw error
       throw new OpenApiImportError("invalid_document")
     }
-    if (Buffer.byteLength(serialized, "utf8") > limits.maxBytes) {
-      throw new OpenApiImportError("byte_limit_exceeded")
-    }
-    if (!isRecord(input)) throw new OpenApiImportError("invalid_document")
-    return { root: input as JsonRecord, sourceHash: hashBytes(serialized) }
   }
 
   const bytes = typeof input === "string" ? Buffer.from(input, "utf8") : input
@@ -218,12 +329,14 @@ function inspectDocument(root: JsonRecord, limits: OpenApiImportLimits): void {
       return
     }
     if (value === null || typeof value !== "object") return
+    if (utilTypes.isProxy(value)) {
+      throw new OpenApiImportError("invalid_document")
+    }
     if (ancestors.has(value)) throw new OpenApiImportError("invalid_document")
     ancestors.add(value)
-    const entries: readonly [string, unknown][] = Array.isArray(value)
-      ? value.map((entry, index) => [String(index), entry])
-      : isRecord(value)
-        ? Object.entries(value)
+    const entries: readonly [string, unknown][] =
+      Array.isArray(value) || isRecord(value)
+        ? dataEntries(value)
         : (() => {
             throw new OpenApiImportError("invalid_document")
           })()
@@ -316,10 +429,12 @@ function resolveLocal(
 
 function stringArray(value: unknown, limit: number): readonly string[] {
   if (value === undefined) return []
-  if (!Array.isArray(value) || value.length > limit) {
+  if (!Array.isArray(value)) {
     throw new OpenApiImportError("invalid_document")
   }
-  const strings = value.map((entry) => {
+  const entries = dataEntries(value)
+  if (entries.length > limit) throw new OpenApiImportError("invalid_document")
+  const strings = entries.map(([, entry]) => {
     if (typeof entry !== "string" || entry.trim().length === 0) {
       throw new OpenApiImportError("invalid_document")
     }
@@ -331,12 +446,19 @@ function stringArray(value: unknown, limit: number): readonly string[] {
 function collectSchemaReferences(
   root: JsonRecord,
   value: unknown,
-  limits: OpenApiImportLimits
+  limits: OpenApiImportLimits,
+  budget: MetadataTraversalBudget
 ): readonly string[] {
   const references = new Set<string>()
+  const activeReferences = new Set<string>()
   const ancestors = new WeakSet<object>()
 
-  const collect = (current: unknown, depth: number): void => {
+  const collect = (
+    current: unknown,
+    depth: number,
+    referenceDepth: number
+  ): void => {
+    chargeMetadataBudget(budget, limits)
     if (
       depth > limits.maxDocumentDepth ||
       references.size > limits.maxReferences
@@ -347,28 +469,40 @@ function collectSchemaReferences(
     if (ancestors.has(current)) throw new OpenApiImportError("reference_cycle")
     ancestors.add(current)
     if (isRecord(current) && typeof current["$ref"] === "string") {
-      references.add(current["$ref"])
-      collect(resolveLocal(root, current, limits), depth + 1)
+      const reference = current["$ref"]
+      references.add(reference)
+      for (const [key, child] of Object.entries(current)) {
+        if (key !== "$ref") collect(child, depth + 1, referenceDepth)
+      }
+      if (!activeReferences.has(reference)) {
+        if (referenceDepth >= limits.maxReferenceDepth) {
+          throw new OpenApiImportError("reference_limit_exceeded")
+        }
+        activeReferences.add(reference)
+        collect(valueAtPointer(root, reference), depth + 1, referenceDepth + 1)
+        activeReferences.delete(reference)
+      }
     } else {
       for (const child of Array.isArray(current)
         ? current
         : isRecord(current)
           ? Object.values(current)
           : []) {
-        collect(child, depth + 1)
+        collect(child, depth + 1, referenceDepth)
       }
     }
     ancestors.delete(current)
   }
 
-  collect(value, 0)
+  collect(value, 0, 0)
   return Object.freeze([...references].sort())
 }
 
 function schemaReferencesFromContent(
   root: JsonRecord,
   value: unknown,
-  limits: OpenApiImportLimits
+  limits: OpenApiImportLimits,
+  budget: MetadataTraversalBudget
 ): readonly string[] {
   const resolved = resolveLocal(root, value, limits)
   if (!isRecord(resolved)) throw new OpenApiImportError("invalid_document")
@@ -377,6 +511,7 @@ function schemaReferencesFromContent(
   if (!isRecord(content)) throw new OpenApiImportError("invalid_document")
   const references = new Set<string>()
   for (const mediaType of Object.values(content)) {
+    chargeMetadataBudget(budget, limits)
     const resolvedMedia = resolveLocal(root, mediaType, limits)
     if (!isRecord(resolvedMedia)) {
       throw new OpenApiImportError("invalid_document")
@@ -384,7 +519,8 @@ function schemaReferencesFromContent(
     for (const reference of collectSchemaReferences(
       root,
       resolvedMedia["schema"],
-      limits
+      limits,
+      budget
     )) {
       references.add(reference)
     }
@@ -395,21 +531,35 @@ function schemaReferencesFromContent(
 function operationMetadata(
   root: JsonRecord,
   operation: JsonRecord,
-  limits: OpenApiImportLimits
+  limits: OpenApiImportLimits,
+  openApiVersion: string,
+  budget: MetadataTraversalBudget
 ): EndpointOperationMetadata {
+  chargeMetadataBudget(budget, limits)
   const requestSchemaRefs =
     operation["requestBody"] === undefined
       ? []
-      : schemaReferencesFromContent(root, operation["requestBody"], limits)
+      : schemaReferencesFromContent(
+          root,
+          operation["requestBody"],
+          limits,
+          budget
+        )
   if (!isRecord(operation["responses"])) {
     throw new OpenApiImportError("invalid_document")
   }
   const responseSchemaRefs = new Set<string>()
-  for (const response of Object.values(operation["responses"])) {
+  for (const [status, response] of Object.entries(operation["responses"])) {
+    chargeMetadataBudget(budget, limits)
+    if (status.startsWith("x-")) continue
+    if (!/^(?:default|[1-5](?:[0-9]{2}|XX))$/u.test(status)) {
+      throw new OpenApiImportError("invalid_document")
+    }
     for (const reference of schemaReferencesFromContent(
       root,
       response,
-      limits
+      limits,
+      budget
     )) {
       responseSchemaRefs.add(reference)
     }
@@ -422,6 +572,7 @@ function operationMetadata(
     throw new OpenApiImportError("invalid_document")
   }
   return {
+    openApiVersion,
     ...(typeof operation["operationId"] === "string"
       ? { operationId: operation["operationId"].trim() }
       : {}),
@@ -463,9 +614,10 @@ function firstServer(
     root["servers"],
   ]) {
     if (candidate === undefined) continue
-    if (!Array.isArray(candidate) || candidate.length === 0) {
+    if (!Array.isArray(candidate)) {
       throw new OpenApiImportError("invalid_document")
     }
+    if (candidate.length === 0) return undefined
     return candidate[0]
   }
   return undefined
@@ -506,10 +658,11 @@ export function importOpenApiDocument(
   const facts: CodeFactEnvelope[] = []
   const warnings: OpenApiImportWarning[] = []
   const operationIds = new Set<string>()
+  const metadataBudget: MetadataTraversalBudget = { nodes: 0 }
 
-  for (const [path, unresolvedPathItem] of pathEntries.sort(([left], [right]) =>
-    left.localeCompare(right)
-  )) {
+  for (const [pathIndex, [path, unresolvedPathItem]] of pathEntries
+    .sort(([left], [right]) => left.localeCompare(right))
+    .entries()) {
     if (!path.startsWith("/")) throw new OpenApiImportError("invalid_document")
     const pathItem = resolveLocal(root, unresolvedPathItem, limits)
     if (!isRecord(pathItem)) throw new OpenApiImportError("invalid_document")
@@ -517,7 +670,7 @@ export function importOpenApiDocument(
       if (pathItem[method] !== undefined) {
         warnings.push({
           code: "unsupported_http_method",
-          location: `#/paths/${path.replaceAll("~", "~0").replaceAll("/", "~1")}/${method}`,
+          location: `paths[${pathIndex}].${method}`,
         })
       }
     }
@@ -529,14 +682,23 @@ export function importOpenApiDocument(
       const unresolvedOperation = pathItem[method]
       const operation = resolveLocal(root, unresolvedOperation, limits)
       if (!isRecord(operation)) throw new OpenApiImportError("invalid_document")
-      const metadata = operationMetadata(root, operation, limits)
+      const metadata = operationMetadata(
+        root,
+        operation,
+        limits,
+        root["openapi"],
+        metadataBudget
+      )
       if (metadata.operationId !== undefined) {
         if (operationIds.has(metadata.operationId)) {
           throw new OpenApiImportError("invalid_document")
         }
         operationIds.add(metadata.operationId)
       }
-      const basePath = serverBasePath(firstServer(operation, pathItem, root))
+      const documentedBasePath = serverBasePath(
+        firstServer(operation, pathItem, root)
+      )
+      const basePath = request.basePath ?? documentedBasePath
       const endpoint = createEndpointTemplate({
         applicationId,
         method,

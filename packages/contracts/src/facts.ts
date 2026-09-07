@@ -193,6 +193,7 @@ export const apiEndpointFactSchema = z.strictObject({
   method: httpMethodSchema,
   normalizedPath: normalizedPathSchema,
   operationId: shortTextSchema.optional(),
+  openApiVersion: shortTextSchema.optional(),
   tags: z.array(shortTextSchema).max(100).optional(),
   requestSchemaRefs: z.array(nonEmptyStringSchema).max(500).optional(),
   responseSchemaRefs: z.array(nonEmptyStringSchema).max(2_000).optional(),

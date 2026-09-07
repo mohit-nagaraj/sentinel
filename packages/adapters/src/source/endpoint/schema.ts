@@ -53,6 +53,7 @@ export const endpointHandlerSchema = z.strictObject({
 
 export const endpointOperationMetadataSchema = apiEndpointFactSchema.pick({
   operationId: true,
+  openApiVersion: true,
   tags: true,
   requestSchemaRefs: true,
   responseSchemaRefs: true,

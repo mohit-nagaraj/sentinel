@@ -21,6 +21,14 @@ describe("endpoint path normalization", () => {
     ["/events/:eventId/orders", "/events/{param}/orders"],
     ["/events/${eventId}/orders", "/events/{param}/orders"],
     ["/events/[eventId]/orders", "/events/{param}/orders"],
+    ["/events/{eventId?}/orders", "/events/{param}/orders"],
+    ["/events/%7BeventId%7D/orders", "/events/{param}/orders"],
+    ["/reports/{format}.json", "/reports/{param}.json"],
+    ["/reports/${format}.json", "/reports/{param}.json"],
+    [
+      "/files/__SENTINEL_PATH_PARAMETER__",
+      "/files/__SENTINEL_PATH_PARAMETER__",
+    ],
     ["/events/%7eactive/%2f", "/events/~active/%2F"],
     [
       "https://api.example.test/api/events/42?token=secret#part",
@@ -34,6 +42,22 @@ describe("endpoint path normalization", () => {
   it("normalizes parameter names by position", () => {
     expect(normalizeEndpointPath("/events/{event_id}/orders/{order}")).toBe(
       normalizeEndpointPath("/events/{id}/orders/{order_id}")
+    )
+  })
+
+  it("keeps literal braces concrete when template syntax is disabled", () => {
+    expect(
+      normalizeEndpointPath("/users/{literal}", { templateSyntax: false })
+    ).toBe("/users/{literal}")
+  })
+
+  it("interprets network-path URLs only with explicit source context", () => {
+    expect(normalizeEndpointPath("//api/v1")).toBe("/api/v1")
+    expect(
+      normalizeEndpointPath("//api/v1", { networkPathReference: true })
+    ).toBe("/v1")
+    expect(normalizeEndpointPath("/events", { basePath: "//api/v1" })).toBe(
+      "/v1/events"
     )
   })
 

@@ -78,6 +78,7 @@ describe("OpenAPI importer", () => {
       },
       operation: {
         operationId: "createOrder",
+        openApiVersion: "3.1.0",
         tags: ["Orders", "Public"],
         requestSchemaRefs: ["#/components/schemas/CreateOrderRequest"],
         responseSchemaRefs: ["#/components/schemas/Order"],
@@ -87,6 +88,7 @@ describe("OpenAPI importer", () => {
       factKind: "api_endpoint",
       fact: {
         operationId: "createOrder",
+        openApiVersion: "3.1.0",
         tags: ["Orders", "Public"],
       },
     })
@@ -103,6 +105,349 @@ describe("OpenAPI importer", () => {
       },
     }
     expect(importFixture(document)).toStrictEqual(importFixture(document))
+  })
+
+  it("rejects object accessors without invoking them", () => {
+    let reads = 0
+    const info: Record<string, unknown> = { version: "1" }
+    Object.defineProperty(info, "title", {
+      enumerable: true,
+      get: () => {
+        reads += 1
+        return "unsafe"
+      },
+    })
+
+    expect(() =>
+      importFixture({ openapi: "3.1.0", info, paths: {} })
+    ).toThrowError(expect.objectContaining({ code: "invalid_document" }))
+    expect(reads).toBe(0)
+  })
+
+  it("rejects hidden array accessors without invoking them or leaking errors", () => {
+    const secret = "secret-accessor-message"
+    let reads = 0
+    const tags = ["safe"]
+    Object.defineProperty(tags, "map", {
+      get: () => {
+        reads += 1
+        throw new Error(secret)
+      },
+    })
+
+    let error: unknown
+    try {
+      importFixture({
+        openapi: "3.1.0",
+        info: { title: "Accessors", version: "1" },
+        paths: {
+          "/accessors": {
+            get: {
+              tags,
+              responses: { "200": { description: "ok" } },
+            },
+          },
+        },
+      })
+    } catch (caught) {
+      error = caught
+    }
+
+    expect(error).toEqual(expect.objectContaining({ code: "invalid_document" }))
+    expect(String(error)).not.toContain(secret)
+    expect(reads).toBe(0)
+  })
+
+  it("rejects inherited array accessors without invoking them", () => {
+    let reads = 0
+    const tags = ["safe"]
+    Object.setPrototypeOf(tags, {
+      get map() {
+        reads += 1
+        return Array.prototype.map
+      },
+    })
+
+    expect(() =>
+      importFixture({
+        openapi: "3.1.0",
+        info: { title: "Accessors", version: "1" },
+        paths: {
+          "/accessors": {
+            get: {
+              tags,
+              responses: { "200": { description: "ok" } },
+            },
+          },
+        },
+      })
+    ).toThrowError(expect.objectContaining({ code: "invalid_document" }))
+    expect(reads).toBe(0)
+  })
+
+  it("redacts reflective errors from hostile object inputs", () => {
+    const secret = "secret-proxy-message"
+    const document = new Proxy(
+      {},
+      {
+        getPrototypeOf: () => Object.prototype,
+        ownKeys: () => {
+          throw new Error(secret)
+        },
+      }
+    )
+
+    let error: unknown
+    try {
+      importFixture(document)
+    } catch (caught) {
+      error = caught
+    }
+
+    expect(error).toEqual(expect.objectContaining({ code: "invalid_document" }))
+    expect(String(error)).not.toContain(secret)
+  })
+
+  it("rejects live proxies before later property access", () => {
+    const secret = "late-proxy-message"
+    let reads = 0
+    const document = new Proxy(
+      { openapi: "3.1.0", info: {}, paths: {} },
+      {
+        get: (target, property, receiver) => {
+          if (property === "openapi") {
+            reads += 1
+            throw new Error(secret)
+          }
+          return Reflect.get(target, property, receiver)
+        },
+      }
+    )
+
+    let error: unknown
+    try {
+      importFixture(document)
+    } catch (caught) {
+      error = caught
+    }
+
+    expect(error).toEqual(expect.objectContaining({ code: "invalid_document" }))
+    expect(String(error)).not.toContain(secret)
+    expect(reads).toBe(0)
+  })
+
+  it("enforces the byte limit while canonically hashing object input", () => {
+    expect(() =>
+      importOpenApiDocument({
+        applicationId,
+        sourceUri: "repository://openapi.json",
+        document: {
+          openapi: "3.1.0",
+          info: { title: "a".repeat(1_000), version: "1" },
+          paths: {},
+        },
+        limits: { maxBytes: 100 },
+      })
+    ).toThrowError(expect.objectContaining({ code: "byte_limit_exceeded" }))
+  })
+
+  it("uses an explicit base path and accepts empty server arrays", () => {
+    const result = importOpenApiDocument({
+      applicationId,
+      sourceUri: "repository://openapi.json",
+      document: {
+        openapi: "3.0.3",
+        info: { title: "Health", version: "1" },
+        servers: [],
+        paths: {
+          "/health": {
+            get: { responses: { "200": { description: "ok" } } },
+          },
+        },
+      },
+      basePath: "//api/v2",
+    })
+
+    expect(result.endpoints[0]?.endpoint.normalizedPath).toBe("/v2/health")
+  })
+
+  it("preserves recursive and sibling OpenAPI 3.1 schema refs", () => {
+    const result = importOpenApiDocument({
+      applicationId,
+      sourceUri: "repository://openapi.json",
+      document: {
+        openapi: "3.1.0",
+        info: { title: "Tree", version: "1" },
+        paths: {
+          "/tree": {
+            get: {
+              responses: {
+                "200": {
+                  description: "ok",
+                  content: {
+                    "application/json": {
+                      schema: {
+                        $ref: "#/components/schemas/Node",
+                        properties: {
+                          leaf: { $ref: "#/components/schemas/Leaf" },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        components: {
+          schemas: {
+            Node: {
+              type: "object",
+              properties: {
+                child: { $ref: "#/components/schemas/Node" },
+              },
+            },
+            Leaf: { type: "string" },
+          },
+        },
+      },
+    })
+
+    expect(result.endpoints[0]?.operation?.responseSchemaRefs).toStrictEqual([
+      "#/components/schemas/Leaf",
+      "#/components/schemas/Node",
+    ])
+  })
+
+  it("redacts paths from unsupported-method warnings", () => {
+    const secret = "personal-path-value"
+    const result = importOpenApiDocument({
+      applicationId,
+      sourceUri: "repository://openapi.json",
+      document: {
+        openapi: "3.1.0",
+        info: { title: "Trace", version: "1" },
+        paths: {
+          [`/${secret}`]: {
+            trace: { responses: { "200": { description: "ok" } } },
+          },
+        },
+      },
+    })
+
+    expect(result.warnings).toStrictEqual([
+      { code: "unsupported_http_method", location: "paths[0].trace" },
+    ])
+    expect(JSON.stringify(result.warnings)).not.toContain(secret)
+  })
+
+  it("bounds metadata traversal across all operations", () => {
+    const paths = Object.fromEntries(
+      Array.from({ length: 50 }, (_, index) => [
+        `/items/${index}`,
+        {
+          get: {
+            responses: {
+              "200": { $ref: "#/components/responses/Shared" },
+            },
+          },
+        },
+      ])
+    )
+    const properties = Object.fromEntries(
+      Array.from({ length: 20 }, (_, index) => [
+        `field${index}`,
+        { type: "string" },
+      ])
+    )
+
+    expect(() =>
+      importOpenApiDocument({
+        applicationId,
+        sourceUri: "repository://openapi.json",
+        document: {
+          openapi: "3.1.0",
+          info: { title: "Large", version: "1" },
+          paths,
+          components: {
+            responses: {
+              Shared: {
+                description: "ok",
+                content: {
+                  "application/json": {
+                    schema: {
+                      $ref: "#/components/schemas/Shared",
+                    },
+                  },
+                },
+              },
+            },
+            schemas: { Shared: { type: "object", properties } },
+          },
+        },
+        limits: { maxNodes: 1_000 },
+      })
+    ).toThrowError(
+      expect.objectContaining({ code: "reference_limit_exceeded" })
+    )
+  })
+
+  it("enforces reference depth independently of object key order", () => {
+    const document = (order: readonly string[]) => ({
+      openapi: "3.1.0",
+      info: { title: "Depth", version: "1" },
+      paths: {
+        "/depth": {
+          get: {
+            responses: {
+              "200": {
+                description: "ok",
+                content: {
+                  "application/json": {
+                    schema: {
+                      properties: Object.fromEntries(
+                        order.map((name) => [
+                          name,
+                          {
+                            $ref:
+                              name === "shortcut"
+                                ? "#/components/schemas/C"
+                                : "#/components/schemas/B",
+                          },
+                        ])
+                      ),
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      components: {
+        schemas: {
+          B: { $ref: "#/components/schemas/C" },
+          C: { $ref: "#/components/schemas/D" },
+          D: { type: "string" },
+        },
+      },
+    })
+
+    for (const order of [
+      ["shortcut", "long"],
+      ["long", "shortcut"],
+    ]) {
+      expect(() =>
+        importOpenApiDocument({
+          applicationId,
+          sourceUri: "repository://openapi.json",
+          document: document(order),
+          limits: { maxReferenceDepth: 2 },
+        })
+      ).toThrowError(
+        expect.objectContaining({ code: "reference_limit_exceeded" })
+      )
+    }
   })
 
   it.each([

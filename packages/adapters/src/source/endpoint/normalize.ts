@@ -12,8 +12,8 @@ import {
 } from "./schema.ts"
 
 const MAX_ENDPOINT_INPUT_LENGTH = 8_192
-const placeholderSegment =
-  /^(?:\{[^{}\/]+\??\}|:[^/]+|\$\{[^{}]+\}|\*|\[\[?\.{3}[^\]]+\]?\]|\[[^\]]+\])$/
+const canonicalPlaceholder = "{param}"
+const placeholderSegment = /^(?::[^/]+|\*|\[\[?\.{3}[^\]]+\]?\]|\[[^\]]+\])$/
 const percentEncoded = /%[0-9a-fA-F]{2}/g
 const unreserved = /^[A-Za-z0-9._~-]$/
 
@@ -40,22 +40,44 @@ export interface NormalizeEndpointPathOptions {
   readonly basePath?: string
   /** Explicit source/deployment prefixes to remove, longest match first. */
   readonly stripPrefixes?: readonly string[]
+  /** Disable source-template recognition for concrete runtime paths. */
+  readonly templateSyntax?: boolean
+  /** Treat a leading `//authority/path` value as a network-path URL. */
+  readonly networkPathReference?: boolean
 }
 
-function pathOnly(value: string): string {
+function normalizeTemplateExpressions(value: string): string {
+  return value
+    .replace(/\$\{[^{}\/]+\}/gu, canonicalPlaceholder)
+    .replace(/\{[^{}\/]+\}/gu, canonicalPlaceholder)
+}
+
+function pathOnly(
+  value: string,
+  templateSyntax: boolean,
+  networkPathReference: boolean
+): string {
   const trimmed = value.trim()
   if (trimmed.length === 0) throw new EndpointNormalizationError("invalid_path")
   if (trimmed.length > MAX_ENDPOINT_INPUT_LENGTH) {
     throw new EndpointNormalizationError("path_too_long")
   }
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+  const normalizedTemplates = templateSyntax
+    ? normalizeTemplateExpressions(trimmed)
+    : trimmed
+  const absoluteUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(normalizedTemplates)
+    ? normalizedTemplates
+    : networkPathReference && normalizedTemplates.startsWith("//")
+      ? `https:${normalizedTemplates}`
+      : undefined
+  if (absoluteUrl !== undefined) {
     try {
-      return new URL(trimmed).pathname
+      return new URL(absoluteUrl).pathname
     } catch {
       throw new EndpointNormalizationError("invalid_path")
     }
   }
-  return trimmed.split(/[?#]/u, 1)[0] ?? ""
+  return normalizedTemplates.split(/[?#]/u, 1)[0] ?? ""
 }
 
 function normalizePercentEncoding(segment: string): string {
@@ -65,17 +87,30 @@ function normalizePercentEncoding(segment: string): string {
   })
 }
 
-function normalizeSegment(segment: string): string {
-  if (placeholderSegment.test(segment)) return "{param}"
-  const encodedTemplate = /^%7b[^%/]+%7d$/iu.exec(segment)
-  if (encodedTemplate !== null) return "{param}"
-  return normalizePercentEncoding(segment)
+function normalizeSegment(segment: string, templateSyntax: boolean): string {
+  if (templateSyntax && placeholderSegment.test(segment)) {
+    return canonicalPlaceholder
+  }
+  const normalized = normalizePercentEncoding(segment)
+  return templateSyntax
+    ? normalized.replace(/(?:\{param\}|%7B[^%/]+%7D)/giu, canonicalPlaceholder)
+    : normalized
 }
 
-function normalizeBarePath(value: string): string {
-  const path = pathOnly(value).replaceAll("\\", "/")
+function normalizeBarePath(
+  value: string,
+  templateSyntax = true,
+  networkPathReference = false
+): string {
+  const path = pathOnly(value, templateSyntax, networkPathReference).replaceAll(
+    "\\",
+    "/"
+  )
   if (/\p{Cc}/u.test(path)) throw new EndpointNormalizationError("invalid_path")
-  const segments = path.split("/").filter(Boolean).map(normalizeSegment)
+  const segments = path
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => normalizeSegment(segment, templateSyntax))
   return normalizedPathSchema.parse(
     segments.length === 0 ? "/" : `/${segments.join("/")}`
   )
@@ -83,7 +118,7 @@ function normalizeBarePath(value: string): string {
 
 function joinPaths(basePath: string | undefined, path: string): string {
   if (basePath === undefined) return path
-  const normalizedBase = normalizeBarePath(basePath)
+  const normalizedBase = normalizeBarePath(basePath, true, true)
   if (normalizedBase === "/") return path
   if (path === "/") return normalizedBase
   return `${normalizedBase}${path}`
@@ -94,7 +129,9 @@ function stripConfiguredPrefix(
   prefixes: readonly string[] | undefined
 ): string {
   if (prefixes === undefined || prefixes.length === 0) return path
-  const normalized = [...new Set(prefixes.map(normalizeBarePath))].sort(
+  const normalized = [
+    ...new Set(prefixes.map((prefix) => normalizeBarePath(prefix))),
+  ].sort(
     (left, right) => right.length - left.length || left.localeCompare(right)
   )
   for (const prefix of normalized) {
@@ -109,7 +146,14 @@ export function normalizeEndpointPath(
   value: string,
   options: NormalizeEndpointPathOptions = {}
 ): string {
-  const withBase = joinPaths(options.basePath, normalizeBarePath(value))
+  const withBase = joinPaths(
+    options.basePath,
+    normalizeBarePath(
+      value,
+      options.templateSyntax ?? true,
+      options.networkPathReference ?? false
+    )
+  )
   return normalizedPathSchema.parse(
     stripConfiguredPrefix(withBase, options.stripPrefixes)
   )

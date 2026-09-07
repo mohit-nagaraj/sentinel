@@ -81,6 +81,49 @@ describe("endpoint evidence comparison", () => {
       reason: "path_mismatch",
       evidence: [get, users],
     })
+
+    const forgedMethod = {
+      ...post,
+      endpoint: { ...post.endpoint, id: get.endpoint.id },
+    }
+    expect(compareEndpointEvidence(get, forgedMethod)).toMatchObject({
+      kind: "conflict",
+      reason: "method_mismatch",
+    })
+
+    const forgedPath = {
+      ...users,
+      endpoint: { ...users.endpoint, id: get.endpoint.id },
+    }
+    expect(compareEndpointEvidence(get, forgedPath)).toMatchObject({
+      kind: "conflict",
+      reason: "path_mismatch",
+    })
+  })
+
+  it("never links endpoint evidence across applications", () => {
+    const first = evidence("openapi", "GET", "/orders/{id}")
+    const otherApplicationId = applicationIdSchema.parse(
+      `application:v1:${"a".repeat(64)}`
+    )
+    const second = endpointEvidenceSchema.parse({
+      sourceKind: "laravel",
+      endpoint: createEndpointTemplate({
+        applicationId: otherApplicationId,
+        method: "GET",
+        path: "/orders/{orderId}",
+      }),
+      provenance: {
+        sourceKind: "laravel",
+        extractor: { name: "laravel_fixture", version: "1.0.0" },
+        sourceHash,
+      },
+    })
+
+    expect(compareEndpointEvidence(first, second)).toMatchObject({
+      kind: "conflict",
+      reason: "application_mismatch",
+    })
   })
 
   it("surfaces static and dynamic overlap as a candidate", () => {
@@ -159,6 +202,26 @@ describe("cross-source adapters", () => {
                 endTokenPos: 30,
               },
             },
+            {
+              id: `php-route:v1:${"8".repeat(64)}`,
+              methods: ["GET"],
+              path: "/api/v1/events/{event?}",
+              middleware: ["api"],
+              action: {
+                originalName: "ShowEventAction::class",
+                resolvedName: "App\\Actions\\ShowEventAction",
+                dynamic: false,
+              },
+              dynamic: false,
+              range: {
+                startLine: 11,
+                endLine: 11,
+                startFilePos: 181,
+                endFilePos: 250,
+                startTokenPos: 31,
+                endTokenPos: 40,
+              },
+            },
           ],
           errors: [],
         },
@@ -167,7 +230,7 @@ describe("cross-source adapters", () => {
         fileCount: 1,
         symbolCount: 0,
         relationshipCount: 0,
-        routeCount: 1,
+        routeCount: 2,
         errorCount: 0,
       },
     })
@@ -196,6 +259,37 @@ describe("cross-source adapters", () => {
         method: "__invoke",
       },
     })
+    const optional = endpointsFromLaravelRoute({
+      response,
+      file: response.files[0]!,
+      route: response.files[0]!.routes[1]!,
+      stripPrefixes: ["/api/v1"],
+    })
+    expect(
+      optional.endpoints.map(({ endpoint }) => endpoint.normalizedPath)
+    ).toStrictEqual(["/events", "/events/{param}"])
+
+    const otherFile = {
+      ...response.files[0]!,
+      path: "backend/routes/other.php",
+      contentHash: contentHashSchema.parse(`sha256:${"9".repeat(64)}`),
+      routes: [response.files[0]!.routes[1]!],
+    }
+    const reboundResponse = phpIndexerResponseSchema.parse({
+      ...response,
+      files: [
+        { ...response.files[0]!, routes: [response.files[0]!.routes[0]!] },
+        otherFile,
+      ],
+      summary: { ...response.summary, fileCount: 2 },
+    })
+    expect(() =>
+      endpointsFromLaravelRoute({
+        response: reboundResponse,
+        file: reboundResponse.files[0]!,
+        route: reboundResponse.files[1]!.routes[0]!,
+      })
+    ).toThrow("Laravel route is not indexed by the supplied response")
   })
 })
 
@@ -223,6 +317,15 @@ describe("runtime endpoint matching", () => {
     })
   })
 
+  it("keeps disjoint embedded templates as path conflicts", () => {
+    expect(
+      compareEndpointEvidence(
+        evidence("openapi", "GET", "/reports/{format}.json"),
+        evidence("laravel", "GET", "/reports/{extension}.xml")
+      )
+    ).toMatchObject({ kind: "conflict", reason: "path_mismatch" })
+  })
+
   it("returns tied patterns as ambiguous candidates", () => {
     const left = evidence("openapi", "GET", "/stores/{id}/orders/current")
     const right = evidence("laravel", "GET", "/stores/current/orders/{id}")
@@ -239,6 +342,21 @@ describe("runtime endpoint matching", () => {
     })
   })
 
+  it("does not break a dynamic-position tie by literal character count", () => {
+    const trailingDynamic = evidence("openapi", "GET", "/long-static-name/{id}")
+    const leadingDynamic = evidence("laravel", "GET", "/{id}/x")
+
+    expect(
+      matchRuntimeRequest(runtime("GET", "/long-static-name/x"), [
+        trailingDynamic,
+        leadingDynamic,
+      ])
+    ).toMatchObject({
+      kind: "candidate",
+      reason: "ambiguous_path",
+    })
+  })
+
   it("returns method disagreement as a conflict", () => {
     const post = evidence("openapi", "POST", "/orders/{id}")
     expect(
@@ -248,5 +366,66 @@ describe("runtime endpoint matching", () => {
       reason: "method_mismatch",
       evidence: [post],
     })
+  })
+
+  it("matches embedded source placeholders to a concrete runtime segment", () => {
+    const report = evidence("openapi", "GET", "/reports/{format}.json")
+    expect(
+      matchRuntimeRequest(runtime("GET", "/reports/monthly.json"), [report])
+    ).toMatchObject({
+      kind: "exact",
+      endpoint: { id: report.endpoint.id },
+    })
+  })
+
+  it("matches adjacent placeholders without regex backtracking", () => {
+    const adjacent = evidence(
+      "openapi",
+      "GET",
+      "/segments/{first}{second}{third}{fourth}{fifth}y"
+    )
+    const result = matchRuntimeRequest(
+      runtime("GET", `/segments/${"a".repeat(2_000)}z`),
+      [adjacent]
+    )
+
+    expect(result).toMatchObject({
+      kind: "unmatched",
+      reason: "unmatched_runtime_path",
+    })
+  })
+
+  it("bounds work for large adjacent-placeholder catalogs", () => {
+    const placeholders = "{param}".repeat(250)
+    const catalog = Array.from({ length: 200 }, (_, index) =>
+      evidence("openapi", "GET", `/segments/${placeholders}y${index}`)
+    )
+    const startedAt = performance.now()
+
+    expect(
+      matchRuntimeRequest(
+        runtime("GET", `/segments/${"a".repeat(1_800)}z`),
+        catalog
+      )
+    ).toMatchObject({
+      kind: "unmatched",
+      reason: "unmatched_runtime_path",
+    })
+    expect(performance.now() - startedAt).toBeLessThan(500)
+
+    const repeatedLiteralCatalog = Array.from({ length: 200 }, (_, index) =>
+      evidence("openapi", "GET", `/segments/{param}${"a".repeat(900)}b${index}`)
+    )
+    const repeatedLiteralStartedAt = performance.now()
+    expect(
+      matchRuntimeRequest(
+        runtime("GET", `/segments/${"a".repeat(1_900)}c`),
+        repeatedLiteralCatalog
+      )
+    ).toMatchObject({
+      kind: "unmatched",
+      reason: "unmatched_runtime_path",
+    })
+    expect(performance.now() - repeatedLiteralStartedAt).toBeLessThan(500)
   })
 })
