@@ -320,15 +320,31 @@ export function createOnboardingInputFingerprint(
   configurationInput: OnboardingConfiguration
 ) {
   const configuration = onboardingConfigurationSchema.parse(configurationInput)
-  const {
-    recordId: _recordId,
-    name: _name,
-    repository,
-    ...rest
-  } = configuration
-  const { resolvedCommitSha: _resolvedCommitSha, ...repositoryInput } =
-    repository
-  return hashCanonical({ ...rest, repository: repositoryInput })
+  return hashCanonical({
+    schemaVersion: configuration.schemaVersion,
+    deploymentUrl: configuration.deploymentUrl,
+    repository: {
+      url: configuration.repository.url,
+      ref: configuration.repository.ref,
+      accessMode: configuration.repository.accessMode,
+      ...(configuration.repository.installationId === undefined
+        ? {}
+        : { installationId: configuration.repository.installationId }),
+    },
+    documentationSources: configuration.documentationSources,
+    ...(configuration.previewUrlPattern === undefined
+      ? {}
+      : { previewUrlPattern: configuration.previewUrlPattern }),
+    authentication: configuration.authentication,
+    crawl: configuration.crawl,
+    capabilityHints: configuration.capabilityHints,
+    ...(configuration.testDataSetupReference === undefined
+      ? {}
+      : { testDataSetupReference: configuration.testDataSetupReference }),
+    ...(configuration.testDataResetReference === undefined
+      ? {}
+      : { testDataResetReference: configuration.testDataResetReference }),
+  })
 }
 
 export const compatibilityCapabilitySchema = z.enum([

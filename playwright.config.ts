@@ -27,7 +27,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `pnpm --filter @sentinel/web dev --hostname 127.0.0.1 --port ${port}`,
+    command: `cross-env SENTINEL_CONTROL_PLANE_FIXTURE=1 SENTINEL_OPERATOR_ID=00000000-0000-4000-8000-000000000022 SUPABASE_SERVICE_ROLE_KEY=supabase-service-canary-snt022 NEO4J_PASSWORD=neo4j-password-canary-snt022 AZURE_OPENAI_API_KEY=azure-model-canary-snt022 GITHUB_TOKEN=github-token-canary-snt022 pnpm --filter @sentinel/web dev --hostname 127.0.0.1 --port ${port}`,
     url: `${baseURL}/api/health`,
     reuseExistingServer: false,
     timeout: 120_000,

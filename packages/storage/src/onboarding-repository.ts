@@ -126,7 +126,8 @@ function mapRow(row: OnboardingRow): OnboardingRecord {
 function storedConfiguration(
   configuration: OnboardingConfiguration
 ): OnboardingConfiguration {
-  const { recordId: _recordId, ...stored } = configuration
+  const stored = { ...configuration }
+  delete stored.recordId
   return onboardingConfigurationSchema.parse(stored)
 }
 
@@ -511,10 +512,16 @@ export class OnboardingRepository {
       ) {
         return null
       }
-      const {
-        resolvedCommitSha: _previousResolvedCommitSha,
-        ...repositoryInput
-      } = current.configuration.repository
+      const repositoryInput = {
+        url: current.configuration.repository.url,
+        ref: current.configuration.repository.ref,
+        accessMode: current.configuration.repository.accessMode,
+        ...(current.configuration.repository.installationId === undefined
+          ? {}
+          : {
+              installationId: current.configuration.repository.installationId,
+            }),
+      }
       const repository = {
         ...repositoryInput,
         ...(report.resolvedCommitSha === undefined

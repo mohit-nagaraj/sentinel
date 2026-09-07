@@ -6,9 +6,12 @@
 - [x] Implement bounded repository, documentation, application, and Playwright readiness inspection.
 - [x] Persist owner-scoped configuration, compatibility, confirmation, stale state, and secret references.
 - [x] Add the authorized server-only onboarding controller and actions.
-- [ ] Deliver the accessible application shell, onboarding workflow, and browser security coverage.
+- [x] Deliver the accessible application shell, onboarding workflow, and browser security coverage.
 
 ## Decisions
+
+- Use an application rail with a compact four-step source, access, safety, and review workspace while preserving the existing Sentinel tokens; persistent application context is more efficient for returning operators than a centered one-off wizard.
+- Exercise Server Action responses and client scripts with privileged canaries in Chromium; source-level import checks alone cannot prove database, graph, model, GitHub, or submitted target secrets are absent from the delivered browser surface.
 
 | Date       | Decision                                                                                                                                                                                   | Reason                                                                                                                                      |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |

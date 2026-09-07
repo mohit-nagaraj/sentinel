@@ -172,8 +172,11 @@ describe("onboarding compatibility inspector", () => {
   })
 
   it("uses warnings for optional Playwright target assets", async () => {
-    const { "playwright.config.ts": _playwright, ...partialFiles } =
-      supportedFiles
+    const partialFiles = Object.fromEntries(
+      Object.entries(supportedFiles).filter(
+        ([path]) => path !== "playwright.config.ts"
+      )
+    )
     const repository = new FakeRepositoryProbe(partialFiles)
 
     const report = await inspector({ repository }).inspect(configuration())
