@@ -77,5 +77,5 @@ Follow LangGraph's documented guidance: state stores raw data/IDs, external call
 - Identical resumes continue any committed decision's pending completion/finalizer nodes; only an actually terminal matching actor/outcome short-circuits as idempotent.
 - Wrapped handlers race the remaining elapsed budget and receive an `AbortSignal`, preventing a hung tool/provider promise from holding a run or resume lock indefinitely.
 - Commit-marker guards suppress internal lifecycle starts, terminal resume checks also require no pending graph nodes, and long elapsed budgets use bounded timer chunks rather than overflowing Node timers.
-- Default verification on 2026-09-07: formatting, zero-warning lint, TypeScript build, 27 files and 172 tests passed; 5 orchestration files and 38 tests passed.
+- Default verification on 2026-09-07: formatting, zero-warning lint, TypeScript build, 33 files and 238 tests passed; 5 orchestration files and 38 tests passed.
 - Opt-in disposable Postgres verification: 1 integration test passed checkpoint setup/privacy, close/recreate restart, interrupt persistence, concurrent authorized/idempotent resume with one finalizer, durable event ordering, and exact thread cleanup.
