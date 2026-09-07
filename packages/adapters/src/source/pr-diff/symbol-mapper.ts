@@ -52,32 +52,100 @@ function uniqueRanges(ranges: readonly DiffRange[]): readonly DiffRange[] {
   return Object.freeze(merged)
 }
 
-function smallestEnclosing(
-  symbols: readonly AffectedSymbol[],
-  path: string,
-  range: DiffRange
-):
-  { readonly symbol: AffectedSymbol; readonly ambiguous: boolean } | undefined {
-  const candidates = symbols
-    .filter(
-      (symbol) =>
-        symbol.filePath === path &&
-        symbol.range.startLine <= range.startLine &&
-        symbol.range.endLine >= range.endLine
-    )
-    .sort(
-      (left, right) =>
-        rangeSize(left.range) - rangeSize(right.range) ||
-        compareStrings(left.qualifiedName, right.qualifiedName)
-    )
-  const symbol = candidates[0]
-  if (symbol === undefined) return undefined
-  return {
-    symbol,
-    ambiguous:
-      candidates[1] !== undefined &&
-      rangeSize(candidates[1].range) === rangeSize(symbol.range),
+function compareSymbols(left: AffectedSymbol, right: AffectedSymbol): number {
+  return (
+    rangeSize(left.range) - rangeSize(right.range) ||
+    compareStrings(left.qualifiedName, right.qualifiedName) ||
+    compareStrings(left.id, right.id)
+  )
+}
+
+class SymbolHeap {
+  private readonly values: AffectedSymbol[] = []
+
+  peek(): AffectedSymbol | undefined {
+    return this.values[0]
   }
+
+  push(value: AffectedSymbol): void {
+    this.values.push(value)
+    let index = this.values.length - 1
+    while (index > 0) {
+      const parent = Math.floor((index - 1) / 2)
+      if (compareSymbols(this.values[parent]!, value) <= 0) break
+      this.values[index] = this.values[parent]!
+      index = parent
+    }
+    this.values[index] = value
+  }
+
+  pop(): AffectedSymbol | undefined {
+    const first = this.values[0]
+    const last = this.values.pop()
+    if (first === undefined || last === undefined || this.values.length === 0) {
+      return first
+    }
+    let index = 0
+    while (true) {
+      const left = index * 2 + 1
+      const right = left + 1
+      if (left >= this.values.length) break
+      const child =
+        right < this.values.length &&
+        compareSymbols(this.values[right]!, this.values[left]!) < 0
+          ? right
+          : left
+      if (compareSymbols(this.values[child]!, last) >= 0) break
+      this.values[index] = this.values[child]!
+      index = child
+    }
+    this.values[index] = last
+    return first
+  }
+}
+
+function enclosingSymbolsByLine(
+  symbols: readonly AffectedSymbol[],
+  lines: readonly number[]
+): ReadonlyMap<
+  number,
+  { readonly symbol: AffectedSymbol; readonly ambiguous: boolean }
+> {
+  const orderedSymbols = [...symbols].sort(
+    (left, right) =>
+      left.range.startLine - right.range.startLine ||
+      compareSymbols(left, right)
+  )
+  const heap = new SymbolHeap()
+  const selections = new Map<
+    number,
+    { readonly symbol: AffectedSymbol; readonly ambiguous: boolean }
+  >()
+  let symbolIndex = 0
+  const discardExpired = (line: number): void => {
+    while ((heap.peek()?.range.endLine ?? line) < line) heap.pop()
+  }
+  for (const line of lines) {
+    while (
+      orderedSymbols[symbolIndex] !== undefined &&
+      orderedSymbols[symbolIndex]!.range.startLine <= line
+    ) {
+      heap.push(orderedSymbols[symbolIndex]!)
+      symbolIndex += 1
+    }
+    discardExpired(line)
+    const symbol = heap.pop()
+    if (symbol === undefined) continue
+    discardExpired(line)
+    const next = heap.peek()
+    selections.set(line, {
+      symbol,
+      ambiguous:
+        next !== undefined && rangeSize(next.range) === rangeSize(symbol.range),
+    })
+    heap.push(symbol)
+  }
+  return selections
 }
 
 function structuralName(symbol: AffectedSymbol): string {
@@ -91,6 +159,36 @@ function structuralName(symbol: AffectedSymbol): string {
 
 function structuralKey(symbol: AffectedSymbol): string {
   return `${symbol.language}\0${symbol.kind}\0${structuralName(symbol)}`
+}
+
+function groupByStructure(
+  occurrences: readonly SymbolOccurrence[]
+): ReadonlyMap<string, readonly SymbolOccurrence[]> {
+  const groups = new Map<string, SymbolOccurrence[]>()
+  for (const occurrence of occurrences) {
+    const key = structuralKey(occurrence.symbol)
+    const selected = groups.get(key) ?? []
+    selected.push(occurrence)
+    groups.set(key, selected)
+  }
+  return groups
+}
+
+function moveIdentity(occurrence: SymbolOccurrence): string {
+  return `${structuralKey(occurrence.symbol)}\0${occurrence.symbol.contentHash}`
+}
+
+function groupByMoveIdentity(
+  occurrences: readonly SymbolOccurrence[]
+): ReadonlyMap<string, readonly SymbolOccurrence[]> {
+  const groups = new Map<string, SymbolOccurrence[]>()
+  for (const occurrence of occurrences) {
+    const key = moveIdentity(occurrence)
+    const selected = groups.get(key) ?? []
+    selected.push(occurrence)
+    groups.set(key, selected)
+  }
+  return groups
 }
 
 function relationKey(file: ParsedDiffFile): string {
@@ -117,6 +215,7 @@ function groupOccurrences(
   side: "base" | "head"
 ): {
   readonly occurrences: readonly SymbolOccurrence[]
+  readonly occurrencesByFile: ReadonlyMap<string, readonly SymbolOccurrence[]>
   readonly mappedLinesByFile: ReadonlyMap<string, number>
 } {
   const bySymbol = new Map<
@@ -129,44 +228,52 @@ function groupOccurrences(
     }
   >()
   const mappedLinesByFile = new Map<string, number>()
+  const symbolsByPath = new Map<string, AffectedSymbol[]>()
+  for (const symbol of index.symbols) {
+    const selected = symbolsByPath.get(symbol.filePath) ?? []
+    selected.push(symbol)
+    symbolsByPath.set(symbol.filePath, selected)
+  }
   for (const file of files) {
     const path = side === "base" ? file.oldPath : file.newPath
     const ranges = side === "base" ? file.baseRanges : file.headRanges
     if (path === undefined) continue
-    for (const changedRange of ranges) {
-      for (
-        let line = changedRange.startLine;
-        line <= changedRange.endLine;
-        line += 1
-      ) {
-        const range = { startLine: line, endLine: line }
-        const selection = smallestEnclosing(index.symbols, path, range)
-        if (selection === undefined) continue
-        const { symbol } = selection
-        const key = `${relationKey(file)}\0${symbol.id}`
-        const existing = bySymbol.get(key)
-        if (existing === undefined) {
-          bySymbol.set(key, {
-            symbol,
-            ranges: [range],
-            file,
-            ambiguous: selection.ambiguous,
-          })
-        } else {
-          existing.ranges.push(range)
-          existing.ambiguous ||= selection.ambiguous
-        }
-        const fileKey = relationKey(file)
-        mappedLinesByFile.set(
-          fileKey,
-          (mappedLinesByFile.get(fileKey) ?? 0) + 1
-        )
+    const changedLines = [
+      ...new Set(
+        ranges.flatMap((range) => {
+          const lines: number[] = []
+          for (let line = range.startLine; line <= range.endLine; line += 1) {
+            lines.push(line)
+          }
+          return lines
+        })
+      ),
+    ].sort((left, right) => left - right)
+    const selections = enclosingSymbolsByLine(
+      symbolsByPath.get(path) ?? [],
+      changedLines
+    )
+    for (const [line, selection] of selections) {
+      const range = { startLine: line, endLine: line }
+      const { symbol } = selection
+      const key = `${relationKey(file)}\0${symbol.id}`
+      const existing = bySymbol.get(key)
+      if (existing === undefined) {
+        bySymbol.set(key, {
+          symbol,
+          ranges: [range],
+          file,
+          ambiguous: selection.ambiguous,
+        })
+      } else {
+        existing.ranges.push(range)
+        existing.ambiguous ||= selection.ambiguous
       }
+      const fileKey = relationKey(file)
+      mappedLinesByFile.set(fileKey, (mappedLinesByFile.get(fileKey) ?? 0) + 1)
     }
     if (file.operation === "renamed") {
-      for (const symbol of index.symbols.filter(
-        (candidate) => candidate.filePath === path
-      )) {
+      for (const symbol of symbolsByPath.get(path) ?? []) {
         const key = `${relationKey(file)}\0${symbol.id}`
         if (!bySymbol.has(key)) {
           bySymbol.set(key, { symbol, ranges: [], file, ambiguous: false })
@@ -179,19 +286,28 @@ function groupOccurrences(
     const key = `${relationKey(file)}\0${structuralKey(symbol)}`
     structuralCounts.set(key, (structuralCounts.get(key) ?? 0) + 1)
   }
+  const occurrences = Object.freeze(
+    [...bySymbol.values()].map(({ symbol, ranges, file, ambiguous }) => ({
+      symbol,
+      ranges: uniqueRanges(ranges),
+      file,
+      ambiguous:
+        ambiguous ||
+        (structuralCounts.get(
+          `${relationKey(file)}\0${structuralKey(symbol)}`
+        ) ?? 0) > 1,
+    }))
+  )
+  const occurrencesByFile = new Map<string, SymbolOccurrence[]>()
+  for (const occurrence of occurrences) {
+    const key = relationKey(occurrence.file)
+    const selected = occurrencesByFile.get(key) ?? []
+    selected.push(occurrence)
+    occurrencesByFile.set(key, selected)
+  }
   return {
-    occurrences: Object.freeze(
-      [...bySymbol.values()].map(({ symbol, ranges, file, ambiguous }) => ({
-        symbol,
-        ranges: uniqueRanges(ranges),
-        file,
-        ambiguous:
-          ambiguous ||
-          (structuralCounts.get(
-            `${relationKey(file)}\0${structuralKey(symbol)}`
-          ) ?? 0) > 1,
-      }))
-    ),
+    occurrences,
+    occurrencesByFile,
     mappedLinesByFile,
   }
 }
@@ -213,12 +329,8 @@ function asChangedFile(
   provenance: PrDiffProvenance
 ): ChangedFile {
   const key = relationKey(file)
-  const baseOccurrences = base.occurrences.filter(
-    ({ file: candidate }) => relationKey(candidate) === key
-  )
-  const headOccurrences = head.occurrences.filter(
-    ({ file: candidate }) => relationKey(candidate) === key
-  )
+  const baseOccurrences = base.occurrencesByFile.get(key) ?? []
+  const headOccurrences = head.occurrencesByFile.get(key) ?? []
   const expectedLines = [...file.baseRanges, ...file.headRanges].reduce(
     (total, range) => total + range.endLine - range.startLine + 1,
     0
@@ -310,23 +422,17 @@ export function mapDiffSymbols(
 
   for (const file of files) {
     const key = relationKey(file)
-    const baseCandidates = base.occurrences.filter(
-      (occurrence) => relationKey(occurrence.file) === key
-    )
-    const headCandidates = head.occurrences.filter(
-      (occurrence) => relationKey(occurrence.file) === key
-    )
+    const baseCandidates = base.occurrencesByFile.get(key) ?? []
+    const headCandidates = head.occurrencesByFile.get(key) ?? []
+    const baseByStructure = groupByStructure(baseCandidates)
+    const headByStructure = groupByStructure(headCandidates)
     const signatures = new Set([
-      ...baseCandidates.map(({ symbol }) => structuralKey(symbol)),
-      ...headCandidates.map(({ symbol }) => structuralKey(symbol)),
+      ...baseByStructure.keys(),
+      ...headByStructure.keys(),
     ])
     for (const signature of [...signatures].sort(compareStrings)) {
-      const oldMatches = baseCandidates.filter(
-        ({ symbol }) => structuralKey(symbol) === signature
-      )
-      const newMatches = headCandidates.filter(
-        ({ symbol }) => structuralKey(symbol) === signature
-      )
+      const oldMatches = baseByStructure.get(signature) ?? []
+      const newMatches = headByStructure.get(signature) ?? []
       if (
         oldMatches.length !== 1 ||
         newMatches.length !== 1 ||
@@ -359,18 +465,12 @@ export function mapDiffSymbols(
   const unmatchedHead = head.occurrences.filter(
     (occurrence) => !consumedHead.has(occurrence)
   )
-  const moveKeys = new Set(
-    unmatchedBase.map(
-      ({ symbol }) => `${structuralKey(symbol)}\0${symbol.contentHash}`
-    )
-  )
+  const unmatchedBaseByMove = groupByMoveIdentity(unmatchedBase)
+  const unmatchedHeadByMove = groupByMoveIdentity(unmatchedHead)
+  const moveKeys = new Set(unmatchedBaseByMove.keys())
   for (const key of [...moveKeys].sort(compareStrings)) {
-    const oldMatches = unmatchedBase.filter(
-      ({ symbol }) => `${structuralKey(symbol)}\0${symbol.contentHash}` === key
-    )
-    const newMatches = unmatchedHead.filter(
-      ({ symbol }) => `${structuralKey(symbol)}\0${symbol.contentHash}` === key
-    )
+    const oldMatches = unmatchedBaseByMove.get(key) ?? []
+    const newMatches = unmatchedHeadByMove.get(key) ?? []
     if (
       oldMatches.length !== 1 ||
       newMatches.length !== 1 ||
