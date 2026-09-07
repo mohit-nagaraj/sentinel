@@ -104,3 +104,16 @@ Database, Storage, and Vault integration tests are skipped unless their explicit
 `RUN_SUPABASE_*_TESTS=1` flags are set. Database tests additionally require
 `SENTINEL_TEST_DATABASE_URL`, and the loader rejects it when it equals the normal
 `SUPABASE_DB_URL`.
+
+## Knowledge Graph Storage
+
+Neo4j Aura stores the active product-knowledge graph. The storage package owns a
+shared server-only driver, managed transactions, idempotent schema constraints,
+and parameterized fact repositories. Node labels and relationship types come
+only from contract-backed allowlists; application IDs, stable keys, revisions,
+and properties are always bound parameters.
+
+Graph integration tests are skipped unless `RUN_NEO4J_INTEGRATION_TESTS=1` and
+`SENTINEL_NEO4J_TEST_PREFIX=sentinel-test-<8-32 lowercase hex characters>` are
+set. Cleanup requires both the generated application ID and matching test marker,
+so it cannot delete another application namespace in the shared Aura database.

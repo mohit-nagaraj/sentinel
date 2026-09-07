@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M1 — Foundation and durable execution |
-| Status | `review` |
+| Status | `done` |
 | Depends on | SNT-001, SNT-002 |
 | Blocks | Run orchestration, onboarding, GitHub, artifacts, UI |
 | PRD references | §11.1, §11.4–11.6, §18.3, FR-017, NFR-004/NFR-005 |
