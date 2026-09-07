@@ -176,7 +176,14 @@ describe("Neo4j fact repository", () => {
     await expect(
       repository.mergeNode(requirementFact({ password: "plaintext" }))
     ).rejects.toThrow("sensitive fields")
-    for (const key of ["api_key", "connect_sid", "privatekey"] as const) {
+    for (const key of [
+      "api_key",
+      "api_key_value",
+      "access_key_value",
+      "connect_sid",
+      "privatekey",
+      "private_key_pem",
+    ] as const) {
       await expect(
         repository.mergeNode(requirementFact({ [key]: "plaintext" }))
       ).rejects.toThrow("sensitive fields")

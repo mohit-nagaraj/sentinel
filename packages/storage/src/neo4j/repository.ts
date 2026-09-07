@@ -65,8 +65,14 @@ const sensitiveNormalizedProperties = new Set([
 function isSensitivePropertyKey(key: string): boolean {
   const segments = key.split("_")
   const normalized = segments.join("")
+  const hasSensitiveKeyPair = segments.some(
+    (segment, index) =>
+      ["access", "api", "private"].includes(segment) &&
+      segments[index + 1] === "key"
+  )
   return (
     segments.some((segment) => sensitivePropertySegments.has(segment)) ||
+    hasSensitiveKeyPair ||
     sensitiveNormalizedProperties.has(normalized) ||
     /(?:accesskey|apikey|clientsecret|privatekey|sessionid)$/.test(normalized)
   )

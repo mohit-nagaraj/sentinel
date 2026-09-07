@@ -6,7 +6,11 @@ import type {
 } from "neo4j-driver"
 import { describe, expect, it, vi } from "vitest"
 
-import { Neo4jGraphDatabase } from "./database.ts"
+import {
+  closeSharedNeo4jGraphDatabase,
+  getSharedNeo4jGraphDatabase,
+  Neo4jGraphDatabase,
+} from "./database.ts"
 
 function createDriver(options?: { readonly healthError?: Error }) {
   const run = vi.fn(async (): Promise<QueryResult> => {
@@ -130,5 +134,28 @@ describe("Neo4j database boundary", () => {
     expect(JSON.stringify(health)).not.toContain(secret)
     await database.close()
     expect(fake.closeDriver).toHaveBeenCalledOnce()
+  })
+
+  it("reuses one shared driver until graceful shutdown", async () => {
+    const environment = {
+      NEO4J_URI: "bolt://127.0.0.1:7687",
+      NEO4J_USERNAME: "neo4j",
+      NEO4J_PASSWORD: "test-only-password",
+      NEO4J_DATABASE: "neo4j",
+    }
+    try {
+      const first = getSharedNeo4jGraphDatabase(environment)
+      expect(getSharedNeo4jGraphDatabase(environment)).toBe(first)
+      expect(() =>
+        getSharedNeo4jGraphDatabase({
+          ...environment,
+          NEO4J_DATABASE: "different",
+        })
+      ).toThrow("different configuration")
+      await closeSharedNeo4jGraphDatabase()
+      expect(getSharedNeo4jGraphDatabase(environment)).not.toBe(first)
+    } finally {
+      await closeSharedNeo4jGraphDatabase()
+    }
   })
 })
