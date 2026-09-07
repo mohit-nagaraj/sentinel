@@ -125,6 +125,29 @@ describe("PR diff parser", () => {
     })
   })
 
+  it("maps a metadata-only rename without inventing a missing-range warning", () => {
+    const git = parseGitDiff(
+      "diff --git a/src/old.ts b/src/new.ts\nsimilarity index 100%\nrename from src/old.ts\nrename to src/new.ts\n"
+    )
+    const github = parseGitHubPullFiles([
+      {
+        filename: "src/new.ts",
+        previousFilename: "src/old.ts",
+        status: "renamed",
+      },
+    ])
+
+    expect(git.files[0]).toMatchObject({
+      operation: "renamed",
+      unresolvedReasons: [],
+    })
+    expect(github.files[0]).toMatchObject({
+      operation: "renamed",
+      patchAvailable: true,
+      unresolvedReasons: [],
+    })
+  })
+
   it("produces stable ordering and a content-sensitive normalized hash", () => {
     const left = parseGitDiff(
       "diff --git a/b.ts b/b.ts\n@@ -1 +1 @@\n-old\n+new\ndiff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-a\n+b\n"
@@ -163,5 +186,11 @@ describe("PR diff parser", () => {
     expect(() => parseGitDiff("x".repeat(50), { maxPatchBytes: 10 })).toThrow(
       "byte limit"
     )
+    expect(() =>
+      parseGitDiff(
+        "diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-a\n+b\n@@ -3 +3 @@\n-c\n+d",
+        { maxHunksPerFile: 1 }
+      )
+    ).toThrow("hunk limit")
   })
 })
