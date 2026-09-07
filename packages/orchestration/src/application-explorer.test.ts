@@ -809,4 +809,42 @@ describe("Application Explorer mission runtime", () => {
     expect(interrupted.result.stopReason.code).toBe("non_idempotent_replay")
     expect(uncertainBrowser.replayedOptions).toHaveLength(0)
   })
+
+  it("truncates recovery at the first non-replay-safe path boundary", async () => {
+    const firstSafe = candidate({ id: "1", signature: "2", name: "Continue" })
+    const unsafe = candidate({
+      id: "3",
+      signature: "4",
+      name: "Submit mutable form",
+      category: "unknown_submission",
+      replaySafe: false,
+    })
+    const laterSafe = candidate({
+      id: "5",
+      signature: "6",
+      name: "View result",
+    })
+    const first = observation("1", "2", "/", "Start", [firstSafe])
+    const second = observation("3", "4", "/form", "Form", [unsafe])
+    const third = observation("5", "6", "/submitted", "Submitted", [laterSafe])
+    const fourth = observation("6", "7", "/result", "Result", [])
+    const browser = new ScriptedBrowser(first, [
+      transition("7", first, firstSafe, second),
+      transition("8", second, unsafe, third),
+      transition("9", third, laterSafe, fourth),
+    ])
+    const output = await createApplicationExplorer({
+      browser,
+      planner: new ScriptedPlanner([
+        actionDecision("perform_observed_action", first, firstSafe),
+        actionDecision("perform_observed_action", second, unsafe),
+        actionDecision("perform_observed_action", third, laterSafe),
+        finishDecision("goal_completed"),
+      ]),
+    }).run({ mission: mission(), browserOptions: browserOptions() })
+
+    expect(output.checkpoint.path).toHaveLength(3)
+    expect(output.checkpoint.replayBoundary.recipe.steps).toHaveLength(1)
+    expect(output.checkpoint.replayBoundary.requiresHumanReview).toBe(true)
+  })
 })

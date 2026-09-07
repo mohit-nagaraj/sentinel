@@ -635,6 +635,31 @@ function withElapsed(
   }
 }
 
+function recoveryPrefix(
+  recipe: BrowserRecoveryRecipe,
+  path: ApplicationExplorerCheckpointState["path"]
+): BrowserRecoveryRecipe {
+  const steps: BrowserRecoveryRecipe["steps"][number][] = []
+  for (const [index, pathStep] of path.entries()) {
+    if (!pathStep.replaySafe) break
+    const replayStep = recipe.steps[index]
+    if (
+      replayStep === undefined ||
+      replayStep.signature !== pathStep.actionSignature ||
+      replayStep.expectedBeforeFingerprint !==
+        pathStep.beforeStateFingerprint ||
+      replayStep.expectedAfterFingerprint !== pathStep.afterStateFingerprint
+    ) {
+      break
+    }
+    steps.push({ ...replayStep, ordinal: index })
+  }
+  return {
+    ...recipe,
+    steps,
+  }
+}
+
 function initialCheckpoint(input: {
   readonly mission: DiscoveryMission
   readonly observation: BrowserObservation
@@ -766,7 +791,8 @@ function updateAfterObservation(input: {
       stateFingerprint: input.observation.stateFingerprint,
     })
   )
-  const replaySafePathLength = input.recipe.steps.length
+  const recipe = recoveryPrefix(input.recipe, input.checkpoint.path)
+  const replaySafePathLength = recipe.steps.length
   return applicationExplorerCheckpointStateSchema.parse({
     ...input.checkpoint,
     currentObservationEvidenceId: input.observation.evidenceId,
@@ -786,7 +812,7 @@ function updateAfterObservation(input: {
     ),
     replayBoundary: {
       ...input.checkpoint.replayBoundary,
-      recipe: input.recipe,
+      recipe,
       replaySafePathLength,
       checkpointPathLength: input.checkpoint.path.length,
       requiresHumanReview: input.checkpoint.path.length > replaySafePathLength,
@@ -838,6 +864,7 @@ function appendTransition(input: {
       attemptedAt: input.now,
     },
   ].slice(-500)
+  const recipe = recoveryPrefix(input.recipe, path)
   const next = {
     ...checkpoint,
     path,
@@ -859,10 +886,10 @@ function appendTransition(input: {
       ...next,
       replayBoundary: {
         ...next.replayBoundary,
-        recipe: input.recipe,
-        replaySafePathLength: input.recipe.steps.length,
+        recipe,
+        replaySafePathLength: recipe.steps.length,
         checkpointPathLength: path.length,
-        requiresHumanReview: path.length > input.recipe.steps.length,
+        requiresHumanReview: path.length > recipe.steps.length,
       },
     }),
     observation: transition.after,
