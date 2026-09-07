@@ -5,7 +5,7 @@
 - [x] Define the canonical endpoint model and identity.
 - [x] Build the constrained OpenAPI importer.
 - [x] Add cross-source matching, conflict reporting, and redaction.
-- [ ] Expose and verify the completed endpoint evidence boundary.
+- [x] Expose and verify the completed endpoint evidence boundary.
 
 ## Decisions
 
