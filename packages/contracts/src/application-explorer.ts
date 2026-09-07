@@ -168,6 +168,13 @@ export const applicationExplorerPlannerObservationSchema = z.strictObject({
   }),
 })
 
+export const applicationExplorerRecentActionSchema = z.strictObject({
+  actionSignature: contentHashSchema,
+  actionKind: browserActionKindSchema,
+  actionName: shortTextSchema.optional(),
+  outcome: z.enum(["executed", "denied", "stale", "used", "no_progress"]),
+})
+
 export const applicationExplorerPlannerProgressSchema = z.strictObject({
   schemaVersion: schemaVersionSchema,
   visitedStateActionPairs: z.number().int().nonnegative().max(500),
@@ -175,9 +182,11 @@ export const applicationExplorerPlannerProgressSchema = z.strictObject({
   exploredBranchCount: z.number().int().nonnegative().max(100),
   currentBranchDepth: z.number().int().nonnegative().max(100),
   observedTransitionCount: z.number().int().nonnegative().max(100),
+  observedRuntimeRequestCount: z.number().int().nonnegative().max(20_000),
   observedStateCount: z.number().int().nonnegative().max(201),
   consecutiveNoProgress: z.number().int().nonnegative().max(100),
   recentEvidenceIds: z.array(evidenceIdSchema).max(20),
+  recentActions: z.array(applicationExplorerRecentActionSchema).max(20),
   budgetUsed: missionBudgetSchema,
 })
 
@@ -355,6 +364,7 @@ export const applicationExplorerCheckpointStateSchema = z
     visits: z.array(applicationExplorerStateActionVisitSchema).max(500),
     replayBoundary: applicationExplorerReplayBoundarySchema,
     budgetUsed: missionBudgetSchema,
+    observedRuntimeRequestCount: z.number().int().nonnegative().max(20_000),
     consecutiveNoProgress: z.number().int().nonnegative().max(100),
     startedAt: timestampSchema,
     updatedAt: timestampSchema,
@@ -804,6 +814,9 @@ export type ApplicationExplorerPlannerObservation = z.infer<
 >
 export type ApplicationExplorerPlannerProgress = z.infer<
   typeof applicationExplorerPlannerProgressSchema
+>
+export type ApplicationExplorerRecentAction = z.infer<
+  typeof applicationExplorerRecentActionSchema
 >
 export type ApplicationExplorerPlannerContext = z.infer<
   typeof applicationExplorerPlannerContextSchema

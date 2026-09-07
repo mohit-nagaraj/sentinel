@@ -559,6 +559,23 @@ export function buildApplicationExplorerPlannerContext(input: {
       ]),
     input.observation.evidenceId,
   ]).slice(-20)
+  const recentActions = (input.checkpoint?.visits ?? [])
+    .slice(-20)
+    .map((visit) => {
+      const frontier = input.checkpoint?.frontier.find(
+        (entry) =>
+          entry.stateFingerprint === visit.stateFingerprint &&
+          entry.actionSignature === visit.actionSignature
+      )
+      return {
+        actionSignature: visit.actionSignature,
+        actionKind: frontier?.actionKind ?? "click",
+        ...(frontier?.actionName === undefined
+          ? {}
+          : { actionName: frontier.actionName }),
+        outcome: visit.outcome,
+      }
+    })
   return applicationExplorerPlannerContextSchema.parse({
     schemaVersion: 1,
     mission,
@@ -592,9 +609,12 @@ export function buildApplicationExplorerPlannerContext(input: {
               .size,
       currentBranchDepth: path.length,
       observedTransitionCount: path.length,
+      observedRuntimeRequestCount:
+        input.checkpoint?.observedRuntimeRequestCount ?? 0,
       observedStateCount: stateFingerprints.size,
       consecutiveNoProgress: input.checkpoint?.consecutiveNoProgress ?? 0,
       recentEvidenceIds,
+      recentActions,
       budgetUsed: input.checkpoint?.budgetUsed ?? ZERO_BUDGET,
     },
     candidates: rankCandidates({
@@ -746,6 +766,7 @@ function initialCheckpoint(input: {
       requiresHumanReview: false,
     },
     budgetUsed: ZERO_BUDGET,
+    observedRuntimeRequestCount: 0,
     consecutiveNoProgress: 0,
     startedAt: input.now,
     updatedAt: input.now,
@@ -914,6 +935,8 @@ function appendTransition(input: {
       ? checkpoint.consecutiveNoProgress + 1
       : 0,
     budgetUsed: input.budgetUsed,
+    observedRuntimeRequestCount:
+      checkpoint.observedRuntimeRequestCount + transition.network.length,
     updatedAt: input.now,
   }
   return updateAfterObservation({
