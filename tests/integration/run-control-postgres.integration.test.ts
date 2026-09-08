@@ -122,13 +122,13 @@ describeIntegration("run control PostgreSQL state machine", () => {
       operatorId,
       runId: reclaimed!.id,
       decisionId: interrupt.decisionId,
-      response: { approved: true, note: "Reviewed." },
+      response: { approved: true },
     })
     const replay = await runs.respondInterrupt({
       operatorId,
       runId: reclaimed!.id,
       decisionId: interrupt.decisionId,
-      response: { approved: true, note: "Reviewed." },
+      response: { approved: true },
     })
     expect(first.idempotent).toBe(false)
     expect(replay.idempotent).toBe(true)
@@ -146,7 +146,7 @@ describeIntegration("run control PostgreSQL state machine", () => {
         operatorId: randomUUID(),
         runId: reclaimed!.id,
         decisionId: interrupt.decisionId,
-        response: { approved: true, note: "Reviewed." },
+        response: { approved: true },
       })
     ).rejects.toMatchObject({ code: "interrupt_not_found" })
     await expect(
@@ -215,7 +215,7 @@ describeIntegration("run control PostgreSQL state machine", () => {
     const second = await runs.listOwned({
       operatorId,
       limit: 2,
-      cursor: first.nextCursor,
+      cursor: first.nextCursor!,
     })
     expect(second.items.map((run) => run.id)).not.toContain(first.items[0]?.id)
     await expect(
