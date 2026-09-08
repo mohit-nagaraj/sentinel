@@ -213,7 +213,8 @@ describe("Documentation Explorer contracts", () => {
       documentSectionObservationSchema.safeParse({
         schemaVersion: 1,
         toolName: "read_document_section",
-        summary: "A truncated read is invalid.",
+        summary:
+          "Document-relative offsets remain valid for a complete section.",
         fullSection: true,
         citation: { ...citation, startOffset: 4, endOffset: quote.length + 4 },
         metrics: {
@@ -224,7 +225,7 @@ describe("Documentation Explorer contracts", () => {
           resultItems: 1,
         },
       }).success
-    ).toBe(false)
+    ).toBe(true)
   })
 
   it("accepts only atomic testable submissions with a complete citation", () => {

@@ -52,7 +52,7 @@ export const listDocumentTreeInputSchema = z.strictObject({
 })
 
 export const searchDocumentationInputSchema = z.strictObject({
-  query: z.string().trim().min(2).max(512),
+  query: z.string().trim().min(2).max(256),
   cursor: cursorSchema,
   limit: resultLimitSchema,
 })
@@ -268,25 +268,12 @@ export const documentationSearchObservationSchema = z.strictObject({
   hits: z.array(documentationSearchHitSchema).max(100),
 })
 
-export const documentSectionObservationSchema = z
-  .strictObject({
-    ...observationBase,
-    toolName: z.literal("read_document_section"),
-    fullSection: z.literal(true),
-    citation: documentationExcerptCitationSchema,
-  })
-  .superRefine((observation, context) => {
-    if (
-      observation.citation.startOffset !== 0 ||
-      observation.citation.endOffset !== observation.citation.quote.length
-    ) {
-      context.addIssue({
-        code: "custom",
-        message: "A section read must return the complete immutable section",
-        path: ["citation"],
-      })
-    }
-  })
+export const documentSectionObservationSchema = z.strictObject({
+  ...observationBase,
+  toolName: z.literal("read_document_section"),
+  fullSection: z.literal(true),
+  citation: documentationExcerptCitationSchema,
+})
 
 export const linkedSectionsObservationSchema = z.strictObject({
   ...observationBase,

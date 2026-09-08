@@ -55,13 +55,14 @@ SNT-017 is complete and its shared-kernel composition passes independent P0/P1 r
 ## SNT-015 Documentation Explorer
 
 - [x] Define strict Documentation Explorer contracts and parsers.
-- [ ] Build the bounded prepared-map tool port.
+- [x] Build the bounded prepared-map tool port.
 - [ ] Compose all six tools through the shared specialist kernel.
 - [ ] Prove golden, conflict, replay, denial, and failure trajectories.
 
 ### SNT-015 Decisions
 
-| Date       | Decision                                                                                         | Reason                                                                                                                 |
-| ---------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| 2026-09-08 | Separate exact excerpt citations from compact tree, search, and link summaries.                  | The model can choose evidence without moving full document bodies into checkpoint state.                               |
-| 2026-09-08 | Keep rich requirement, duplicate, conflict, capability, and exclusion records non-authoritative. | SNT-015 discovers cited intent while downstream validation, evidence-tier assignment, and publication remain separate. |
+| Date       | Decision                                                                                         | Reason                                                                                                                            |
+| ---------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-09-08 | Separate exact excerpt citations from compact tree, search, and link summaries.                  | The model can choose evidence without moving full document bodies into checkpoint state.                                          |
+| 2026-09-08 | Keep rich requirement, duplicate, conflict, capability, and exclusion records non-authoritative. | SNT-015 discovers cited intent while downstream validation, evidence-tier assignment, and publication remain separate.            |
+| 2026-09-08 | Preserve document-relative section offsets and validate prepared-map integrity at construction.  | Exact citations remain compatible with SNT-008 provenance, and forged membership/hash/link records fail before tools are exposed. |
