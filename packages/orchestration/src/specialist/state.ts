@@ -861,9 +861,7 @@ export function validateSpecialistUpdate(
     pendingDecisionEventId: new Overwrite(next.pendingDecisionEventId),
     lastCommittedToolCallId: new Overwrite(next.lastCommittedToolCallId),
     pendingTerminalEvent: new Overwrite(next.pendingTerminalEvent),
-    pendingTerminalToolCallIds: new Overwrite(
-      next.pendingTerminalToolCallIds
-    ),
+    pendingTerminalToolCallIds: new Overwrite(next.pendingTerminalToolCallIds),
     terminalResult: new Overwrite(next.terminalResult),
   }
 }
@@ -1071,8 +1069,13 @@ function assertSpecialistStateConsistency(
   ) {
     throw new Error("Pending terminal event has no final mission result")
   }
-  if (state.pendingTerminalToolCallIds.length > 0 && !state.pendingTerminalEvent) {
-    throw new Error("Terminal tool event cursors require a pending terminal event")
+  if (
+    state.pendingTerminalToolCallIds.length > 0 &&
+    !state.pendingTerminalEvent
+  ) {
+    throw new Error(
+      "Terminal tool event cursors require a pending terminal event"
+    )
   }
   if (result === null) return
   if (result.missionId !== state.mission.id) {

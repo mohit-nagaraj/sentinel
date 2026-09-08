@@ -1580,7 +1580,9 @@ export class SpecialistOrchestrationService {
       )
     }
     for (const callId of toolCallIds) {
-      const completed = state.completedCalls.find((call) => call.callId === callId)
+      const completed = state.completedCalls.find(
+        (call) => call.callId === callId
+      )
       const observation = state.observations.find(
         (candidate) => candidate.callId === callId
       )
@@ -1603,11 +1605,7 @@ export class SpecialistOrchestrationService {
           reasonCode: "tool_completed",
         },
         {
-          idempotencyKey: specialistEventKey(
-            state,
-            "tool_completed",
-            callId
-          ),
+          idempotencyKey: specialistEventKey(state, "tool_completed", callId),
         }
       )
       if (observation.evidenceIds.length > 0) {
