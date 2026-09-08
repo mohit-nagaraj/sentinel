@@ -1,3 +1,68 @@
 # Sentinel
 
-Project documentation.
+Sentinel connects product documentation, observed browser behavior, and source
+implementation into evidence-backed application knowledge.
+
+## Onboarding control plane
+
+The control plane lists connected applications and collects four groups of
+configuration through the web UI:
+
+1. Application, immutable repository ref, documentation sources, optional
+   GitHub installation identifier, and preview URL pattern.
+2. Public, generic credential-field, or encrypted Playwright storage-state
+   authentication.
+3. Allowed hosts, action/screen/time budgets, target-owned setup/reset
+   references, capability hints, and fixed high-risk action denials.
+4. Compatibility evidence, warnings, blockers, human actions, proposed scope,
+   and explicit confirmation.
+
+The four fixed denials cover destructive operations, real payments, external
+messages, and privilege changes. Non-destructive form submission is an explicit
+setting.
+
+## Compatibility
+
+Inspection resolves a GitHub branch or commit to an immutable SHA and reads a
+bounded, disposable checkout. The report cites evidence for TypeScript/React,
+PHP/Laravel, Laravel routes, OpenAPI/Scramble, and Playwright assets, then names
+the selected adapters. Web documentation and application probes enforce HTTPS,
+DNS/public-network, approved-origin/path, redirect, timeout, and response-size
+boundaries. Repository approval is checked before checkout. A real Playwright page
+load pins the approved DNS result and applies the origin policy to HTTP and
+WebSocket traffic.
+
+Reports are `supported`, `partial`, or `blocked`. Missing optional target-owned
+Playwright assets produce a warning; unreachable, unsafe, unsupported, or
+misaligned core inputs produce blockers and operator actions.
+
+## Secrets and authorization
+
+The Proxy requires `SENTINEL_OPERATOR_TOKEN` through HTTP Basic or Bearer
+authentication, and Server Actions repeat that request check on every call. The
+server derives the owner UUID from `SENTINEL_OPERATOR_ID`, and storage queries
+repeat the owner predicate next to the data. The client receives explicit public
+projections, not database rows.
+
+Credentials and storage state are transient form inputs. Supabase Vault stores
+their encrypted values while ordinary tables retain opaque references only.
+Client props, Server Action responses, logs, run state, source rows, graph data,
+and model context do not contain plaintext values.
+
+Credential and storage-state methods also require an operator attestation that
+the deployment accepts automated login without CAPTCHA or mandatory human
+verification. Missing attestation is a compatibility blocker with a human action.
+
+## Freshness and confirmation
+
+The stored input fingerprint excludes display-name changes and includes source,
+deployment, documentation, authentication, preview, setup, and safety inputs.
+Relevant edits invalidate prior inspection and confirmation. Applications with
+published knowledge remain visibly stale after reinspection until a later
+refresh succeeds.
+
+Scope confirmation reconstructs and fingerprints the submitted non-secret form,
+rejects secret/authentication edits, and then uses a compare-and-set write against
+the current inspected fingerprint. Editing an inspected field requires
+reinspection. The confirmed application is ready for initialization, but
+onboarding itself creates no initialization run.

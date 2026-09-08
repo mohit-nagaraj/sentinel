@@ -1,8 +1,9 @@
 # Sentinel
 
 Sentinel is a pnpm TypeScript workspace with strict, versioned contracts for its
-application, evidence, agent, graph, and assessment boundaries. Provider
-integrations and product behavior belong to later issues.
+application, evidence, agent, graph, assessment, and onboarding boundaries. Its
+Next.js control plane connects an application, repository, documentation,
+authentication method, and bounded browser-safety policy before initialization.
 
 ## Prerequisites
 
@@ -35,6 +36,38 @@ pnpm dev:web
 pnpm dev:worker
 pnpm --filter @sentinel/worker health
 ```
+
+## Application Onboarding
+
+The web control plane lists connected applications and provides a four-step
+source, access, safety, and review workflow. Operators supply normal form fields;
+the product does not require YAML. Authentication supports public flows, generic
+credential fields, or encrypted Playwright storage state. Submitted secrets are
+converted to opaque Supabase Vault references and never returned to the browser.
+Protected targets require the operator to confirm that automated login succeeds
+without CAPTCHA or mandatory human verification before compatibility can pass.
+
+Compatibility inspection resolves the configured GitHub branch or commit to an
+immutable SHA, reads only the bounded checkout, and reports cited evidence for
+TypeScript/React, PHP/Laravel, Laravel routes, OpenAPI/Scramble, and Playwright.
+Documentation and application URLs pass DNS/private-network, protocol, origin,
+redirect, timeout, and byte limits before browser readiness is accepted. The
+readiness browser pins the approved hostname resolution and applies the same
+origin policy to HTTP and WebSocket traffic.
+
+The proposed scope must be confirmed against the current submitted configuration
+fingerprint. Blockers prevent confirmation, and editing any inspected field hides
+confirmation until reinspection succeeds. Relevant source, authentication, or
+safety edits invalidate confirmation and mark published knowledge stale; name-only
+edits preserve readiness. Confirmation does not enqueue initialization.
+
+Production control-plane access requires the existing server-only
+`SUPABASE_DB_URL`, optional read-only `GITHUB_TOKEN`, and a server-derived
+`SENTINEL_OPERATOR_ID` UUID. `SENTINEL_OPERATOR_TOKEN` must contain at least 32
+characters; the Proxy challenges browsers with HTTP Basic and every Server Action
+independently accepts only that Basic credential or an exact Bearer token.
+`SENTINEL_CONTROL_PLANE_FIXTURE=1` exists only for the isolated Playwright suite
+and must not be enabled in a production deployment.
 
 ## Quality Commands
 

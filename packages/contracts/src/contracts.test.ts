@@ -13,6 +13,9 @@ import {
   claimStatusSchema,
   ContractValidationError,
   evidenceStatusSchema,
+  compatibilityReportSchema,
+  onboardingConfigurationSchema,
+  onboardingSubmissionSchema,
   parseApplication,
   parseAssessmentFinding,
   parseBrowserFactEnvelope,
@@ -51,6 +54,176 @@ const fixtureParsers = [
 ] as const
 
 describe("versioned wire contracts", () => {
+  const onboardingSubmission = {
+    schemaVersion: 1,
+    name: "Hi.Events",
+    deploymentUrl: "https://demo.hi.events/",
+    repository: {
+      url: "https://github.com/mohit-nagaraj/Hi.Events",
+      ref: "develop",
+      accessMode: "manual",
+    },
+    documentationSources: ["https://hi.events/docs", "repository://README.md"],
+    previewUrlPattern: "https://{branch}.preview.hi.events",
+    authentication: {
+      method: "credentials",
+      automationConfirmed: true,
+      fields: [
+        { key: "email", label: "Email", value: "operator@example.com" },
+        { key: "password", label: "Password", value: "target-credential" },
+      ],
+    },
+    crawl: {
+      allowedHosts: ["demo.hi.events"],
+      maxActions: 40,
+      maxScreens: 20,
+      maxDurationSeconds: 300,
+      allowFormSubmission: true,
+      denyDestructiveActions: true,
+      denyRealPayments: true,
+      denyExternalMessaging: true,
+      denyPrivilegeChanges: true,
+    },
+    capabilityHints: ["Attendee checkout"],
+    testDataSetupReference: "Use the target fixture named checkout_demo",
+    testDataResetReference: "Reset with the target-owned fixture endpoint",
+  } as const
+
+  it("validates transient onboarding separately from reference-only storage", () => {
+    const parsed = onboardingSubmissionSchema.parse(onboardingSubmission)
+    expect(parsed.repository.url).toBe(
+      "https://github.com/mohit-nagaraj/Hi.Events"
+    )
+    expect(parsed.documentationSources).toEqual([
+      "https://hi.events/docs",
+      "repository://README.md",
+    ])
+    if (parsed.authentication.method !== "credentials") {
+      throw new Error("Expected credential authentication fixture")
+    }
+
+    const stored = onboardingConfigurationSchema.parse({
+      ...parsed,
+      repository: {
+        ...parsed.repository,
+        resolvedCommitSha: "a".repeat(40),
+      },
+      authentication: {
+        method: "credentials",
+        automationConfirmed: true,
+        revision: 1,
+        fields: parsed.authentication.fields.map(({ key, label }) => ({
+          key,
+          label,
+          reference: `secret-ref:v1:${"b".repeat(64)}`,
+        })),
+      },
+    })
+
+    expect(JSON.stringify(stored)).not.toContain("target-credential")
+    expect(() =>
+      onboardingConfigurationSchema.parse({
+        ...stored,
+        authentication: {
+          ...stored.authentication,
+          value: "must-not-persist",
+        },
+      })
+    ).toThrow("Unrecognized key")
+  })
+
+  it("rejects unsafe repository, host, storage-state, and action policy input", () => {
+    expect(() =>
+      onboardingSubmissionSchema.parse({
+        ...onboardingSubmission,
+        repository: { ...onboardingSubmission.repository, ref: "main..head" },
+      })
+    ).toThrow("unsafe Git ref")
+    expect(() =>
+      onboardingSubmissionSchema.parse({
+        ...onboardingSubmission,
+        repository: {
+          ...onboardingSubmission.repository,
+          url: "https://example.com/owner/repository",
+        },
+      })
+    ).toThrow("GitHub")
+    expect(() =>
+      onboardingSubmissionSchema.parse({
+        ...onboardingSubmission,
+        crawl: {
+          ...onboardingSubmission.crawl,
+          allowedHosts: ["other.example.com"],
+        },
+      })
+    ).toThrow("deployment host")
+    expect(() =>
+      onboardingSubmissionSchema.parse({
+        ...onboardingSubmission,
+        crawl: {
+          ...onboardingSubmission.crawl,
+          denyRealPayments: false,
+        },
+      })
+    ).toThrow("Invalid input")
+    expect(() =>
+      onboardingSubmissionSchema.parse({
+        ...onboardingSubmission,
+        authentication: {
+          method: "storage_state",
+          automationConfirmed: false,
+          value: "not-json",
+        },
+      })
+    ).toThrow("valid JSON")
+  })
+
+  it("requires compatibility status and immutable commit to match findings", () => {
+    const report = {
+      schemaVersion: 1,
+      inputFingerprint: `sha256:${"a".repeat(64)}`,
+      status: "supported",
+      resolvedCommitSha: "b".repeat(40),
+      selectedAdapters: ["typescript_react"],
+      evidence: [
+        {
+          capability: "repository_resolved",
+          status: "detected",
+          code: "immutable_commit_resolved",
+          summary: "Repository reference resolved to an immutable commit",
+          source: "repository",
+          references: ["composer.json"],
+        },
+      ],
+      findings: [],
+      humanActions: [],
+      proposedScope: {
+        repositoryPaths: ["frontend", "app", "routes"],
+        documentationSources: ["repository://README.md"],
+        applicationOrigins: ["https://demo.hi.events"],
+        allowedActionCategories: ["safe_read", "safe_navigation"],
+        maxActions: 40,
+        maxScreens: 20,
+        maxDurationSeconds: 300,
+      },
+      inspectedAt: "2026-09-08T00:00:00.000Z",
+    } as const
+
+    expect(compatibilityReportSchema.parse(report).status).toBe("supported")
+    expect(() =>
+      compatibilityReportSchema.parse({
+        ...report,
+        status: "partial",
+      })
+    ).toThrow("must be supported")
+    expect(() =>
+      compatibilityReportSchema.parse({
+        ...report,
+        resolvedCommitSha: undefined,
+      })
+    ).toThrow("immutable commit")
+  })
+
   it.each(fixtureParsers)(
     "parses and snapshots the %s fixture",
     (_, fixture, parse) => {

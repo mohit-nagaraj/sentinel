@@ -78,7 +78,12 @@ const sensitiveQueryKey =
   /^(?:access_token|api[_-]?key|auth|authorization|client[_-]?secret|code|connect\.sid|credential|id_token|key|laravel_session|oauth_token|password|phpsessid|private[_-]?key|refresh_token|secret|session(?:[_-]?id)?|sid|sig|signature|token|x-amz-.+|x-goog-.+)$/i
 
 function normalizePublicUrl(value: string): string {
-  const url = new URL(value)
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return value
+  }
   url.hash = ""
   url.searchParams.sort()
   return url.toString()
@@ -87,7 +92,12 @@ function normalizePublicUrl(value: string): string {
 export const publicHttpUrlSchema = z
   .url({ protocol: /^https?$/ })
   .superRefine((value, context) => {
-    const url = new URL(value)
+    let url: URL
+    try {
+      url = new URL(value)
+    } catch {
+      return
+    }
     if (url.username.length > 0 || url.password.length > 0) {
       context.addIssue({
         code: "custom",

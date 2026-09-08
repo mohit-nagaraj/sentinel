@@ -101,6 +101,15 @@ function failureCode(error: unknown): string | undefined {
 describe("Playwright browser evidence runtime", () => {
   let fixture: BrowserFixtureApplication
 
+  async function waitForFixtureRequest(path: string): Promise<void> {
+    const deadline = Date.now() + 5_000
+    while (Date.now() < deadline) {
+      if (fixture.requests.some((request) => request.path === path)) return
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
+    throw new Error(`Fixture request ${path} was not observed`)
+  }
+
   beforeAll(async () => {
     fixture = await startBrowserFixtureApplication()
   }, 30_000)
@@ -359,7 +368,8 @@ describe("Playwright browser evidence runtime", () => {
     const staleAction = stale.candidates.find(
       (value) => value.name === "Continue"
     )
-    await new Promise((resolve) => setTimeout(resolve, 600))
+    fixture.triggerMutation("stale")
+    await waitForFixtureRequest("/api/mutation-ready/stale")
     await expect(
       runtime.performAction(runIds.stale, staleAction?.actionId ?? "missing")
     ).rejects.toSatisfy(
@@ -396,7 +406,8 @@ describe("Playwright browser evidence runtime", () => {
     const positioned = positionObservation.candidates.find(
       (value) => value.name === "Show position state"
     )
-    await new Promise((resolve) => setTimeout(resolve, 600))
+    fixture.triggerMutation("position")
+    await waitForFixtureRequest("/api/mutation-ready/position")
     const positionedTransition = await runtime.performAction(
       runIds.expired,
       positioned?.actionId ?? "missing"
@@ -412,7 +423,8 @@ describe("Playwright browser evidence runtime", () => {
     const piiAction = piiObservation.candidates.find(
       (value) => value.name === "View [EMAIL_REDACTED]"
     )
-    await new Promise((resolve) => setTimeout(resolve, 600))
+    fixture.triggerMutation("pii")
+    await waitForFixtureRequest("/api/mutation-ready/pii")
     await expect(
       runtime.performAction(runIds.expired, piiAction?.actionId ?? "missing")
     ).rejects.toSatisfy(
@@ -426,7 +438,8 @@ describe("Playwright browser evidence runtime", () => {
     const mutable = attributeObservation.candidates.find(
       (value) => value.name === "Load mutable state"
     )
-    await new Promise((resolve) => setTimeout(resolve, 600))
+    fixture.triggerMutation("attributes")
+    await waitForFixtureRequest("/api/mutation-ready/attributes")
     await expect(
       runtime.performAction(runIds.expired, mutable?.actionId ?? "missing")
     ).rejects.toSatisfy(
