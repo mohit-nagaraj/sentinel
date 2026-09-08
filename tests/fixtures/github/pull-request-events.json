@@ -1,0 +1,99 @@
+{
+  "opened": {
+    "action": "opened",
+    "installation": { "id": 1234 },
+    "repository": { "id": 5678, "full_name": "Owner/Repo" },
+    "sender": { "id": 42, "login": "octocat", "type": "User" },
+    "pull_request": {
+      "id": 9012,
+      "number": 7,
+      "html_url": "https://github.com/Owner/Repo/pull/7",
+      "draft": false,
+      "updated_at": "2026-09-08T12:00:00Z",
+      "base": {
+        "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "repo": { "id": 5678, "full_name": "Owner/Repo" }
+      },
+      "head": { "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+    }
+  },
+  "reopened": {
+    "action": "reopened",
+    "installation": { "id": 1234 },
+    "repository": { "id": 5678, "full_name": "Owner/Repo" },
+    "sender": { "id": 42, "login": "octocat", "type": "User" },
+    "pull_request": {
+      "id": 9012,
+      "number": 7,
+      "html_url": "https://github.com/Owner/Repo/pull/7",
+      "draft": false,
+      "updated_at": "2026-09-08T12:01:00Z",
+      "base": {
+        "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "repo": { "id": 5678, "full_name": "Owner/Repo" }
+      },
+      "head": { "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+    }
+  },
+  "synchronize": {
+    "action": "synchronize",
+    "installation": { "id": 1234 },
+    "repository": { "id": 5678, "full_name": "Owner/Repo" },
+    "sender": { "id": 42, "login": "octocat", "type": "User" },
+    "pull_request": {
+      "id": 9012,
+      "number": 7,
+      "html_url": "https://github.com/Owner/Repo/pull/7",
+      "draft": false,
+      "updated_at": "2026-09-08T12:02:00Z",
+      "base": {
+        "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "repo": { "id": 5678, "full_name": "Owner/Repo" }
+      },
+      "head": { "sha": "cccccccccccccccccccccccccccccccccccccccc" }
+    }
+  },
+  "ready_for_review": {
+    "action": "ready_for_review",
+    "installation": { "id": 1234 },
+    "repository": { "id": 5678, "full_name": "Owner/Repo" },
+    "sender": { "id": 42, "login": "octocat", "type": "User" },
+    "pull_request": {
+      "id": 9012,
+      "number": 7,
+      "html_url": "https://github.com/Owner/Repo/pull/7",
+      "draft": false,
+      "updated_at": "2026-09-08T12:03:00Z",
+      "base": {
+        "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "repo": { "id": 5678, "full_name": "Owner/Repo" }
+      },
+      "head": { "sha": "cccccccccccccccccccccccccccccccccccccccc" }
+    }
+  },
+  "draft_opened": {
+    "action": "opened",
+    "installation": { "id": 1234 },
+    "repository": { "id": 5678, "full_name": "Owner/Repo" },
+    "sender": { "id": 42, "login": "octocat", "type": "User" },
+    "pull_request": {
+      "id": 9012,
+      "number": 7,
+      "html_url": "https://github.com/Owner/Repo/pull/7",
+      "draft": true,
+      "updated_at": "2026-09-08T11:59:00Z",
+      "base": {
+        "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "repo": { "id": 5678, "full_name": "Owner/Repo" }
+      },
+      "head": { "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+    }
+  },
+  "closed": {
+    "action": "closed",
+    "installation": { "id": 1234 },
+    "repository": { "id": 5678, "full_name": "Owner/Repo" },
+    "sender": { "id": 42, "login": "octocat", "type": "User" },
+    "pull_request": { "draft": false }
+  }
+}

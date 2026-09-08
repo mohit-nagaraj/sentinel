@@ -44,6 +44,6 @@
 ## SNT-026 GitHub App Webhooks and Checks
 
 - [x] Define strict webhook, assessment trigger, check lifecycle, response, and least-privilege App contracts.
-- [ ] Implement raw-body authentication, GitHub App token management, PR resolution, and Checks API operations.
+- [x] Implement raw-body authentication, GitHub App token management, PR resolution, and Checks API operations.
 - [ ] Enqueue deliveries, immutable-head assessments, runs, supersession, and check binding transactionally.
 - [ ] Expose and verify shared signed-webhook and operator-authenticated manual assessment routes.
