@@ -3,7 +3,7 @@
 | Field          | Value                                          |
 | -------------- | ---------------------------------------------- |
 | Milestone      | M3 — Specialist discovery agents               |
-| Status         | `review`                                       |
+| Status         | `done`                                         |
 | Depends on     | SNT-005, SNT-006                               |
 | Blocks         | Documentation, Code, and Application Explorers |
 | PRD references | §14.1–14.2, §15.2–15.3, §18.4                  |
@@ -87,6 +87,7 @@ Domain-specific prompts/tools, Curator, Neo4j mutation, and frontend rendering.
 - Focused shared-kernel review regressions cover concurrent start/continue, lease denial/recovery, committed-event retries, terminal recovery, elapsed settlement, duplicate decisions, over-reported tool usage, zero-budget deterministic completion, human authorization, and restart replay.
 - Application Explorer's six real-browser integration missions pass. The full integration command passes every runnable non-PHP case; one PHP parser limit case remains locally unavailable because this machine's PHP CLI lacks OpenSSL and cannot run Composer. GitHub CI provisions PHP 8.3 and Composer for that gate.
 - Five-role `/review` and dedicated Code/Application composition reviews found and closed all confidence-80+ P0/P1 issues.
+- PR #18 CI passed Composer validation/install, formatting, lint, typecheck, 824 default tests, the full integration suite, and build.
 
 ### Deployment boundary
 

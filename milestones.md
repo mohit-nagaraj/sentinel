@@ -89,7 +89,7 @@ graph LR
 
 | ID      | Issue                                                                                                        | Depends on                         | Status      |
 | ------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------- | ----------- |
-| SNT-014 | [Shared specialist agent kernel](./.tasks/milestone-03-specialist-agents/SNT-014-specialist-agent-kernel.md) | SNT-005, SNT-006                   | review      |
+| SNT-014 | [Shared specialist agent kernel](./.tasks/milestone-03-specialist-agents/SNT-014-specialist-agent-kernel.md) | SNT-005, SNT-006                   | done        |
 | SNT-015 | [Documentation Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-015-documentation-explorer.md)    | SNT-008, SNT-014                   | not-started |
 | SNT-016 | [Code Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-016-code-explorer.md)                      | SNT-009, SNT-010, SNT-011, SNT-014 | done        |
 | SNT-017 | [Application Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-017-application-explorer.md)        | SNT-012, SNT-014                   | done        |
@@ -187,17 +187,17 @@ SNT-014 now provides the common specialist lifecycle and reviewed Code/Applicati
 | ---------------------------------------- | -----: | -----: | ------------------------------ |
 | M1 Foundation and durable execution      |      6 |      6 | done                           |
 | M2 Deterministic source evidence         |      7 |      7 | done                           |
-| M3 Specialist discovery agents           |      2 |      4 | in-progress                    |
+| M3 Specialist discovery agents           |      3 |      4 | in-progress                    |
 | M4 Graph construction and reconciliation |      0 |      4 | not-started                    |
 | M5 Onboarding and control plane          |      1 |      4 | in-progress                    |
 | M6 PR blast-radius loop                  |      0 |      4 | not-started                    |
 | M7 Verification and refresh              |      0 |      3 | blocked on deployment decision |
 | M8 Evaluation and delivery               |      0 |      3 | not-started                    |
-| **Overall**                              | **16** | **35** | **in-progress**                |
+| **Overall**                              | **17** | **35** | **in-progress**                |
 
 ## Active front
 
-- SNT-014 is in review with implementation, QA, and P0/P1 code review complete; PR CI remains before merge.
+- SNT-014 is done with implementation, QA, P0/P1 review, and PR CI complete; merge remains.
 - SNT-015 is the next specialist issue after SNT-014 merges.
 - SNT-023 is the next ready control-plane issue after SNT-022 merges.
 - External preparation can proceed without implementation ownership conflicts:

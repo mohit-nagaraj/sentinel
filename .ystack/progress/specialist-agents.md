@@ -7,7 +7,7 @@
 - [x] Implement the reusable specialist LangGraph kernel.
 - [x] Add scripted trajectories and durable boundary tests.
 
-SNT-014 implementation, local QA, and P0/P1 review are complete. PR CI and merge remain.
+SNT-014 implementation, QA, P0/P1 review, and PR CI are complete. Merge remains.
 
 ### SNT-014 Decisions
 
