@@ -4,8 +4,8 @@
 
 | Module            | Done | Total | Status      |
 | ----------------- | ---- | ----- | ----------- |
-| Specialist agents | 1    | 4     | in-progress |
+| Specialist agents | 2    | 4     | in-progress |
 
 ## Ready Front
 
-SNT-017 is complete as a standalone composable explorer. SNT-014 remains the open shared-kernel composition boundary.
+SNT-014 is in review with Code and Application compositions verified through the shared kernel. SNT-015 is the next specialist after the kernel merges.

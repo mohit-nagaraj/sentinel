@@ -1,12 +1,12 @@
 # SNT-016 — Code Explorer agent
 
-| Field | Value |
-|---|---|
-| Milestone | M3 — Specialist discovery agents |
-| Status | `done` |
-| Depends on | SNT-009, SNT-010, SNT-011, SNT-014 |
-| Blocks | Evidence linking, PR investigation, Curator, evaluation |
-| PRD references | §13.7–13.11, §15, FR-006–FR-008 |
+| Field          | Value                                                   |
+| -------------- | ------------------------------------------------------- |
+| Milestone      | M3 — Specialist discovery agents                        |
+| Status         | `done`                                                  |
+| Depends on     | SNT-009, SNT-010, SNT-011, SNT-014                      |
+| Blocks         | Evidence linking, PR investigation, Curator, evaluation |
+| PRD references | §13.7–13.11, §15, FR-006–FR-008                         |
 
 ## Background
 
@@ -80,7 +80,7 @@ AST extraction itself, arbitrary code execution, semantic requirement acceptance
 
 - Wire contracts and parsers: `packages/contracts/src/code-explorer.ts`, re-exported by `@sentinel/contracts`.
 - Composite normalized repository and all thirteen tools: `packages/adapters/src/code-explorer/`, re-exported by `@sentinel/adapters`.
-- Bounded model/tool loop: `packages/orchestration/src/code-explorer.ts`, re-exported by `@sentinel/orchestration`.
+- Shared-kernel composition: `packages/orchestration/src/code-explorer-specialist.ts`, re-exported by `@sentinel/orchestration`; the prior bounded service remains available for compatibility.
 - Cross-stack fixture and scripted missions: `tests/fixtures/code-explorer.ts` and `tests/agent/code-explorer.test.ts`.
 - Opt-in pinned public evaluation: `tests/live/code-explorer-hi-events.live.test.ts`.
 
@@ -91,8 +91,8 @@ AST extraction itself, arbitrary code execution, semantic requirement acceptance
 - `CodeExplorerTools` exposes exactly the task's thirteen operations. Mission path/language/tool scope is checked before execution; per-tool result, hop, line, and character limits are applied again below the model gateway.
 - Symbol and text searches return candidates without structural claim evidence. `submit_code_claim` accepts only evidence IDs previously observed in the mission, and at least one structural source-to-target edge must exactly support the proposed relationship.
 - Focused test evidence is always `corroborating` with `corroboratesOnly: true`; it cannot satisfy the structural-edge rule alone.
-- The service stores compact observation history plus only the latest bounded source slices in model context. Tool arguments are hashed into visit keys before execution, so exact repeats terminate as `no_progress` without duplicate reads.
-- The service requires one strict tool call per model decision. Tool/source/content/repository/model/token/elapsed budgets, total traversal hops/results, and a final iteration limit all terminate with typed status/reason codes.
+- The specialist stores rich source/edge/path results in an injected durable store and retains only compact hashes/evidence references in LangGraph state. Sequenced observations hydrate bounded recent context; semantic repeats terminate as `no_progress` without duplicate reads.
+- All thirteen described tools execute through the shared registry and durable coordinator. Tool/source/content/repository/model/token/elapsed budgets and total traversal/result limits terminate with typed status/reason codes; committed finish reconstruction is provider-free.
 - Claims and connected paths are sorted deterministically. Dynamic calls and unresolved references are retained with reason codes and optional Documentation/Application follow-up targets.
 - The Azure gateway's validated default tool ceiling is 16 so the complete thirteen-tool surface fits while remaining below the contract maximum of 32.
 - SNT-014 is absent from the `origin/main` baseline used for this work. SNT-016 provides its feature-specific bounded execution loop and ports but does not mark the broader shared-kernel checkpoint/interrupt/cross-agent milestone complete.
@@ -109,5 +109,5 @@ AST extraction itself, arbitrary code execution, semantic requirement acceptance
 ### Deferred
 
 - The paid Hi.Events mission was not executed during default verification; the runnable harness is intentionally opt-in.
-- Shared specialist checkpoint/resume, human interrupts, cross-agent privilege isolation, and reusable subgraph construction remain SNT-014 scope.
+- Shared checkpoint/resume, authorized human interrupts, cross-agent privilege isolation, lease enforcement, committed events, and restart replay are exercised through the SNT-014 composition tests.
 - Neo4j mutation, semantic requirement acceptance, Curator reconciliation, and final risk scoring remain out of scope as declared.

@@ -7,7 +7,7 @@
 - [x] Implement the reusable specialist LangGraph kernel.
 - [x] Add scripted trajectories and durable boundary tests.
 
-SNT-014 is implemented on this integration branch and is awaiting final review, CI, and merge.
+SNT-014 implementation, local QA, and P0/P1 review are complete. PR CI and merge remain.
 
 ### SNT-014 Decisions
 
@@ -21,6 +21,15 @@ SNT-014 is implemented on this integration branch and is awaiting final review, 
 | 2026-09-08 | Gate durable start claims and recovery with short coordination plus the run lease.     | Starts do not hold database locks during graph work, unauthorized workers cannot claim threads, and abandoned checkpoints can recover. |
 | 2026-09-08 | Export strict scripted model, tool, and in-memory checkpoint helpers.                  | Agent trajectories stay deterministic and credential-free while exercising the same validation, budget, interrupt, and replay paths.   |
 
+## SNT-016 Code Explorer
+
+- [x] Preserve the thirteen bounded source/claim tools and domain result contracts.
+- [x] Compose all tools through the shared specialist registry and kernel.
+- [x] Keep rich source, path, and boundary state behind an injected durable store.
+- [x] Verify budget, evidence, follow-up, interrupt, checkpoint, and restart paths.
+
+SNT-016 is complete and its shared-kernel composition passes independent P0/P1 review.
+
 ## SNT-017 Application Explorer
 
 - [x] Define strict Application Explorer decisions, checkpoint, frontier, claim, blocker, and result contracts.
@@ -28,7 +37,7 @@ SNT-014 is implemented on this integration branch and is awaiting final review, 
 - [x] Verify deterministic and real-browser mission, denial, recovery, and stability trajectories.
 - [x] Record verified SNT-017 documentation and milestone status.
 
-SNT-017 is complete as a composable Application Explorer and is being checked against the SNT-014 shared-kernel contract on this branch.
+SNT-017 is complete and its shared-kernel composition passes independent P0/P1 review.
 
 ### SNT-017 Decisions
 

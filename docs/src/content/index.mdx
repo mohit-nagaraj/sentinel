@@ -66,3 +66,28 @@ rejects secret/authentication edits, and then uses a compare-and-set write again
 the current inspected fingerprint. Editing an inspected field requires
 reinspection. The confirmed application is ready for initialization, but
 onboarding itself creates no initialization run.
+
+## Specialist orchestration
+
+Documentation, Code, and Application specialists share one durable mission
+lifecycle. Each composition fixes its agent identity, mission modes, prompt,
+model, described tools, completion validator, and runtime limits. That
+configuration is fingerprinted in checkpoint state, so recovery cannot switch an
+in-flight mission to different authority.
+
+Models choose only from the current specialist's strict tool schemas. The runtime
+checks agent and mode permission, mission allowlists, scope, call correlation,
+replay identity, and budget reservation before execution. Rich source and browser
+records stay behind injected durable stores; checkpoints retain bounded hashes,
+evidence references, usage, progress, human decisions, and terminal results.
+
+Code missions navigate prepared source and endpoint indexes and accept proposed
+relationships only when observed structural evidence supports them. Application
+missions select opaque browser actions, retain policy authority in the browser
+runtime, bind recovery to the same authentication reference, and require observed
+transitions to address mission questions and success criteria.
+
+State changes commit before their lifecycle events. Event idempotency keys make
+decision, tool, evidence, budget, interrupt, and terminal history retry-safe.
+Mission continuation and authorized human resume remain on the same lease-guarded
+checkpoint thread without repeating completed tool effects.

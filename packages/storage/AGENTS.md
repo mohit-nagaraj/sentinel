@@ -4,6 +4,7 @@
 - `src/secret-service.ts` - Supabase Vault reference lifecycle.
 - `src/database.ts` - server-only Postgres client and transaction port.
 - `src/source-repository.ts` - normalized source status persistence.
+- `src/run-repository.ts` - lease-safe runs and idempotent ordered events.
 - `src/index.ts` - public storage exports.
 
 ## Conventions
@@ -14,3 +15,4 @@
 - Protect delayed inspection and confirmation with compare-and-set fingerprints.
 - Preserve current graph identity on failed or stale configuration changes.
 - Use scripted database unit tests and opt-in disposable Supabase integration tests.
+- Require bounded event idempotency keys and reject conflicting retries.

@@ -1,12 +1,12 @@
 # SNT-014 — Shared specialist agent kernel
 
-| Field | Value |
-|---|---|
-| Milestone | M3 — Specialist discovery agents |
-| Status | `not-started` |
-| Depends on | SNT-005, SNT-006 |
-| Blocks | Documentation, Code, and Application Explorers |
-| PRD references | §14.1–14.2, §15.2–15.3, §18.4 |
+| Field          | Value                                          |
+| -------------- | ---------------------------------------------- |
+| Milestone      | M3 — Specialist discovery agents               |
+| Status         | `review`                                       |
+| Depends on     | SNT-005, SNT-006                               |
+| Blocks         | Documentation, Code, and Application Explorers |
+| PRD references | §14.1–14.2, §15.2–15.3, §18.4                  |
 
 ## Background
 
@@ -25,16 +25,16 @@ All three specialists share mission lifecycle, tool selection, validation, check
 
 ## Implementation tasks
 
-- [ ] Define generic specialist state and reducers.
-- [ ] Build subgraph factory accepting agent identity, modes, tools, prompts, and completion validator.
-- [ ] Enforce mission scope and tool allowlist before every call.
-- [ ] Correlate strict model tool calls/results and reject malformed/unknown calls.
-- [ ] Update budget atomically for model/tool/content consumption.
-- [ ] Persist only compact references in graph state.
-- [ ] Emit agent/mission/decision/tool/evidence/terminal events.
-- [ ] Add human-interrupt route and authorized resume contract.
-- [ ] Add loop/recursion/no-progress detection.
-- [ ] Build scripted fake gateway and tool set for deterministic tests.
+- [x] Define generic specialist state and reducers.
+- [x] Build subgraph factory accepting agent identity, modes, tools, prompts, and completion validator.
+- [x] Enforce mission scope and tool allowlist before every call.
+- [x] Correlate strict model tool calls/results and reject malformed/unknown calls.
+- [x] Update budget atomically for model/tool/content consumption.
+- [x] Persist only compact references in graph state.
+- [x] Emit agent/mission/decision/tool/evidence/terminal events.
+- [x] Add human-interrupt route and authorized resume contract.
+- [x] Add loop/recursion/no-progress detection.
+- [x] Build scripted fake gateway and tool set for deterministic tests.
 
 ## Acceptance criteria
 
@@ -62,4 +62,33 @@ Domain-specific prompts/tools, Curator, Neo4j mutation, and frontend rendering.
 
 ## Implementation notes
 
-_Populate during implementation with final paths, commands, decisions, test evidence, and any explicitly deferred acceptance item._
+### Paths
+
+- Shared state, tool registry, kernel, and scripted fixtures: `packages/orchestration/src/specialist/`.
+- Runtime and event projection: `packages/orchestration/src/runtime.ts` and `packages/orchestration/src/event-projection.ts`.
+- Durable event idempotency: `packages/storage/src/run-repository.ts` and `supabase/migrations/20260908000200_run_event_idempotency.sql`.
+- Code/Application compositions: `packages/orchestration/src/code-explorer-specialist.ts` and `packages/orchestration/src/application-explorer-specialist.ts`.
+- Cross-identity trajectories: `tests/agent/specialist-kernel.agent.test.ts`, `tests/agent/code-explorer-specialist.agent.test.ts`, and `tests/agent/application-explorer-specialist.agent.test.ts`.
+
+### Decisions
+
+- Checkpoint state stores compact decisions, call/result hashes, evidence/reference IDs, a replay-safe budget ledger, progress, human resolution, committed-event cursors, and terminal results. Rich domain observations remain in injected durable stores.
+- Kernel configuration fingerprints the agent, modes, prompt, model, described tools, completion validator, and limits. Start/continue/resume reject incompatible checkpoint reuse.
+- Provider decisions consume exactly one model call. Explicit deterministic reconstruction consumes zero model calls/tokens and cannot report other usage.
+- Production tool registries require an injected durable execution coordinator. Completed or uncertain calls are correlated by mission/call/request hash and checkpointed with conservative usage.
+- State commits precede decision/tool/interrupt/terminal events. Deterministic event keys and database conflict checks make retries idempotent.
+- Cross-agent follow-ups are permitted only as schema-valid proposed missions with the same run/application and a distinct mission ID.
+
+### Verification (2026-09-08)
+
+- `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, and `pnpm build` pass.
+- `pnpm test` passes 824 tests across 83 files.
+- `pnpm test:agent` passes 39 trajectories across the generic, Code, and Application specialist suites.
+- Focused shared-kernel review regressions cover concurrent start/continue, lease denial/recovery, committed-event retries, terminal recovery, elapsed settlement, duplicate decisions, over-reported tool usage, zero-budget deterministic completion, human authorization, and restart replay.
+- Application Explorer's six real-browser integration missions pass. The full integration command passes every runnable non-PHP case; one PHP parser limit case remains locally unavailable because this machine's PHP CLI lacks OpenSSL and cannot run Composer. GitHub CI provisions PHP 8.3 and Composer for that gate.
+- Five-role `/review` and dedicated Code/Application composition reviews found and closed all confidence-80+ P0/P1 issues.
+
+### Deployment boundary
+
+- Production composition supplies the Postgres checkpointer, durable execution coordinator, durable rich-observation store, run-control/event dependencies, and concrete model/tool adapters. In-memory implementations are explicitly test-only.
+- Paid Azure and live Hi.Events tests remain opt-in; no provider credentials are required by default verification.
