@@ -199,6 +199,10 @@ describe("specialist checkpoint state", () => {
       budgetLedger: EMPTY_BUDGET_LEDGER,
       progress: EMPTY_SPECIALIST_PROGRESS,
       humanInterrupt: null,
+      pendingDecisionEventId: null,
+      lastCommittedToolCallId: null,
+      pendingTerminalEvent: false,
+      pendingTerminalToolCallIds: [],
       terminalResult: null,
     })
   })
@@ -604,7 +608,7 @@ describe("specialist checkpoint state", () => {
     ).toThrow("cites evidence absent")
   })
 
-  it("rejects cross-agent identity and cross-boundary follow-ups", () => {
+  it("allows cross-agent follow-ups within the run/application boundary", () => {
     expect(() =>
       parseSpecialistState({
         ...createSpecialistInitialState(mission),
@@ -618,25 +622,44 @@ describe("specialist checkpoint state", () => {
       agent: "application",
       mode: "workflow_discovery",
     })
+    const resultWith = (suggestedFollowups: readonly DiscoveryMission[]) =>
+      missionResultSchema.parse({
+        schemaVersion: 1,
+        missionId: mission.id,
+        status: "partial",
+        claims: [],
+        unresolved: [],
+        exclusions: [],
+        suggestedFollowups,
+        stopReason: {
+          code: "followup_required",
+          summary: "Follow-up required.",
+        },
+        budgetUsed: EMPTY_BUDGET_USAGE,
+      })
     expect(() =>
       parseSpecialistState({
         ...createSpecialistInitialState(mission),
-        terminalResult: missionResultSchema.parse({
-          schemaVersion: 1,
-          missionId: mission.id,
-          status: "partial",
-          claims: [],
-          unresolved: [],
-          exclusions: [],
-          suggestedFollowups: [followup],
-          stopReason: {
-            code: "followup_required",
-            summary: "Follow-up required.",
-          },
-          budgetUsed: EMPTY_BUDGET_USAGE,
-        }),
+        terminalResult: resultWith([followup]),
       })
-    ).toThrow("crosses its run, application, or agent")
+    ).not.toThrow()
+
+    const crossRun = discoveryMissionSchema.parse({
+      ...followup,
+      runId: "run:99999999-9999-4999-8999-999999999999",
+    })
+    expect(() =>
+      parseSpecialistState({
+        ...createSpecialistInitialState(mission),
+        terminalResult: resultWith([crossRun]),
+      })
+    ).toThrow("crosses its run/application")
+    expect(() =>
+      parseSpecialistState({
+        ...createSpecialistInitialState(mission),
+        terminalResult: resultWith([mission]),
+      })
+    ).toThrow("reuses its mission")
   })
 
   it("forbids raw, authoritative, graph-write, secret, and live values", () => {
@@ -657,6 +680,16 @@ describe("specialist checkpoint state", () => {
   })
 
   it("enforces argument and full-checkpoint byte limits", () => {
+    expect(() =>
+      compactToolArgumentsSchema.parse({
+        values: Array.from({ length: 100 }, (_, index) => `value_${index}`),
+      })
+    ).not.toThrow()
+    expect(() =>
+      compactToolArgumentsSchema.parse({
+        values: Array.from({ length: 101 }, (_, index) => `value_${index}`),
+      })
+    ).toThrow()
     expect(() =>
       compactToolArgumentsSchema.parse({ query: "x".repeat(8_193) })
     ).toThrow()

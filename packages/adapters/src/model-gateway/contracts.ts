@@ -33,6 +33,7 @@ export interface ModelTextRequest {
   readonly input: string
   readonly instructions?: string
   readonly maxOutputTokens?: number
+  readonly signal?: AbortSignal
 }
 
 export interface ModelStructuredRequest<Output> extends ModelTextRequest {

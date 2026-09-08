@@ -79,8 +79,10 @@ describe("orchestration runtime boundaries", () => {
 
   it("projects typed lifecycle events without hidden details", async () => {
     const persisted: unknown[] = []
-    const sink = new DurableRunEventSink(async (event) => {
+    const idempotencyKeys: (string | undefined)[] = []
+    const sink = new DurableRunEventSink(async (event, idempotencyKey) => {
       persisted.push(event)
+      idempotencyKeys.push(idempotencyKey)
     })
     await sink.append({
       runId: state.runId,
@@ -94,18 +96,22 @@ describe("orchestration runtime boundaries", () => {
       occurredAt: "2026-09-07T00:00:00.000Z",
     })
     const missionId = `mission:v1:${"c".repeat(64)}`
-    await sink.append({
-      runId: state.runId,
-      graphName: state.graphName,
-      nodeName: "specialist_prepare",
-      agent: "code",
-      missionId,
-      kind: "mission_started",
-      status: "started",
-      summary: "Specialist mission started",
-      reasonCode: "mission_started",
-      occurredAt: "2026-09-07T00:00:01.000Z",
-    })
+    const idempotencyKey = `sha256:${"d".repeat(64)}`
+    await sink.append(
+      {
+        runId: state.runId,
+        graphName: state.graphName,
+        nodeName: "specialist_prepare",
+        agent: "code",
+        missionId,
+        kind: "mission_started",
+        status: "started",
+        summary: "Specialist mission started",
+        reasonCode: "mission_started",
+        occurredAt: "2026-09-07T00:00:01.000Z",
+      },
+      { idempotencyKey }
+    )
     await sink.append({
       runId: state.runId,
       graphName: state.graphName,
@@ -140,6 +146,36 @@ describe("orchestration runtime boundaries", () => {
       sequence: 3,
     })
     expect(JSON.stringify(persisted)).not.toContain("reasoning")
+    expect(idempotencyKeys).toContain(idempotencyKey)
+  })
+
+  it("gives unkeyed durable events restart-safe unique append keys", async () => {
+    const keys: string[] = []
+    const event: OrchestrationEvent = {
+      runId: state.runId,
+      graphName: state.graphName,
+      nodeName: "model_tool",
+      kind: "node_started",
+      status: "started",
+      summary: "Model tool started",
+      reasonCode: "node_started",
+      occurredAt: "2026-09-07T00:00:00.000Z",
+    }
+    for (const sink of [
+      new DurableRunEventSink(async (_event, idempotencyKey) => {
+        keys.push(idempotencyKey)
+      }),
+      new DurableRunEventSink(async (_event, idempotencyKey) => {
+        keys.push(idempotencyKey)
+      }),
+    ]) {
+      await sink.append(event)
+    }
+
+    expect(keys).toHaveLength(2)
+    expect(keys[0]).toMatch(/^sha256:[a-f0-9]{64}$/)
+    expect(keys[1]).toMatch(/^sha256:[a-f0-9]{64}$/)
+    expect(keys[0]).not.toBe(keys[1])
   })
 
   it("rechecks lease ownership immediately before a side effect", async () => {

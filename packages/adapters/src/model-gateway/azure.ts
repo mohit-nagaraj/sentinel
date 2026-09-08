@@ -39,26 +39,36 @@ import {
 import { createStrictModelJsonSchema } from "./schema.ts"
 
 export interface AzureResponsesTransport {
-  create(request: Readonly<Record<string, unknown>>): Promise<unknown>
+  create(
+    request: Readonly<Record<string, unknown>>,
+    options?: { readonly signal?: AbortSignal }
+  ): Promise<unknown>
   stream(
-    request: Readonly<Record<string, unknown>>
+    request: Readonly<Record<string, unknown>>,
+    options?: { readonly signal?: AbortSignal }
   ): Promise<AsyncIterable<unknown>>
 }
 
 class OpenAIResponsesTransport implements AzureResponsesTransport {
   constructor(private readonly client: OpenAI) {}
 
-  create(request: Readonly<Record<string, unknown>>): Promise<unknown> {
+  create(
+    request: Readonly<Record<string, unknown>>,
+    options?: { readonly signal?: AbortSignal }
+  ): Promise<unknown> {
     return this.client.responses.create(
-      request as unknown as ResponseCreateParamsNonStreaming
+      request as unknown as ResponseCreateParamsNonStreaming,
+      options?.signal === undefined ? undefined : { signal: options.signal }
     )
   }
 
   async stream(
-    request: Readonly<Record<string, unknown>>
+    request: Readonly<Record<string, unknown>>,
+    options?: { readonly signal?: AbortSignal }
   ): Promise<AsyncIterable<unknown>> {
     return this.client.responses.create(
-      request as unknown as ResponseCreateParamsStreaming
+      request as unknown as ResponseCreateParamsStreaming,
+      options?.signal === undefined ? undefined : { signal: options.signal }
     )
   }
 }
@@ -228,6 +238,9 @@ function requestTokenLimit(
 
 export function normalizeModelGatewayError(error: unknown): ModelGatewayError {
   if (error instanceof ModelGatewayError) return error
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return new ModelGatewayError("timeout", false)
+  }
   if (error instanceof APIConnectionTimeoutError) {
     return new ModelGatewayError("timeout", true)
   }
@@ -322,16 +335,25 @@ export class AzureOpenAIModelGateway implements ModelGateway {
     }
   }
 
-  private async create(request: Record<string, unknown>): Promise<unknown> {
+  private async create(
+    request: Record<string, unknown>,
+    signal?: AbortSignal
+  ): Promise<unknown> {
     try {
-      return await this.transport.create(request)
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError")
+      return await this.transport.create(
+        request,
+        signal === undefined ? undefined : { signal }
+      )
     } catch (error) {
       throw normalizeModelGatewayError(error)
     }
   }
 
   async generateText(request: ModelTextRequest): Promise<ModelResult<string>> {
-    const result = extractText(await this.create(this.baseRequest(request)))
+    const result = extractText(
+      await this.create(this.baseRequest(request), request.signal)
+    )
     if (result.text.length === 0) {
       throw new ModelGatewayError("malformed_output", false)
     }
@@ -342,17 +364,20 @@ export class AzureOpenAIModelGateway implements ModelGateway {
     request: ModelStructuredRequest<Output>
   ): Promise<ModelResult<Output>> {
     const schemaName = parseModelOperation(request.schemaName)
-    const response = await this.create({
-      ...this.baseRequest(request),
-      text: {
-        format: {
-          type: "json_schema",
-          name: schemaName,
-          schema: createStrictModelJsonSchema(request.schema, schemaName),
-          strict: true,
+    const response = await this.create(
+      {
+        ...this.baseRequest(request),
+        text: {
+          format: {
+            type: "json_schema",
+            name: schemaName,
+            schema: createStrictModelJsonSchema(request.schema, schemaName),
+            strict: true,
+          },
         },
       },
-    })
+      request.signal
+    )
     const result = extractText(response)
     try {
       return {
@@ -397,19 +422,22 @@ export class AzureOpenAIModelGateway implements ModelGateway {
       parameters: createStrictModelJsonSchema(tool.parameters, tool.name),
     }))
     const response = parseResponse(
-      await this.create({
-        ...this.baseRequest(request),
-        include: ["reasoning.encrypted_content"],
-        parallel_tool_calls: false,
-        tool_choice: request.toolChoice ?? "auto",
-        tools: tools.map((tool) => ({
-          type: "function",
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters,
-          strict: true,
-        })),
-      })
+      await this.create(
+        {
+          ...this.baseRequest(request),
+          include: ["reasoning.encrypted_content"],
+          parallel_tool_calls: false,
+          tool_choice: request.toolChoice ?? "auto",
+          tools: tools.map((tool) => ({
+            type: "function",
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+            strict: true,
+          })),
+        },
+        request.signal
+      )
     )
     const calls: ModelToolCall[] = []
     const callIds = new Set<string>()
@@ -700,23 +728,26 @@ export class AzureOpenAIModelGateway implements ModelGateway {
     ) {
       throw new ModelGatewayError("limit_exceeded", false)
     }
-    const response = await this.create({
-      model: this.deployment,
-      input: [...input, ...toolOutputs],
-      ...(instructions === undefined ? {} : { instructions }),
-      max_output_tokens: requestTokenLimit(request, this.limits),
-      parallel_tool_calls: false,
-      reasoning: { effort: "low" },
-      store: false,
-      tool_choice: "none",
-      tools: continuation.tools.map((tool) => ({
-        type: "function",
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters,
-        strict: true,
-      })),
-    })
+    const response = await this.create(
+      {
+        model: this.deployment,
+        input: [...input, ...toolOutputs],
+        ...(instructions === undefined ? {} : { instructions }),
+        max_output_tokens: requestTokenLimit(request, this.limits),
+        parallel_tool_calls: false,
+        reasoning: { effort: "low" },
+        store: false,
+        tool_choice: "none",
+        tools: continuation.tools.map((tool) => ({
+          type: "function",
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+          strict: true,
+        })),
+      },
+      request.signal
+    )
     const result = extractText(response)
     if (result.text.length === 0) {
       throw new ModelGatewayError("malformed_output", false)
@@ -730,10 +761,16 @@ export class AzureOpenAIModelGateway implements ModelGateway {
   ): Promise<ModelResult<string>> {
     let stream: AsyncIterable<unknown>
     try {
-      stream = await this.transport.stream({
-        ...this.baseRequest(request),
-        stream: true,
-      })
+      if (request.signal?.aborted) {
+        throw new DOMException("Aborted", "AbortError")
+      }
+      stream = await this.transport.stream(
+        {
+          ...this.baseRequest(request),
+          stream: true,
+        },
+        request.signal === undefined ? undefined : { signal: request.signal }
+      )
     } catch (error) {
       throw normalizeModelGatewayError(error)
     }

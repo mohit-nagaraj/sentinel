@@ -75,11 +75,18 @@ describe("run repository", () => {
       query: query as DatabaseExecutor["query"],
     })
 
-    const result = await repository.appendEvent(runEventFixture)
+    const idempotencyKey = `sha256:${"a".repeat(64)}`
+    const result = await repository.appendEvent(runEventFixture, idempotencyKey)
 
     expect(result.sequence).toBe(1)
     expect(result.event.kind).toBe("evidence_gained")
     expect(query.mock.calls[0]?.[1]?.[0]).toBe(runId)
+    expect(query.mock.calls[0]?.[0]).toContain("$5")
+    expect(query.mock.calls[0]?.[1]?.[4]).toBe(idempotencyKey)
+    await expect(
+      repository.appendEvent(runEventFixture, undefined as never)
+    ).rejects.toThrow()
+    expect(query).toHaveBeenCalledOnce()
   })
 
   it("requires typed, non-secret failure codes", async () => {

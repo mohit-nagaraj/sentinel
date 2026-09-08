@@ -29,6 +29,7 @@ import {
   CheckpointStateError,
   ResumeAuthorizationError,
   ResumeConflictError,
+  appendOrchestrationEvent,
   type RuntimeDependencies,
   wrapNode,
 } from "../runtime.ts"
@@ -125,18 +126,34 @@ export type SpecialistModelDecision = z.infer<
   typeof specialistModelDecisionSchema
 >
 
+export interface SpecialistHumanResolution {
+  readonly decisionId: string
+  readonly reasonCode: string
+  readonly approved: boolean
+}
+
+export interface SpecialistDecisionEstimate {
+  readonly kind: "provider" | "deterministic"
+  readonly usage: Partial<MissionBudget>
+}
+
 export interface SpecialistModelRequest {
   readonly mission: DiscoveryMission
   readonly promptTemplateId: string
   readonly stateFingerprint: string
   readonly observations: SpecialistStateValue["observations"]
   readonly completedCallIds: readonly string[]
+  readonly executionKind: SpecialistDecisionEstimate["kind"]
+  readonly humanResolution: SpecialistHumanResolution | null
   readonly remainingBudget: MissionBudget
   readonly signal: AbortSignal
 }
 
 export interface SpecialistDecisionModel {
   estimate(state: SpecialistStateValue): Partial<MissionBudget>
+  estimateDecision?(
+    state: SpecialistStateValue
+  ): SpecialistDecisionEstimate | Promise<SpecialistDecisionEstimate>
   decide(request: SpecialistModelRequest): Promise<unknown>
 }
 
@@ -199,10 +216,10 @@ export interface SpecialistRunResult {
   readonly idempotent: boolean
 }
 
-const activeSpecialistStarts = new Map<
+const activeSpecialistRuns = new Map<
   string,
   {
-    readonly identityFingerprint: string
+    readonly identityFingerprint: string | null
     readonly result: Promise<SpecialistRunResult>
   }
 >()
@@ -223,7 +240,17 @@ function fitsBudget(usage: MissionBudget, remaining: MissionBudget): boolean {
   return budgetKeys.every((key) => usage[key] <= remaining[key])
 }
 
-function assertModelUsage(usage: MissionBudget, ceiling: MissionBudget): void {
+function assertModelUsage(
+  usage: MissionBudget,
+  ceiling: MissionBudget,
+  kind: SpecialistDecisionEstimate["kind"]
+): void {
+  if (kind === "deterministic") {
+    if (budgetKeys.some((key) => usage[key] !== 0)) {
+      throw new BudgetExhaustedError()
+    }
+    return
+  }
   if (
     usage.modelCalls !== 1 ||
     usage.toolCalls !== 0 ||
@@ -241,6 +268,14 @@ function assertModelUsage(usage: MissionBudget, ceiling: MissionBudget): void {
 }
 
 function stateFingerprint(state: SpecialistStateValue): string {
+  const humanResolution =
+    state.humanInterrupt?.status === "resolved"
+      ? {
+          decisionId: state.humanInterrupt.decisionId,
+          reasonCode: state.humanInterrupt.reasonCode,
+          approved: state.humanInterrupt.approved,
+        }
+      : null
   return hashCanonical({
     missionId: state.mission.id,
     completedCalls: state.completedCalls.map((call) => ({
@@ -250,6 +285,21 @@ function stateFingerprint(state: SpecialistStateValue): string {
     observations: state.observations.map((item) => item.resultHash),
     budget: state.budgetLedger.total,
     progress: state.progress.lastFingerprint,
+    humanResolution,
+  })
+}
+
+function specialistEventKey(
+  state: SpecialistStateValue,
+  phase: string,
+  identity?: string
+): string {
+  return hashCanonical({
+    kind: "specialist_committed_event",
+    missionId: state.mission.id,
+    configurationFingerprint: state.kernel.configurationFingerprint,
+    phase,
+    identity: identity ?? null,
   })
 }
 
@@ -293,6 +343,16 @@ function resultFor(
   })
 }
 
+function terminalEventStatus(
+  result: MissionResult
+): "completed" | "blocked" | "failed" {
+  return result.status === "failed"
+    ? "failed"
+    : result.status === "blocked" || result.status === "needs_human"
+      ? "blocked"
+      : "completed"
+}
+
 function interruptFromState(
   state: SpecialistStateValue
 ): SpecialistInterruptPayload | undefined {
@@ -309,7 +369,7 @@ function interruptFromState(
   })
 }
 
-function runtimeOptions(config: ValidatedKernelConfig) {
+function runtimeOptions() {
   return {
     runtimeState: (state: SpecialistStateValue) => ({
       runId: state.mission.runId,
@@ -325,7 +385,6 @@ function runtimeOptions(config: ValidatedKernelConfig) {
         .slice(-100),
     }),
     validateUpdate: () => undefined,
-    lifecycleNodeName: config.graphName,
   } as const
 }
 
@@ -389,7 +448,12 @@ function validateConfig(input: SpecialistKernelConfig): ValidatedKernelConfig {
       const tool = input.tools.get(name)
       if (tool === undefined)
         throw new Error("Specialist tool registry changed")
-      return { name, agents: tool.agents, modes: tool.modes }
+      return {
+        name,
+        description: tool.description,
+        agents: tool.agents,
+        modes: tool.modes,
+      }
     }),
   })
   return {
@@ -515,6 +579,7 @@ function failedModelUpdate(
   const budgetUsed = addBudget(state.budgetLedger.total, estimate)
   return validateSpecialistUpdate(state, {
     decisions: decision,
+    pendingDecisionEventId: decision.decisionId,
     budgetLedger: modelLedgerEntry(state, decisionId, estimate),
     progress: progressEntry(state, decisionId, failureProgress, false),
     terminalResult: resultFor(
@@ -556,6 +621,7 @@ function failedDecisionUpdate(
   const budgetUsed = addBudget(state.budgetLedger.total, usage)
   return validateSpecialistUpdate(state, {
     decisions: recordedDecision,
+    pendingDecisionEventId: recordedDecision.decisionId,
     budgetLedger: modelLedgerEntry(state, decision.decisionId, usage),
     progress: progressEntry(
       state,
@@ -584,7 +650,7 @@ function buildKernelGraph(
   dependencies: RuntimeDependencies,
   checkpointer?: BaseCheckpointSaver
 ) {
-  const options = runtimeOptions(config)
+  const options = runtimeOptions()
   const prepare = wrapNode(
     "specialist_prepare",
     dependencies,
@@ -603,12 +669,15 @@ function buildKernelGraph(
       ) {
         throw new CheckpointStateError()
       }
-      await runtime.emit({
-        kind: "mission_started",
-        status: "started",
-        summary: "Specialist mission started",
-        reasonCode: "mission_started",
-      })
+      await runtime.emit(
+        {
+          kind: "mission_started",
+          status: "started",
+          summary: "Specialist mission started",
+          reasonCode: "mission_started",
+        },
+        { idempotencyKey: specialistEventKey(state, "mission_started") }
+      )
       return validateSpecialistUpdate(state, {})
     },
     options
@@ -623,10 +692,21 @@ function buildKernelGraph(
         return validateSpecialistUpdate(state, {})
       }
       const remaining = getRemainingSpecialistBudget(state)
+      let executionKind: SpecialistDecisionEstimate["kind"] = "provider"
       let estimate: MissionBudget
       try {
-        estimate = normalizeBudget(config.model.estimate(state))
-        assertModelUsage(estimate, remaining)
+        const decisionEstimate =
+          config.model.estimateDecision === undefined
+            ? {
+                kind: "provider" as const,
+                usage: config.model.estimate(state),
+              }
+            : await config.model.estimateDecision(state)
+        executionKind = z
+          .enum(["provider", "deterministic"])
+          .parse(decisionEstimate.kind)
+        estimate = normalizeBudget(decisionEstimate.usage)
+        assertModelUsage(estimate, remaining, executionKind)
       } catch {
         return validateSpecialistUpdate(state, {
           terminalResult: resultFor(
@@ -646,12 +726,21 @@ function buildKernelGraph(
           stateFingerprint: stateFingerprint(state),
           observations: state.observations,
           completedCallIds: state.completedCalls.map((call) => call.callId),
+          executionKind,
+          humanResolution:
+            state.humanInterrupt?.status === "resolved"
+              ? {
+                  decisionId: state.humanInterrupt.decisionId,
+                  reasonCode: state.humanInterrupt.reasonCode,
+                  approved: state.humanInterrupt.approved,
+                }
+              : null,
           remainingBudget: remaining,
           signal: runtime.signal,
         })
         parsed = specialistModelDecisionSchema.parse(raw)
-        assertModelUsage(parsed.usage, estimate)
-        assertModelUsage(parsed.usage, remaining)
+        assertModelUsage(parsed.usage, estimate, executionKind)
+        assertModelUsage(parsed.usage, remaining, executionKind)
       } catch {
         return failedModelUpdate(state, estimate, "model_decision_invalid")
       }
@@ -677,30 +766,13 @@ function buildKernelGraph(
       const nextBudget = addBudget(state.budgetLedger.total, parsed.usage)
       const commonUpdate = {
         decisions: decision,
+        pendingDecisionEventId: decision.decisionId,
         budgetLedger: modelLedgerEntry(
           state,
           decision.decisionId,
           parsed.usage
         ),
       }
-
-      await runtime.emit({
-        kind: "node_completed",
-        status: "completed",
-        summary: "Specialist decision recorded",
-        reasonCode: decision.kind,
-      })
-      await runtime.emit({
-        kind: "budget_updated",
-        status: "completed",
-        summary: "Specialist model budget updated",
-        reasonCode: "model_budget_updated",
-        budget: {
-          consumed: nextBudget.modelCalls,
-          limit: state.mission.budget.modelCalls,
-          unit: "model_calls",
-        },
-      })
 
       switch (parsed.action.kind) {
         case "tool_calls": {
@@ -797,12 +869,6 @@ function buildKernelGraph(
             contextFingerprint: fingerprint,
             status: "pending",
           })
-          await runtime.emit({
-            kind: "interrupt_requested",
-            status: "blocked",
-            summary: "Specialist requested human input",
-            reasonCode: parsed.action.reasonCode,
-          })
           return validateSpecialistUpdate(state, {
             ...commonUpdate,
             progress: progressEntry(
@@ -873,8 +939,72 @@ function buildKernelGraph(
     "specialist_validate_decision",
     dependencies,
     parseSpecialistState,
-    (state) => validateSpecialistUpdate(state, {}),
-    options
+    async (state, runtime) => {
+      const decisionId = state.pendingDecisionEventId
+      if (decisionId === null) return validateSpecialistUpdate(state, {})
+      const decision = state.decisions.find(
+        (candidate) => candidate.decisionId === decisionId
+      )
+      if (decision === undefined) throw new CheckpointStateError()
+      await runtime.emit(
+        {
+          kind: "node_completed",
+          status: "completed",
+          summary: "Specialist decision committed",
+          reasonCode: decision.kind,
+        },
+        {
+          idempotencyKey: specialistEventKey(
+            state,
+            "decision_committed",
+            decisionId
+          ),
+        }
+      )
+      await runtime.emit(
+        {
+          kind: "budget_updated",
+          status: "completed",
+          summary: "Specialist model budget committed",
+          reasonCode: "model_budget_updated",
+          budget: {
+            consumed: state.budgetLedger.total.modelCalls,
+            limit: state.mission.budget.modelCalls,
+            unit: "model_calls",
+          },
+        },
+        {
+          idempotencyKey: specialistEventKey(
+            state,
+            "model_budget_committed",
+            decisionId
+          ),
+        }
+      )
+      if (decision.kind === "needs_human") {
+        const pending = state.humanInterrupt
+        if (pending?.status !== "pending") throw new CheckpointStateError()
+        await runtime.emit(
+          {
+            kind: "interrupt_requested",
+            status: "blocked",
+            summary: "Specialist human input committed",
+            reasonCode: pending.reasonCode,
+          },
+          {
+            idempotencyKey: specialistEventKey(
+              state,
+              "interrupt_requested",
+              decisionId
+            ),
+          }
+        )
+      }
+      return validateSpecialistUpdate(state, {
+        pendingDecisionEventId: null,
+      })
+    },
+    { ...options, emitStarted: false, enforceElapsedBudget: false }
   )
 
   const executeTool = wrapNode(
@@ -884,7 +1014,11 @@ function buildKernelGraph(
     async (state, runtime) => {
       const call = state.pendingToolCalls[0]
       if (call === undefined) return validateSpecialistUpdate(state, {})
-      await runtime.emitTool({ toolName: call.toolName, phase: "started" })
+      await runtime.emitTool({
+        toolName: call.toolName,
+        phase: "started",
+        idempotencyKey: specialistEventKey(state, "tool_started", call.callId),
+      })
       let execution: Awaited<ReturnType<typeof executeSpecialistToolCall>>
       try {
         execution = await executeSpecialistToolCall({
@@ -903,10 +1037,10 @@ function buildKernelGraph(
           ),
         })
       }
-      await runtime.emitTool({ toolName: call.toolName, phase: "completed" })
       if (execution.kind === "replayed") {
         return validateSpecialistUpdate(state, {
           pendingToolCalls: { upsert: [], removeCallIds: [call.callId] },
+          lastCommittedToolCallId: execution.completedCall.callId,
         })
       }
       const sameDecisionPending = state.pendingToolCalls.filter(
@@ -942,30 +1076,11 @@ function buildKernelGraph(
       const nextProgress = isDecisionComplete
         ? reduceSpecialistProgress(state.progress, evaluation)
         : state.progress
-      if (execution.observation.evidenceIds.length > 0) {
-        await runtime.emit({
-          kind: "evidence_gained",
-          status: "completed",
-          summary: "Specialist tool produced evidence",
-          reasonCode: "evidence_gained",
-          evidenceIds: execution.observation.evidenceIds,
-        })
-      }
-      await runtime.emit({
-        kind: "budget_updated",
-        status: "completed",
-        summary: "Specialist tool budget updated",
-        reasonCode: "tool_budget_updated",
-        budget: {
-          consumed: nextBudget.toolCalls,
-          limit: state.mission.budget.toolCalls,
-          unit: "tool_calls",
-        },
-      })
       return validateSpecialistUpdate(state, {
         pendingToolCalls: { upsert: [], removeCallIds: [call.callId] },
         observations: execution.observation,
         completedCalls: execution.completedCall,
+        lastCommittedToolCallId: execution.completedCall.callId,
         budgetLedger: {
           kind: "tool_call",
           decisionId: call.decisionId,
@@ -975,28 +1090,104 @@ function buildKernelGraph(
           usage: execution.completedCall.usage,
         },
         ...(isDecisionComplete ? { progress: evaluation } : {}),
-        ...(isDecisionComplete &&
-        nextProgress.consecutiveNoProgress >= config.maxNoProgress
+        ...(execution.kind === "budget_violation"
           ? {
               terminalResult: resultFor(
                 state,
-                "partial",
-                "no_progress",
-                "The specialist stopped after repeated tool results without new evidence.",
+                "budget_exhausted",
+                "tool_usage_exceeded_preflight",
+                `The tool reported usage outside its authorized budget reservation (${execution.exceededBudgetKeys.join(",")}; ${execution.reportedUsageHash}).`,
                 nextBudget
               ),
             }
-          : {}),
+          : isDecisionComplete &&
+              nextProgress.consecutiveNoProgress >= config.maxNoProgress
+            ? {
+                terminalResult: resultFor(
+                  state,
+                  "partial",
+                  "no_progress",
+                  "The specialist stopped after repeated tool results without new evidence.",
+                  nextBudget
+                ),
+              }
+            : {}),
       })
     },
     options
+  )
+
+  const toolCommitted = wrapNode(
+    "specialist_tool_committed",
+    dependencies,
+    parseSpecialistState,
+    async (state, runtime) => {
+      const callId = state.lastCommittedToolCallId
+      if (callId === null) throw new CheckpointStateError()
+      const completed = state.completedCalls.find(
+        (call) => call.callId === callId
+      )
+      const observation = state.observations.find(
+        (candidate) => candidate.callId === callId
+      )
+      if (completed === undefined || observation === undefined) {
+        throw new CheckpointStateError()
+      }
+      await runtime.emitTool({
+        toolName: completed.toolName,
+        phase: "completed",
+        idempotencyKey: specialistEventKey(state, "tool_completed", callId),
+      })
+      if (observation.evidenceIds.length > 0) {
+        await runtime.emit(
+          {
+            kind: "evidence_gained",
+            status: "completed",
+            summary: "Specialist tool evidence committed",
+            reasonCode: "evidence_gained",
+            evidenceIds: observation.evidenceIds,
+          },
+          {
+            idempotencyKey: specialistEventKey(
+              state,
+              "tool_evidence_committed",
+              callId
+            ),
+          }
+        )
+      }
+      await runtime.emit(
+        {
+          kind: "budget_updated",
+          status: "completed",
+          summary: "Specialist tool budget committed",
+          reasonCode: "tool_budget_updated",
+          budget: {
+            consumed: state.budgetLedger.total.toolCalls,
+            limit: state.mission.budget.toolCalls,
+            unit: "tool_calls",
+          },
+        },
+        {
+          idempotencyKey: specialistEventKey(
+            state,
+            "tool_budget_committed",
+            callId
+          ),
+        }
+      )
+      return validateSpecialistUpdate(state, {
+        lastCommittedToolCallId: null,
+      })
+    },
+    { ...options, emitStarted: false, enforceElapsedBudget: false }
   )
 
   const humanInterrupt = wrapNode(
     "specialist_human_interrupt",
     dependencies,
     parseSpecialistState,
-    async (state, runtime) => {
+    async (state) => {
       const pending = state.humanInterrupt
       if (pending?.status !== "pending") throw new CheckpointStateError()
       const response = specialistResumeInputSchema.parse(
@@ -1018,12 +1209,6 @@ function buildKernelGraph(
       ) {
         throw new ResumeAuthorizationError()
       }
-      await runtime.emit({
-        kind: "interrupt_resumed",
-        status: "completed",
-        summary: "Specialist human input resumed",
-        reasonCode: response.approved ? "resume_approved" : "resume_rejected",
-      })
       const resolved = humanInterruptStateSchema.parse({
         ...pending,
         status: "resolved",
@@ -1045,6 +1230,33 @@ function buildKernelGraph(
     { ...options, emitStarted: false }
   )
 
+  const humanCommitted = wrapNode(
+    "specialist_human_committed",
+    dependencies,
+    parseSpecialistState,
+    async (state, runtime) => {
+      const human = state.humanInterrupt
+      if (human?.status !== "resolved") throw new CheckpointStateError()
+      await runtime.emit(
+        {
+          kind: "interrupt_resumed",
+          status: "completed",
+          summary: "Specialist human input committed",
+          reasonCode: human.approved ? "resume_approved" : "resume_rejected",
+        },
+        {
+          idempotencyKey: specialistEventKey(
+            state,
+            "interrupt_resumed",
+            human.decisionId
+          ),
+        }
+      )
+      return validateSpecialistUpdate(state, {})
+    },
+    { ...options, emitStarted: false, enforceElapsedBudget: false }
+  )
+
   const finalize = wrapNode(
     "specialist_finalize",
     dependencies,
@@ -1052,20 +1264,24 @@ function buildKernelGraph(
     async (state, runtime) => {
       const result = state.terminalResult
       if (result === null) throw new CheckpointStateError()
-      await runtime.emit({
-        kind: "mission_completed",
-        status:
-          result.status === "failed"
-            ? "failed"
-            : result.status === "blocked" || result.status === "needs_human"
-              ? "blocked"
-              : "completed",
-        summary: "Specialist mission reached a terminal result",
-        reasonCode: result.stopReason.code,
-      })
-      return validateSpecialistUpdate(state, {})
+      await runtime.emit(
+        {
+          kind: "mission_completed",
+          status: terminalEventStatus(result),
+          summary: "Specialist mission reached a terminal result",
+          reasonCode: result.stopReason.code,
+        },
+        {
+          idempotencyKey: specialistEventKey(
+            state,
+            "mission_completed",
+            result.stopReason.code
+          ),
+        }
+      )
+      return validateSpecialistUpdate(state, { pendingTerminalEvent: false })
     },
-    options
+    { ...options, enforceElapsedBudget: false }
   )
 
   const routeAfterDecision = (state: SpecialistStateValue) => {
@@ -1078,19 +1294,30 @@ function buildKernelGraph(
     return "specialist_model_decision"
   }
 
+  const routeAfterToolExecution = (state: SpecialistStateValue) => {
+    const parsed = parseSpecialistState(state)
+    return parsed.lastCommittedToolCallId === null
+      ? routeAfterDecision(parsed)
+      : "specialist_tool_committed"
+  }
+
   const graph = new StateGraph(SpecialistState)
     .addNode("specialist_prepare", prepare)
     .addNode("specialist_model_decision", decide)
     .addNode("specialist_validate_decision", validateDecision)
     .addNode("specialist_tool_execution", executeTool)
+    .addNode("specialist_tool_committed", toolCommitted)
     .addNode("specialist_human_interrupt", humanInterrupt)
+    .addNode("specialist_human_committed", humanCommitted)
     .addNode("specialist_finalize", finalize)
     .addEdge(START, "specialist_prepare")
     .addEdge("specialist_prepare", "specialist_model_decision")
     .addEdge("specialist_model_decision", "specialist_validate_decision")
     .addConditionalEdges("specialist_validate_decision", routeAfterDecision)
-    .addConditionalEdges("specialist_tool_execution", routeAfterDecision)
-    .addEdge("specialist_human_interrupt", "specialist_model_decision")
+    .addConditionalEdges("specialist_tool_execution", routeAfterToolExecution)
+    .addConditionalEdges("specialist_tool_committed", routeAfterDecision)
+    .addEdge("specialist_human_interrupt", "specialist_human_committed")
+    .addConditionalEdges("specialist_human_committed", routeAfterDecision)
     .addEdge("specialist_finalize", END)
 
   return checkpointer === undefined
@@ -1149,6 +1376,20 @@ export class SpecialistOrchestrationService {
     }
   }
 
+  private assertKernelState(state: SpecialistStateValue): void {
+    if (
+      state.agent !== this.kernel.config.agent ||
+      !this.kernel.config.modes.includes(state.mission.mode) ||
+      state.kernel.configurationFingerprint !==
+        this.kernel.config.configurationFingerprint ||
+      state.mission.scope.allowedTools.some(
+        (toolName) => !this.kernel.config.tools.names().includes(toolName)
+      )
+    ) {
+      throw new CheckpointStateError()
+    }
+  }
+
   private async claimStart(
     mission: DiscoveryMission
   ): Promise<"claimed" | "existing_terminal" | "resumable"> {
@@ -1174,7 +1415,12 @@ export class SpecialistOrchestrationService {
             throw new CheckpointStateError()
           }
           this.assertMatchingStart(existing, initial)
-          if (existing.terminalResult !== null) return "existing_terminal"
+          if (
+            existing.terminalResult?.status === "needs_human" ||
+            (existing.terminalResult !== null && snapshot.next.length === 0)
+          ) {
+            return "existing_terminal"
+          }
           await this.dependencies.control.assertActive({
             runId: existing.mission.runId,
             owner: this.dependencies.owner,
@@ -1199,18 +1445,294 @@ export class SpecialistOrchestrationService {
   ): Promise<SpecialistRunResult> {
     const claim = await this.claimStart(mission)
     return claim === "existing_terminal"
-      ? this.continue(mission.id)
+      ? this.continueClaimedMission(mission.id)
       : this.invoke(mission.id, null)
   }
 
-  private async currentState(missionId: string): Promise<SpecialistStateValue> {
+  private async continueClaimedMission(
+    missionId: string
+  ): Promise<SpecialistRunResult> {
+    const claim = await this.dependencies.resumeCoordinator.runExclusive(
+      {
+        runId: SPECIALIST_START_LOCK_RUN_ID,
+        decisionId: specialistStartLockDecisionId(missionId),
+      },
+      async () => {
+        const snapshot = await this.currentSnapshot(missionId)
+        const terminal = snapshot.state.terminalResult
+        if (
+          terminal?.status === "needs_human" ||
+          (terminal !== null && snapshot.next.length === 0)
+        ) {
+          if (snapshot.state.pendingTerminalEvent) {
+            return {
+              kind: "terminal_event" as const,
+              state: snapshot.state,
+            }
+          }
+          return {
+            kind: "terminal" as const,
+            result: this.resultFromTerminalState(snapshot.state),
+          }
+        }
+        await this.dependencies.control.assertActive({
+          runId: snapshot.state.mission.runId,
+          owner: this.dependencies.owner,
+        })
+        return { kind: "invoke" as const }
+      }
+    )
+    if (claim.kind === "terminal") return claim.result
+    if (claim.kind === "terminal_event") {
+      return this.resultFromTerminalState(
+        await this.flushPendingTerminalEvent(claim.state)
+      )
+    }
+    return this.invoke(missionId, null, true)
+  }
+
+  private async currentSnapshot(missionId: string): Promise<{
+    readonly state: SpecialistStateValue
+    readonly next: readonly string[]
+  }> {
     const snapshot = await this.kernel.graph.getState(
       this.graphConfig(missionId)
     )
     try {
-      return parseSpecialistState(snapshot.values)
+      const state = parseSpecialistState(snapshot.values)
+      this.assertKernelState(state)
+      return {
+        state,
+        next: [...snapshot.next],
+      }
     } catch {
       throw new CheckpointStateError()
+    }
+  }
+
+  private async currentState(missionId: string): Promise<SpecialistStateValue> {
+    return (await this.currentSnapshot(missionId)).state
+  }
+
+  private async flushPendingCommittedEvents(
+    state: SpecialistStateValue
+  ): Promise<SpecialistStateValue> {
+    const decisionId = state.pendingDecisionEventId
+    const toolCallIds = state.pendingTerminalToolCallIds
+    if (decisionId === null && toolCallIds.length === 0) return state
+    await this.dependencies.control.assertActive({
+      runId: state.mission.runId,
+      owner: this.dependencies.owner,
+    })
+    if (decisionId !== null) {
+      const decision = state.decisions.find(
+        (candidate) => candidate.decisionId === decisionId
+      )
+      if (decision === undefined) throw new CheckpointStateError()
+      await appendOrchestrationEvent(
+        this.dependencies,
+        {
+          runId: state.mission.runId,
+          graphName: state.kernel.graphName,
+          nodeName: "specialist_validate_decision",
+          agent: state.agent,
+          missionId: state.mission.id,
+          evidenceIds: [],
+          kind: "node_completed",
+          status: "completed",
+          summary: "Specialist decision committed",
+          reasonCode: decision.kind,
+        },
+        {
+          idempotencyKey: specialistEventKey(
+            state,
+            "decision_committed",
+            decisionId
+          ),
+        }
+      )
+      await appendOrchestrationEvent(
+        this.dependencies,
+        {
+          runId: state.mission.runId,
+          graphName: state.kernel.graphName,
+          nodeName: "specialist_validate_decision",
+          agent: state.agent,
+          missionId: state.mission.id,
+          evidenceIds: [],
+          kind: "budget_updated",
+          status: "completed",
+          summary: "Specialist model budget committed",
+          reasonCode: "model_budget_updated",
+          budget: {
+            consumed: state.budgetLedger.total.modelCalls,
+            limit: state.mission.budget.modelCalls,
+            unit: "model_calls",
+          },
+        },
+        {
+          idempotencyKey: specialistEventKey(
+            state,
+            "model_budget_committed",
+            decisionId
+          ),
+        }
+      )
+    }
+    for (const callId of toolCallIds) {
+      const completed = state.completedCalls.find((call) => call.callId === callId)
+      const observation = state.observations.find(
+        (candidate) => candidate.callId === callId
+      )
+      if (completed === undefined || observation === undefined) {
+        throw new CheckpointStateError()
+      }
+      await appendOrchestrationEvent(
+        this.dependencies,
+        {
+          runId: state.mission.runId,
+          graphName: state.kernel.graphName,
+          nodeName: "specialist_tool_committed",
+          agent: state.agent,
+          missionId: state.mission.id,
+          toolName: completed.toolName,
+          evidenceIds: observation.evidenceIds,
+          kind: "tool_completed",
+          status: "completed",
+          summary: "Specialist tool completion committed",
+          reasonCode: "tool_completed",
+        },
+        {
+          idempotencyKey: specialistEventKey(
+            state,
+            "tool_completed",
+            callId
+          ),
+        }
+      )
+      if (observation.evidenceIds.length > 0) {
+        await appendOrchestrationEvent(
+          this.dependencies,
+          {
+            runId: state.mission.runId,
+            graphName: state.kernel.graphName,
+            nodeName: "specialist_tool_committed",
+            agent: state.agent,
+            missionId: state.mission.id,
+            evidenceIds: observation.evidenceIds,
+            kind: "evidence_gained",
+            status: "completed",
+            summary: "Specialist tool evidence committed",
+            reasonCode: "evidence_gained",
+          },
+          {
+            idempotencyKey: specialistEventKey(
+              state,
+              "tool_evidence_committed",
+              callId
+            ),
+          }
+        )
+      }
+      await appendOrchestrationEvent(
+        this.dependencies,
+        {
+          runId: state.mission.runId,
+          graphName: state.kernel.graphName,
+          nodeName: "specialist_tool_committed",
+          agent: state.agent,
+          missionId: state.mission.id,
+          evidenceIds: [],
+          kind: "budget_updated",
+          status: "completed",
+          summary: "Specialist tool budget committed",
+          reasonCode: "tool_budget_updated",
+          budget: {
+            consumed: state.budgetLedger.total.toolCalls,
+            limit: state.mission.budget.toolCalls,
+            unit: "tool_calls",
+          },
+        },
+        {
+          idempotencyKey: specialistEventKey(
+            state,
+            "tool_budget_committed",
+            callId
+          ),
+        }
+      )
+    }
+    await this.kernel.graph.updateState(
+      this.graphConfig(state.mission.id),
+      validateSpecialistUpdate(state, {
+        pendingDecisionEventId: null,
+        lastCommittedToolCallId: null,
+        pendingTerminalToolCallIds: [],
+      }),
+      "specialist_finalize"
+    )
+    return this.currentState(state.mission.id)
+  }
+
+  private async flushPendingTerminalEvent(
+    state: SpecialistStateValue
+  ): Promise<SpecialistStateValue> {
+    state = await this.flushPendingCommittedEvents(state)
+    const result = state.terminalResult
+    if (!state.pendingTerminalEvent) return state
+    if (result === null || result.status === "needs_human") {
+      throw new CheckpointStateError()
+    }
+    await this.dependencies.control.assertActive({
+      runId: state.mission.runId,
+      owner: this.dependencies.owner,
+    })
+    await appendOrchestrationEvent(
+      this.dependencies,
+      {
+        runId: state.mission.runId,
+        graphName: state.kernel.graphName,
+        nodeName: "specialist_finalize",
+        agent: state.agent,
+        missionId: state.mission.id,
+        evidenceIds: state.observations
+          .flatMap((observation) => observation.evidenceIds)
+          .slice(-100),
+        kind: "mission_completed",
+        status: terminalEventStatus(result),
+        summary: "Specialist mission terminalization committed",
+        reasonCode: result.stopReason.code,
+      },
+      {
+        idempotencyKey: specialistEventKey(
+          state,
+          "mission_completed",
+          result.stopReason.code
+        ),
+      }
+    )
+    await this.kernel.graph.updateState(
+      this.graphConfig(state.mission.id),
+      validateSpecialistUpdate(state, { pendingTerminalEvent: false }),
+      "specialist_finalize"
+    )
+    return this.currentState(state.mission.id)
+  }
+
+  private resultFromTerminalState(
+    state: SpecialistStateValue,
+    idempotent = true
+  ): SpecialistRunResult {
+    const terminal = state.terminalResult
+    if (terminal === null) throw new CheckpointStateError()
+    const pendingInterrupt = interruptFromState(state)
+    return {
+      status:
+        terminal.status === "needs_human" ? "interrupted" : terminal.status,
+      mission: terminal,
+      state,
+      interrupts: pendingInterrupt === undefined ? [] : [pendingInterrupt],
+      idempotent,
     }
   }
 
@@ -1258,6 +1780,14 @@ export class SpecialistOrchestrationService {
               usage: settlement.completedCall.usage,
             })),
           }),
+      pendingDecisionEventId: state.pendingDecisionEventId,
+      lastCommittedToolCallId: null,
+      pendingTerminalToolCallIds: [
+        ...(state.lastCommittedToolCallId === null
+          ? []
+          : [state.lastCommittedToolCallId]),
+        ...settlements.map((settlement) => settlement.completedCall.callId),
+      ],
       terminalResult: result,
     })
     await this.kernel.graph.updateState(
@@ -1265,7 +1795,9 @@ export class SpecialistOrchestrationService {
       update,
       "specialist_finalize"
     )
-    const nextState = await this.currentState(missionId)
+    const nextState = await this.flushPendingTerminalEvent(
+      await this.currentState(missionId)
+    )
     const persistedResult = nextState.terminalResult
     if (persistedResult === null) throw new CheckpointStateError()
     return {
@@ -1301,6 +1833,26 @@ export class SpecialistOrchestrationService {
     }
   }
 
+  private async recoverCommittedTerminal(
+    missionId: string,
+    idempotent: boolean
+  ): Promise<SpecialistRunResult | null> {
+    const snapshot = await this.currentSnapshot(missionId)
+    const terminal = snapshot.state.terminalResult
+    if (terminal === null || terminal.status === "needs_human") return null
+    if (snapshot.next.length > 0) {
+      const raw = await this.kernel.graph.invoke(
+        null,
+        this.graphConfig(missionId)
+      )
+      return this.toResult(missionId, raw, idempotent)
+    }
+    return this.resultFromTerminalState(
+      await this.flushPendingTerminalEvent(snapshot.state),
+      idempotent
+    )
+  }
+
   private async invoke(
     missionId: string,
     input: unknown,
@@ -1314,6 +1866,11 @@ export class SpecialistOrchestrationService {
       return await this.toResult(missionId, raw, idempotent)
     } catch (error) {
       if (error instanceof GraphRecursionError) {
+        const committed = await this.recoverCommittedTerminal(
+          missionId,
+          idempotent
+        )
+        if (committed !== null) return committed
         return this.terminalize(
           missionId,
           "budget_exhausted",
@@ -1322,6 +1879,11 @@ export class SpecialistOrchestrationService {
         )
       }
       if (error instanceof BudgetExhaustedError) {
+        const committed = await this.recoverCommittedTerminal(
+          missionId,
+          idempotent
+        )
+        if (committed !== null) return committed
         return this.terminalize(
           missionId,
           "budget_exhausted",
@@ -1346,55 +1908,61 @@ export class SpecialistOrchestrationService {
       configurationFingerprint: this.kernel.config.configurationFingerprint,
     })
     const activeKey = `${this.dependencies.owner}\u0000${mission.id}`
-    const active = activeSpecialistStarts.get(activeKey)
+    const active = activeSpecialistRuns.get(activeKey)
     if (active !== undefined) {
-      if (active.identityFingerprint !== identityFingerprint) {
+      if (
+        active.identityFingerprint !== null &&
+        active.identityFingerprint !== identityFingerprint
+      ) {
         throw new CheckpointStateError()
       }
       const result = await active.result
+      this.assertMatchingStart(result.state, this.initialState(mission))
       return { ...result, idempotent: true }
     }
     const result = this.startClaimedMission(mission)
     const entry = { identityFingerprint, result }
-    activeSpecialistStarts.set(activeKey, entry)
+    activeSpecialistRuns.set(activeKey, entry)
     try {
       return await result
     } finally {
-      if (activeSpecialistStarts.get(activeKey) === entry) {
-        activeSpecialistStarts.delete(activeKey)
+      if (activeSpecialistRuns.get(activeKey) === entry) {
+        activeSpecialistRuns.delete(activeKey)
       }
     }
   }
 
   async continue(missionIdInput: string): Promise<SpecialistRunResult> {
     const missionId = missionIdSchema.parse(missionIdInput)
-    const state = await this.currentState(missionId)
-    if (state.terminalResult !== null) {
-      const pendingInterrupt = interruptFromState(state)
-      return {
-        status:
-          state.terminalResult.status === "needs_human"
-            ? "interrupted"
-            : state.terminalResult.status,
-        mission: state.terminalResult,
-        state,
-        interrupts: pendingInterrupt === undefined ? [] : [pendingInterrupt],
-        idempotent: true,
+    const activeKey = `${this.dependencies.owner}\u0000${missionId}`
+    const active = activeSpecialistRuns.get(activeKey)
+    if (active !== undefined) {
+      const result = await active.result
+      return { ...result, idempotent: true }
+    }
+    const result = this.continueClaimedMission(missionId)
+    const entry = { identityFingerprint: null, result }
+    activeSpecialistRuns.set(activeKey, entry)
+    try {
+      return await result
+    } finally {
+      if (activeSpecialistRuns.get(activeKey) === entry) {
+        activeSpecialistRuns.delete(activeKey)
       }
     }
-    return this.invoke(missionId, null, true)
   }
 
-  async resume(input: SpecialistResumeInput): Promise<SpecialistRunResult> {
-    const parsed = specialistResumeInputSchema.parse(input)
-    const initial = await this.currentState(parsed.missionId)
-    return this.dependencies.resumeCoordinator.runExclusive(
+  private async resumeClaimedMission(
+    parsed: SpecialistResumeInput
+  ): Promise<SpecialistRunResult> {
+    const claim = await this.dependencies.resumeCoordinator.runExclusive(
       {
-        runId: initial.mission.runId,
-        decisionId: parsed.decisionId,
+        runId: SPECIALIST_START_LOCK_RUN_ID,
+        decisionId: specialistStartLockDecisionId(parsed.missionId),
       },
       async () => {
-        const state = await this.currentState(parsed.missionId)
+        const snapshot = await this.currentSnapshot(parsed.missionId)
+        const state = snapshot.state
         const human = state.humanInterrupt
         if (human?.status === "resolved") {
           if (
@@ -1404,16 +1972,20 @@ export class SpecialistOrchestrationService {
           ) {
             throw new ResumeConflictError()
           }
-          if (state.terminalResult !== null) {
+          if (state.terminalResult !== null && snapshot.next.length === 0) {
+            if (state.pendingTerminalEvent) {
+              return { kind: "terminal_event" as const, state }
+            }
             return {
-              status: state.terminalResult.status,
-              mission: state.terminalResult,
-              state,
-              interrupts: [],
-              idempotent: true,
+              kind: "terminal" as const,
+              result: this.resultFromTerminalState(state),
             }
           }
-          return this.invoke(parsed.missionId, null, true)
+          await this.dependencies.control.assertActive({
+            runId: state.mission.runId,
+            owner: this.dependencies.owner,
+          })
+          return { kind: "invoke" as const, input: null, idempotent: true }
         }
         if (
           human?.status !== "pending" ||
@@ -1430,12 +2002,52 @@ export class SpecialistOrchestrationService {
         ) {
           throw new ResumeAuthorizationError()
         }
-        return this.invoke(
-          parsed.missionId,
-          new Command({ resume: parsed }),
-          false
-        )
+        await this.dependencies.control.assertActive({
+          runId: state.mission.runId,
+          owner: this.dependencies.owner,
+        })
+        return {
+          kind: "invoke" as const,
+          input: new Command({ resume: parsed }),
+          idempotent: false,
+        }
       }
     )
+    if (claim.kind === "terminal") return claim.result
+    if (claim.kind === "terminal_event") {
+      return this.resultFromTerminalState(
+        await this.flushPendingTerminalEvent(claim.state)
+      )
+    }
+    return this.invoke(parsed.missionId, claim.input, claim.idempotent)
+  }
+
+  async resume(input: SpecialistResumeInput): Promise<SpecialistRunResult> {
+    const parsed = specialistResumeInputSchema.parse(input)
+    const activeKey = `${this.dependencies.owner}\u0000${parsed.missionId}`
+    const active = activeSpecialistRuns.get(activeKey)
+    if (active !== undefined) {
+      const result = await active.result
+      const human = result.state.humanInterrupt
+      if (
+        human?.status === "resolved" &&
+        human.decisionId === parsed.decisionId &&
+        human.actorId === parsed.actorId &&
+        human.approved === parsed.approved
+      ) {
+        return { ...result, idempotent: true }
+      }
+      throw new ResumeConflictError()
+    }
+    const result = this.resumeClaimedMission(parsed)
+    const entry = { identityFingerprint: null, result }
+    activeSpecialistRuns.set(activeKey, entry)
+    try {
+      return await result
+    } finally {
+      if (activeSpecialistRuns.get(activeKey) === entry) {
+        activeSpecialistRuns.delete(activeKey)
+      }
+    }
   }
 }

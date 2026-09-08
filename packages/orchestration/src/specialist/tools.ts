@@ -2,6 +2,7 @@ import {
   contentHashSchema,
   executionBudgetSchema,
   missionIdSchema,
+  persistedTextSchema,
   reasonCodeSchema,
   type DiscoveryMission,
   type MissionBudget,
@@ -72,6 +73,7 @@ interface SpecialistToolDefinitionConfig<
   TOutputSchema extends z.ZodType,
 > {
   readonly name: string
+  readonly description: string
   readonly agents: readonly SpecialistAgent[]
   readonly modes: readonly DiscoveryMission["mode"][]
   readonly argumentsSchema: TArgumentsSchema
@@ -92,6 +94,7 @@ interface SpecialistToolDefinitionConfig<
 
 export interface SpecialistToolDefinition {
   readonly name: string
+  readonly description: string
   readonly agents: readonly SpecialistAgent[]
   readonly modes: readonly DiscoveryMission["mode"][]
   readonly argumentsSchema: z.ZodType
@@ -145,8 +148,8 @@ export type CoordinatedSpecialistToolExecution =
   | { readonly kind: "returned"; readonly value: unknown }
   | { readonly kind: "threw" }
 
-// Implementations may bind this port to the run lease or another durable
-// idempotency ledger. The default only coordinates one registry lifetime.
+// Production implementations must bind this port to a durable idempotency
+// ledger. The in-memory implementation exists only for deterministic tests.
 export interface SpecialistToolExecutionCoordinator {
   executeOnce(
     identity: SpecialistToolExecutionIdentity,
@@ -195,13 +198,33 @@ export class SpecialistToolRegistry {
   readonly #tools: ReadonlyMap<string, SpecialistToolDefinition>
   readonly #executionCoordinator: SpecialistToolExecutionCoordinator
 
+  static forTesting(
+    definitions: readonly SpecialistToolDefinition[]
+  ): SpecialistToolRegistry {
+    return new SpecialistToolRegistry(
+      definitions,
+      new InMemorySpecialistToolExecutionCoordinator()
+    )
+  }
+
   constructor(
     definitions: readonly SpecialistToolDefinition[],
-    executionCoordinator: SpecialistToolExecutionCoordinator = new InMemorySpecialistToolExecutionCoordinator()
+    executionCoordinator: SpecialistToolExecutionCoordinator
   ) {
+    if (executionCoordinator === undefined) {
+      deny(
+        "tool_denied",
+        "Production specialist registries require an execution coordinator"
+      )
+    }
     const tools = new Map<string, SpecialistToolDefinition>()
     for (const candidate of definitions) {
       const name = reasonCodeSchema.parse(candidate.name)
+      const description = persistedTextSchema
+        .refine((value) => value.length <= 512, {
+          message: "Specialist tool descriptions cannot exceed 512 characters",
+        })
+        .parse(candidate.description)
       if (tools.has(name)) {
         deny("tool_denied", `Duplicate specialist tool definition ${name}`)
       }
@@ -226,6 +249,7 @@ export class SpecialistToolRegistry {
         Object.freeze({
           ...candidate,
           name,
+          description,
           agents,
           modes,
         })
@@ -259,6 +283,7 @@ export function defineSpecialistTool<
 ): SpecialistToolDefinition {
   return {
     name: config.name,
+    description: config.description,
     agents: config.agents,
     modes: config.modes,
     argumentsSchema: config.argumentsSchema,
@@ -457,6 +482,14 @@ export type SpecialistToolExecution =
       readonly update: SpecialistStateUpdate
     }
   | {
+      readonly kind: "budget_violation"
+      readonly observation: CompactObservation
+      readonly completedCall: CompletedToolCall
+      readonly update: SpecialistStateUpdate
+      readonly reportedUsageHash: string
+      readonly exceededBudgetKeys: readonly (keyof MissionBudget)[]
+    }
+  | {
       readonly kind: "replayed"
       readonly observation: CompactObservation
       readonly completedCall: CompletedToolCall
@@ -552,24 +585,32 @@ export async function executeSpecialistToolCall({
     return failedExecution
   }
 
+  let result: SpecialistToolOutput
   try {
-    const result = definition.parseOutput(coordinated.value)
-    if (result.usage.toolCalls !== 1) {
-      deny(
-        "budget_denied",
-        "Actual tool usage must contain exactly one tool call"
-      )
+    result = definition.parseOutput(coordinated.value)
+  } catch {
+    return failedExecution
+  }
+  const exceededBudgetKeys = budgetKeys.filter(
+    (key) =>
+      result.usage[key] > call.preflightUsage[key] ||
+      result.usage[key] > remaining[key]
+  )
+  if (
+    result.usage.toolCalls !== 1 &&
+    !exceededBudgetKeys.includes("toolCalls")
+  ) {
+    exceededBudgetKeys.push("toolCalls")
+  }
+  if (exceededBudgetKeys.length > 0) {
+    return {
+      ...failedExecution,
+      kind: "budget_violation",
+      reportedUsageHash: hashCanonicalValue(result.usage),
+      exceededBudgetKeys: Object.freeze([...exceededBudgetKeys]),
     }
-    assertBudgetWithin(
-      result.usage,
-      call.preflightUsage,
-      "Actual tool usage exceeds its preflight estimate"
-    )
-    assertBudgetWithin(
-      result.usage,
-      remaining,
-      "Actual tool usage exceeds the remaining mission budget"
-    )
+  }
+  try {
     return buildSpecialistToolExecution(state, call, result)
   } catch {
     return failedExecution

@@ -105,6 +105,7 @@ function scriptedTool(
 ) {
   return new ScriptedSpecialistTool({
     name,
+    description: "Inspect one bounded evidence resource for the mission.",
     agents: [selectedMission.agent],
     modes: [selectedMission.mode],
     argumentsSchema: z.strictObject({ resource: z.string().min(1).max(200) }),
@@ -118,7 +119,7 @@ function kernel(
   selectedMission: DiscoveryMission,
   model: ScriptedSpecialistDecisionModel,
   dependencies: RuntimeDependencies,
-  tools = new SpecialistToolRegistry([
+  tools = SpecialistToolRegistry.forTesting([
     scriptedTool(selectedMission).definition,
   ]),
   memory = createInMemorySpecialistCheckpointer()
@@ -306,7 +307,7 @@ describe("specialist kernel scripted trajectories", () => {
       selectedMission,
       model,
       test.dependencies,
-      new SpecialistToolRegistry([codeTool.definition])
+      SpecialistToolRegistry.forTesting([codeTool.definition])
     )
     const result = await new SpecialistOrchestrationService(
       specialist,
@@ -386,7 +387,7 @@ describe("specialist kernel scripted trajectories", () => {
         budgetMission,
         budgetModel,
         budgetTest.dependencies,
-        new SpecialistToolRegistry([budgetTool.definition])
+        SpecialistToolRegistry.forTesting([budgetTool.definition])
       ),
       budgetTest.dependencies
     ).start(budgetMission)
@@ -452,7 +453,7 @@ describe("specialist kernel scripted trajectories", () => {
       selectedMission,
       model,
       test.dependencies,
-      new SpecialistToolRegistry([tool.definition]),
+      SpecialistToolRegistry.forTesting([tool.definition]),
       memory
     )
     const service = new SpecialistOrchestrationService(

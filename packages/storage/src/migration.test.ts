@@ -9,6 +9,13 @@ const migration = readFileSync(
   ),
   "utf8"
 )
+const eventIdempotencyMigration = readFileSync(
+  new URL(
+    "../../../supabase/migrations/20260908000100_run_event_idempotency.sql",
+    import.meta.url
+  ),
+  "utf8"
+)
 
 describe("operational migration", () => {
   it("defines every compact operational table and private checkpoint schema", () => {
@@ -63,5 +70,19 @@ describe("operational migration", () => {
     expect(targetSecretsDefinition).not.toMatch(/\bdecrypted_secret\b/i)
     expect(targetSecretsDefinition).toContain("vault_secret_id uuid")
     expect(targetSecretsDefinition).toContain("opaque_reference text")
+  })
+
+  it("deduplicates committed run events before allocating a sequence", () => {
+    expect(eventIdempotencyMigration).toContain("run_events_idempotency_idx")
+    expect(eventIdempotencyMigration).toContain("p_idempotency_key text")
+    expect(eventIdempotencyMigration).toContain(
+      "run event idempotency conflict"
+    )
+    expect(eventIdempotencyMigration).toMatch(
+      /select \* into result[\s\S]*idempotency_key = p_idempotency_key[\s\S]*for update/i
+    )
+    expect(eventIdempotencyMigration).toContain(
+      "drop function if exists sentinel.append_run_event(uuid, text, jsonb, timestamptz)"
+    )
   })
 })

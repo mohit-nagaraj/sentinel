@@ -42,6 +42,8 @@ export interface ScriptedSpecialistModelCall {
   readonly promptTemplateId: string
   readonly stateFingerprint: string
   readonly completedCallIds: readonly string[]
+  readonly executionKind: SpecialistModelRequest["executionKind"]
+  readonly humanResolution: SpecialistModelRequest["humanResolution"]
   readonly remainingBudget: MissionBudget
 }
 
@@ -97,6 +99,11 @@ export class ScriptedSpecialistDecisionModel implements SpecialistDecisionModel 
         promptTemplateId: request.promptTemplateId,
         stateFingerprint: request.stateFingerprint,
         completedCallIds: Object.freeze([...request.completedCallIds]),
+        executionKind: request.executionKind,
+        humanResolution:
+          request.humanResolution === null
+            ? null
+            : Object.freeze({ ...request.humanResolution }),
         remainingBudget: executionBudgetSchema.parse(request.remainingBudget),
       })
     )
@@ -163,6 +170,7 @@ export interface ScriptedSpecialistToolConfig<
   TArguments extends SpecialistToolArguments,
 > {
   readonly name: string
+  readonly description: string
   readonly agents: readonly SpecialistAgent[]
   readonly modes: readonly DiscoveryMission["mode"][]
   readonly argumentsSchema: z.ZodType<TArguments>
@@ -198,6 +206,7 @@ export class ScriptedSpecialistTool<
     )
     this.definition = defineSpecialistTool({
       name: config.name,
+      description: config.description,
       agents: config.agents,
       modes: config.modes,
       argumentsSchema: config.argumentsSchema,

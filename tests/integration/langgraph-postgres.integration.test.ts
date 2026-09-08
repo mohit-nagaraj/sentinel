@@ -160,8 +160,8 @@ describeIntegration("LangGraph Postgres checkpoint runtime", () => {
           }
         },
       },
-      events: new DurableRunEventSink(async (event) => {
-        await runs.appendEvent(event)
+      events: new DurableRunEventSink(async (event, idempotencyKey) => {
+        await runs.appendEvent(event, idempotencyKey)
       }),
       effects: {
         execute: async ({ effectId }) => {

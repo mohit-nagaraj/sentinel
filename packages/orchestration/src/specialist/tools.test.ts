@@ -115,6 +115,7 @@ function makeTool(
 ) {
   return defineSpecialistTool({
     name: "read_symbol",
+    description: "Read one bounded source symbol by repository path.",
     agents: ["code"],
     modes: ["implementation_trace"],
     argumentsSchema: argsSchema,
@@ -164,7 +165,7 @@ const request = (
 })
 
 function authorize(
-  registry = new SpecialistToolRegistry([makeTool()]),
+  registry = SpecialistToolRegistry.forTesting([makeTool()]),
   state = createSpecialistInitialState(baseMission),
   decisionInput = decision(),
   requestInput = request()
@@ -178,7 +179,7 @@ function authorize(
 }
 
 function pendingState(
-  registry = new SpecialistToolRegistry([makeTool()]),
+  registry = SpecialistToolRegistry.forTesting([makeTool()]),
   decisionInput = decision(),
   requestInput = request(),
   state = createSpecialistInitialState(baseMission)
@@ -221,15 +222,16 @@ function expectDenial(
 async function executeDurableFailureAndReplay(
   registry: SpecialistToolRegistry,
   state: SpecialistStateValue,
-  call: PendingToolCall
+  call: PendingToolCall,
+  expectedKind: "executed" | "budget_violation" = "executed"
 ) {
   const failure = await executeSpecialistToolCall({ registry, state, call })
   expect(failure).toMatchObject({
-    kind: "executed",
+    kind: expectedKind,
     observation: { outcome: "failed", evidenceIds: [], references: [] },
     completedCall: { outcome: "failed", usage: call.preflightUsage },
   })
-  if (failure.kind !== "executed") throw new Error("Expected failed update")
+  if (failure.kind === "replayed") throw new Error("Expected failed update")
 
   const graph = new StateGraph(SpecialistState)
     .addNode("persist-failure", () => failure.update)
@@ -252,7 +254,7 @@ async function executeDurableFailureAndReplay(
 describe("specialist deterministic tool registry", () => {
   it("registers typed immutable definitions and hashes canonical requests", () => {
     const tool = makeTool()
-    const registry = new SpecialistToolRegistry([tool])
+    const registry = SpecialistToolRegistry.forTesting([tool])
     const first = request()
     const reordered = {
       ...first,
@@ -266,11 +268,14 @@ describe("specialist deterministic tool registry", () => {
     expect(hashSpecialistToolRequest(first)).toBe(
       hashSpecialistToolRequest(reordered)
     )
-    expect(() => new SpecialistToolRegistry([tool, tool])).toThrow(
+    expect(() => SpecialistToolRegistry.forTesting([tool, tool])).toThrow(
       "Duplicate specialist tool definition"
     )
     expect(
-      () => new SpecialistToolRegistry([makeTool({ agents: [] })])
+      () => new SpecialistToolRegistry([tool], undefined as never)
+    ).toThrow("require an execution coordinator")
+    expect(() =>
+      SpecialistToolRegistry.forTesting([makeTool({ agents: [] })])
     ).toThrow("requires fixed agent and mode permissions")
   })
 
@@ -429,7 +434,7 @@ describe("specialist deterministic tool registry", () => {
     expectDenial(
       () =>
         authorize(
-          new SpecialistToolRegistry([
+          SpecialistToolRegistry.forTesting([
             makeTool({ estimate: () => ({ toolCalls: 0 }) }),
           ])
         ),
@@ -438,7 +443,7 @@ describe("specialist deterministic tool registry", () => {
     expectDenial(
       () =>
         authorize(
-          new SpecialistToolRegistry([
+          SpecialistToolRegistry.forTesting([
             makeTool({ estimate: () => ({ toolCalls: 1, sourceLines: 301 }) }),
           ])
         ),
@@ -455,7 +460,7 @@ describe("specialist deterministic tool registry", () => {
         elapsedMs: 1_000,
       }),
     })
-    const registry = new SpecialistToolRegistry([makeTool()])
+    const registry = SpecialistToolRegistry.forTesting([makeTool()])
     const firstDecision = decision(["call_01"])
     const first = authorize(
       registry,
@@ -492,7 +497,7 @@ describe("specialist deterministic tool registry", () => {
   })
 
   it("keeps identical pending calls idempotent and rejects conflicting call IDs", () => {
-    const registry = new SpecialistToolRegistry([makeTool()])
+    const registry = SpecialistToolRegistry.forTesting([makeTool()])
     const { state } = pendingState(registry)
     expect(authorize(registry, state).kind).toBe("pending")
     expectDenial(
@@ -530,7 +535,7 @@ describe("specialist deterministic tool registry", () => {
       ],
       usage: budget({ toolCalls: 1, sourceLines: 20, elapsedMs: 5 }),
     }))
-    const registry = new SpecialistToolRegistry([makeTool({}, execute)])
+    const registry = SpecialistToolRegistry.forTesting([makeTool({}, execute)])
     const exactBudgetMission = discoveryMissionSchema.parse({
       ...baseMission,
       budget: { ...baseMission.budget, toolCalls: 1, sourceLines: 100 },
@@ -592,7 +597,7 @@ describe("specialist deterministic tool registry", () => {
       references: [],
       usage: budget({ toolCalls: 1, sourceLines: 20, elapsedMs: 5 }),
     }))
-    const registry = new SpecialistToolRegistry([makeTool({}, execute)])
+    const registry = SpecialistToolRegistry.forTesting([makeTool({}, execute)])
     const first = pendingState(registry)
     const conflicting = pendingState(
       registry,
@@ -635,7 +640,7 @@ describe("specialist deterministic tool registry", () => {
     const execute = vi.fn(async () => {
       throw new Error("Authorization: Bearer unsafe-executor-detail")
     })
-    const registry = new SpecialistToolRegistry([makeTool({}, execute)])
+    const registry = SpecialistToolRegistry.forTesting([makeTool({}, execute)])
     const { state, call } = pendingState(registry)
     const { failure, completedState } = await executeDurableFailureAndReplay(
       registry,
@@ -659,10 +664,19 @@ describe("specialist deterministic tool registry", () => {
       references: [],
       usage: budget({ sourceLines: 20, elapsedMs: 5 }),
     }))
-    const registry = new SpecialistToolRegistry([makeTool({}, execute)])
+    const registry = SpecialistToolRegistry.forTesting([makeTool({}, execute)])
     const { state, call } = pendingState(registry)
 
-    await executeDurableFailureAndReplay(registry, state, call)
+    const { failure } = await executeDurableFailureAndReplay(
+      registry,
+      state,
+      call,
+      "budget_violation"
+    )
+    expect(failure).toMatchObject({
+      reportedUsageHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      exceededBudgetKeys: ["toolCalls"],
+    })
     expect(execute).toHaveBeenCalledTimes(1)
   })
 
@@ -674,10 +688,19 @@ describe("specialist deterministic tool registry", () => {
       references: [],
       usage: budget({ toolCalls: 1, sourceLines: 101, elapsedMs: 5 }),
     }))
-    const registry = new SpecialistToolRegistry([makeTool({}, execute)])
+    const registry = SpecialistToolRegistry.forTesting([makeTool({}, execute)])
     const { state, call } = pendingState(registry)
 
-    await executeDurableFailureAndReplay(registry, state, call)
+    const { failure } = await executeDurableFailureAndReplay(
+      registry,
+      state,
+      call,
+      "budget_violation"
+    )
+    expect(failure).toMatchObject({
+      reportedUsageHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      exceededBudgetKeys: ["sourceLines"],
+    })
     expect(execute).toHaveBeenCalledTimes(1)
   })
 
@@ -695,7 +718,7 @@ describe("specialist deterministic tool registry", () => {
       usage: budget({ toolCalls: 1, sourceLines: 20, elapsedMs: 5 }),
     }
     const execute = vi.fn(() => output)
-    const registry = new SpecialistToolRegistry([makeTool({}, execute)])
+    const registry = SpecialistToolRegistry.forTesting([makeTool({}, execute)])
     expect(() => registry.get("read_symbol")?.parseOutput(output)).not.toThrow()
 
     const nearLimitMission = discoveryMissionSchema.parse({
@@ -736,7 +759,7 @@ describe("specialist deterministic tool registry", () => {
       usage: budget({ toolCalls: 1, sourceLines: 1 }),
       ...unsafe,
     }))
-    const registry = new SpecialistToolRegistry([makeTool({}, execute)])
+    const registry = SpecialistToolRegistry.forTesting([makeTool({}, execute)])
     const { state, call } = pendingState(registry)
 
     await executeDurableFailureAndReplay(registry, state, call)
@@ -748,7 +771,7 @@ describe("specialist deterministic tool registry", () => {
       "Authorization: Bearer very-secret-access-token-value",
       "x".repeat(513),
     ]) {
-      const registry = new SpecialistToolRegistry([
+      const registry = SpecialistToolRegistry.forTesting([
         makeTool({}, () => ({
           outcome: "failed" as const,
           summary,
@@ -761,7 +784,7 @@ describe("specialist deterministic tool registry", () => {
       await executeDurableFailureAndReplay(registry, state, call)
     }
 
-    const failedRegistry = new SpecialistToolRegistry([
+    const failedRegistry = SpecialistToolRegistry.forTesting([
       makeTool({}, () => ({
         outcome: "failed" as const,
         summary: "The bounded lookup did not locate the symbol.",

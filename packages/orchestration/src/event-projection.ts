@@ -1,5 +1,6 @@
 import {
   createEventId,
+  contentHashSchema,
   evidenceIdSchema,
   hashCanonical,
   agentKindSchema,
@@ -9,11 +10,15 @@ import {
   runIdSchema,
   type RunEvent,
 } from "@sentinel/contracts"
+import { randomUUID } from "node:crypto"
 import { z } from "zod"
 
 import type { OrchestrationEvent, OrchestrationEventSink } from "./runtime.ts"
 
-export type AppendRunEvent = (event: RunEvent) => Promise<unknown>
+export type AppendRunEvent = (
+  event: RunEvent,
+  idempotencyKey: string
+) => Promise<unknown>
 
 const customProjectionSchema = z.strictObject({
   nodeName: z.string(),
@@ -86,10 +91,14 @@ export function projectLangGraphEmission(
 
 export class DurableRunEventSink implements OrchestrationEventSink {
   private sequence = 0
+  private readonly instanceId = randomUUID()
 
   constructor(private readonly appendRunEvent: AppendRunEvent) {}
 
-  async append(event: OrchestrationEvent): Promise<void> {
+  async append(
+    event: OrchestrationEvent,
+    options?: { readonly idempotencyKey?: string }
+  ): Promise<void> {
     this.sequence += 1
     const runId = runIdSchema.parse(event.runId)
     const missionId = missionIdSchema.parse(
@@ -199,6 +208,16 @@ export class DurableRunEventSink implements OrchestrationEventSink {
           }
       }
     })()
-    await this.appendRunEvent(parseRunEvent(projected))
+    const parsed = parseRunEvent(projected)
+    const idempotencyKey =
+      options?.idempotencyKey === undefined
+        ? hashCanonical({
+            kind: "unkeyed_orchestration_event",
+            instanceId: this.instanceId,
+            sequence: this.sequence,
+            event: parsed,
+          })
+        : contentHashSchema.parse(options.idempotencyKey)
+    await this.appendRunEvent(parsed, idempotencyKey)
   }
 }

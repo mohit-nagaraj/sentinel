@@ -69,7 +69,7 @@ const compactToolValueSchema: z.ZodType<CompactToolValue> = z.lazy(() =>
       .refine((value) => redactPersistedText(value) === value, {
         message: "Tool arguments contain unsafe text",
       }),
-    z.array(compactToolValueSchema).max(64),
+    z.array(compactToolValueSchema).max(100),
     z
       .record(z.string().min(1).max(96), compactToolValueSchema)
       .refine((value) => Object.keys(value).length <= 32, {
@@ -164,7 +164,7 @@ export const pendingToolCallSchema = z.strictObject({
 
 const sortedEvidenceIdsSchema = z
   .array(evidenceIdSchema)
-  .max(64)
+  .max(100)
   .transform((values) => [...new Set(values)].sort(compareStrings))
 
 const sortedReferencesSchema = z
@@ -292,6 +292,11 @@ const compactObservationListSchema = z
 const completedToolCallListSchema = z
   .array(completedToolCallSchema)
   .max(MAX_TOOL_CALLS)
+  .default(() => [])
+const specialistCallIdListSchema = z
+  .array(specialistCallIdSchema)
+  .max(MAX_TOOL_CALLS)
+  .transform((values) => [...new Set(values)].sort(compareStrings))
   .default(() => [])
 const budgetLedgerUpdateSchema = z.union([
   budgetLedgerEntrySchema,
@@ -658,6 +663,28 @@ export const SpecialistState = new StateSchema({
       reducer: reduceHumanInterrupt,
     }
   ),
+  pendingDecisionEventId: new ReducedValue(
+    specialistCallIdSchema.nullable().default(null),
+    {
+      inputSchema: specialistCallIdSchema.nullable(),
+      reducer: (_current, next) => next,
+    }
+  ),
+  lastCommittedToolCallId: new ReducedValue(
+    specialistCallIdSchema.nullable().default(null),
+    {
+      inputSchema: specialistCallIdSchema.nullable(),
+      reducer: (_current, next) => next,
+    }
+  ),
+  pendingTerminalEvent: new ReducedValue(z.boolean().default(false), {
+    inputSchema: z.boolean(),
+    reducer: (_current, next) => next,
+  }),
+  pendingTerminalToolCallIds: new ReducedValue(specialistCallIdListSchema, {
+    inputSchema: specialistCallIdListSchema,
+    reducer: (_current, next) => next,
+  }),
   terminalResult: new ReducedValue(
     missionResultSchema.nullable().default(null),
     {
@@ -690,6 +717,10 @@ export const specialistStateValueSchema = z.strictObject({
   budgetLedger: budgetLedgerSchema,
   progress: specialistProgressSchema,
   humanInterrupt: humanInterruptStateSchema.nullable(),
+  pendingDecisionEventId: specialistCallIdSchema.nullable(),
+  lastCommittedToolCallId: specialistCallIdSchema.nullable(),
+  pendingTerminalEvent: z.boolean(),
+  pendingTerminalToolCallIds: specialistCallIdListSchema,
   terminalResult: missionResultSchema.nullable(),
 })
 
@@ -701,6 +732,10 @@ export const specialistUpdateSchema = z.strictObject({
   budgetLedger: budgetLedgerUpdateSchema.optional(),
   progress: progressUpdateSchema.optional(),
   humanInterrupt: humanInterruptStateSchema.nullable().optional(),
+  pendingDecisionEventId: specialistCallIdSchema.nullable().optional(),
+  lastCommittedToolCallId: specialistCallIdSchema.nullable().optional(),
+  pendingTerminalEvent: z.boolean().optional(),
+  pendingTerminalToolCallIds: specialistCallIdListSchema.optional(),
   terminalResult: missionResultSchema.nullable().optional(),
 })
 
@@ -726,6 +761,10 @@ export function createSpecialistInitialState(
     budgetLedger: EMPTY_BUDGET_LEDGER,
     progress: EMPTY_SPECIALIST_PROGRESS,
     humanInterrupt: null,
+    pendingDecisionEventId: null,
+    lastCommittedToolCallId: null,
+    pendingTerminalEvent: false,
+    pendingTerminalToolCallIds: [],
     terminalResult: null,
   })
 }
@@ -782,6 +821,27 @@ export function validateSpecialistUpdate(
       update.humanInterrupt === undefined
         ? state.humanInterrupt
         : reduceHumanInterrupt(state.humanInterrupt, update.humanInterrupt),
+    pendingDecisionEventId:
+      update.pendingDecisionEventId === undefined
+        ? state.pendingDecisionEventId
+        : update.pendingDecisionEventId,
+    lastCommittedToolCallId:
+      update.lastCommittedToolCallId === undefined
+        ? state.lastCommittedToolCallId
+        : update.lastCommittedToolCallId,
+    pendingTerminalEvent:
+      update.pendingTerminalEvent !== undefined
+        ? update.pendingTerminalEvent
+        : update.terminalResult === null
+          ? false
+          : update.terminalResult !== undefined &&
+              update.terminalResult.status !== "needs_human"
+            ? true
+            : state.pendingTerminalEvent,
+    pendingTerminalToolCallIds:
+      update.pendingTerminalToolCallIds === undefined
+        ? state.pendingTerminalToolCallIds
+        : update.pendingTerminalToolCallIds,
     terminalResult:
       update.terminalResult === undefined
         ? state.terminalResult
@@ -798,6 +858,12 @@ export function validateSpecialistUpdate(
     budgetLedger: new Overwrite(next.budgetLedger),
     progress: new Overwrite(next.progress),
     humanInterrupt: new Overwrite(next.humanInterrupt),
+    pendingDecisionEventId: new Overwrite(next.pendingDecisionEventId),
+    lastCommittedToolCallId: new Overwrite(next.lastCommittedToolCallId),
+    pendingTerminalEvent: new Overwrite(next.pendingTerminalEvent),
+    pendingTerminalToolCallIds: new Overwrite(
+      next.pendingTerminalToolCallIds
+    ),
     terminalResult: new Overwrite(next.terminalResult),
   }
 }
@@ -862,10 +928,29 @@ function assertSpecialistStateConsistency(
   const decisionsById = new Map(
     state.decisions.map((decision) => [decision.decisionId, decision])
   )
+  if (
+    state.pendingDecisionEventId !== null &&
+    !decisionsById.has(state.pendingDecisionEventId)
+  ) {
+    throw new Error("Committed decision event cursor has no decision")
+  }
   const pendingIds = new Set(state.pendingToolCalls.map((call) => call.callId))
   const completedById = new Map(
     state.completedCalls.map((call) => [call.callId, call])
   )
+  if (
+    state.lastCommittedToolCallId !== null &&
+    !completedById.has(state.lastCommittedToolCallId)
+  ) {
+    throw new Error("Committed tool event cursor has no completed call")
+  }
+  if (
+    state.pendingTerminalToolCallIds.some(
+      (callId) => !completedById.has(callId)
+    )
+  ) {
+    throw new Error("Terminal tool event cursor has no completed call")
+  }
   const modelUsageByDecision = new Map(
     state.budgetLedger.entries
       .filter((entry) => entry.kind === "model_decision")
@@ -980,6 +1065,15 @@ function assertSpecialistStateConsistency(
   }
 
   const result = state.terminalResult
+  if (
+    state.pendingTerminalEvent &&
+    (result === null || result.status === "needs_human")
+  ) {
+    throw new Error("Pending terminal event has no final mission result")
+  }
+  if (state.pendingTerminalToolCallIds.length > 0 && !state.pendingTerminalEvent) {
+    throw new Error("Terminal tool event cursors require a pending terminal event")
+  }
   if (result === null) return
   if (result.missionId !== state.mission.id) {
     throw new Error("Terminal result does not match the specialist mission")
@@ -1021,10 +1115,10 @@ function assertSpecialistStateConsistency(
     if (
       followup.runId !== state.mission.runId ||
       followup.applicationId !== state.mission.applicationId ||
-      followup.agent !== state.agent
+      followup.id === state.mission.id
     ) {
       throw new Error(
-        "Specialist follow-up crosses its run, application, or agent"
+        "Specialist follow-up crosses its run/application or reuses its mission"
       )
     }
   }

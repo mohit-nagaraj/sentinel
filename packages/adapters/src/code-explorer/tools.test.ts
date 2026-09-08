@@ -560,4 +560,27 @@ describe("Code Explorer bounded tools", () => {
     expect(result.observation.metrics.sourceLines).toBeLessThanOrEqual(1)
     expect(result.observation.metrics.traversalHops).toBeLessThanOrEqual(1)
   })
+
+  it("honors cancellation before returning repository evidence", async () => {
+    const aborted = new AbortController()
+    aborted.abort()
+    await expect(
+      tools.execute(
+        "inspect_symbol",
+        { symbolId: dashboardId },
+        {},
+        aborted.signal
+      )
+    ).rejects.toMatchObject({ code: "cancelled" })
+
+    const controller = new AbortController()
+    const pending = tools.execute(
+      "inspect_symbol",
+      { symbolId: dashboardId },
+      {},
+      controller.signal
+    )
+    controller.abort()
+    await expect(pending).rejects.toMatchObject({ code: "cancelled" })
+  })
 })

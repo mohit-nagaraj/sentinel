@@ -167,16 +167,22 @@ describeIntegration("Supabase operational database", () => {
     }
 
     await Promise.all([
-      runs.appendEvent({
-        ...baseEvent,
-        id: createEventId(contractRunId, 1),
-        sequence: 99,
-      }),
-      runs.appendEvent({
-        ...baseEvent,
-        id: createEventId(contractRunId, 2),
-        sequence: 99,
-      }),
+      runs.appendEvent(
+        {
+          ...baseEvent,
+          id: createEventId(contractRunId, 1),
+          sequence: 99,
+        },
+        createEventId(contractRunId, 1)
+      ),
+      runs.appendEvent(
+        {
+          ...baseEvent,
+          id: createEventId(contractRunId, 2),
+          sequence: 99,
+        },
+        createEventId(contractRunId, 2)
+      ),
     ])
 
     const events = await runs.listEvents(run.id)

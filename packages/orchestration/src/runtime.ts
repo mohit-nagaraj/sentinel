@@ -1,5 +1,6 @@
 import {
   agentKindSchema,
+  contentHashSchema,
   evidenceIdSchema,
   missionIdSchema,
   persistedTextSchema,
@@ -70,7 +71,10 @@ export interface OrchestrationEvent {
 }
 
 export interface OrchestrationEventSink {
-  append(event: OrchestrationEvent): Promise<void>
+  append(
+    event: OrchestrationEvent,
+    options?: { readonly idempotencyKey?: string }
+  ): Promise<void>
 }
 
 export interface RunControlPort {
@@ -215,18 +219,32 @@ function safeEvent(input: OrchestrationEvent): OrchestrationEvent {
 
 async function emit(
   dependencies: RuntimeDependencies,
-  event: Omit<OrchestrationEvent, "occurredAt">
+  event: Omit<OrchestrationEvent, "occurredAt">,
+  options?: { readonly idempotencyKey?: string }
 ): Promise<void> {
   try {
     await dependencies.events.append(
       safeEvent({
         ...event,
         occurredAt: (dependencies.now ?? (() => new Date()))().toISOString(),
-      })
+      }),
+      options?.idempotencyKey === undefined
+        ? undefined
+        : {
+            idempotencyKey: contentHashSchema.parse(options.idempotencyKey),
+          }
     )
   } catch {
     throw new EventPersistenceError()
   }
+}
+
+export async function appendOrchestrationEvent(
+  dependencies: RuntimeDependencies,
+  event: Omit<OrchestrationEvent, "occurredAt">,
+  options?: { readonly idempotencyKey?: string }
+): Promise<void> {
+  await emit(dependencies, event, options)
 }
 
 export interface NodeRuntime {
@@ -235,12 +253,14 @@ export interface NodeRuntime {
   emitTool(input: {
     readonly toolName: string
     readonly phase: "started" | "completed"
+    readonly idempotencyKey?: string
   }): Promise<void>
   emit(
     input: Omit<
       OrchestrationEvent,
       "runId" | "graphName" | "nodeName" | "occurredAt"
-    >
+    >,
+    options?: { readonly idempotencyKey?: string }
   ): Promise<void>
 }
 
@@ -266,6 +286,7 @@ export interface NodeEventContext {
 
 export interface NodeWrapperOptions<State = RuntimeStateBase> {
   readonly emitStarted?: boolean
+  readonly enforceElapsedBudget?: boolean
   readonly lifecycleNodeName?: string
   readonly runtimeState?: (state: State) => RuntimeStateBase
   readonly eventContext?: (state: State) => NodeEventContext
@@ -323,7 +344,8 @@ export function wrapNode<State, Update extends Record<string, unknown>>(
     const checkActive = async () => {
       if (
         abortController.signal.aborted ||
-        elapsed() >= runtimeState.budget.elapsedMs
+        (options.enforceElapsedBudget !== false &&
+          elapsed() >= runtimeState.budget.elapsedMs)
       ) {
         throw new BudgetExhaustedError()
       }
@@ -335,38 +357,46 @@ export function wrapNode<State, Update extends Record<string, unknown>>(
     const runtime: NodeRuntime = {
       signal: abortController.signal,
       checkActive,
-      emitTool: async ({ toolName, phase }) => {
+      emitTool: async ({ toolName, phase, idempotencyKey }) => {
         await checkActive()
-        await emit(dependencies, {
-          runId: runtimeState.runId,
-          graphName: runtimeState.graphName,
-          nodeName: lifecycleNodeName,
-          ...eventContext,
-          toolName: reasonCodeSchema.parse(toolName),
-          kind: phase === "started" ? "tool_started" : "tool_completed",
-          status: phase,
-          summary:
-            phase === "started"
-              ? "Tool execution started"
-              : "Tool execution completed",
-          reasonCode: phase === "started" ? "tool_started" : "tool_completed",
-        })
+        await emit(
+          dependencies,
+          {
+            runId: runtimeState.runId,
+            graphName: runtimeState.graphName,
+            nodeName: lifecycleNodeName,
+            ...eventContext,
+            toolName: reasonCodeSchema.parse(toolName),
+            kind: phase === "started" ? "tool_started" : "tool_completed",
+            status: phase,
+            summary:
+              phase === "started"
+                ? "Tool execution started"
+                : "Tool execution completed",
+            reasonCode: phase === "started" ? "tool_started" : "tool_completed",
+          },
+          idempotencyKey === undefined ? undefined : { idempotencyKey }
+        )
       },
-      emit: async (event) => {
+      emit: async (event, appendOptions) => {
         await checkActive()
-        await emit(dependencies, {
-          runId: runtimeState.runId,
-          graphName: runtimeState.graphName,
-          nodeName: lifecycleNodeName,
-          ...event,
-          ...(eventContext.agent === undefined
-            ? {}
-            : { agent: eventContext.agent }),
-          ...(eventContext.missionId === undefined
-            ? {}
-            : { missionId: eventContext.missionId }),
-          evidenceIds: event.evidenceIds ?? eventContext.evidenceIds ?? [],
-        })
+        await emit(
+          dependencies,
+          {
+            runId: runtimeState.runId,
+            graphName: runtimeState.graphName,
+            nodeName: lifecycleNodeName,
+            ...event,
+            ...(eventContext.agent === undefined
+              ? {}
+              : { agent: eventContext.agent }),
+            ...(eventContext.missionId === undefined
+              ? {}
+              : { missionId: eventContext.missionId }),
+            evidenceIds: event.evidenceIds ?? eventContext.evidenceIds ?? [],
+          },
+          appendOptions
+        )
       },
     }
     try {
@@ -384,28 +414,31 @@ export function wrapNode<State, Update extends Record<string, unknown>>(
         })
       }
       let timeout: ReturnType<typeof setTimeout> | undefined
-      const timeoutPromise = new Promise<never>((_resolve, reject) => {
-        const armTimeout = () => {
-          const remainingMs = runtimeState.budget.elapsedMs - elapsed()
-          if (remainingMs <= 0) {
-            abortController.abort()
-            reject(new BudgetExhaustedError())
-            return
-          }
-          timeout = setTimeout(
-            () => {
-              if (elapsed() >= runtimeState.budget.elapsedMs) {
-                abortController.abort()
-                reject(new BudgetExhaustedError())
-              } else {
-                armTimeout()
+      const timeoutPromise =
+        options.enforceElapsedBudget === false
+          ? new Promise<never>(() => undefined)
+          : new Promise<never>((_resolve, reject) => {
+              const armTimeout = () => {
+                const remainingMs = runtimeState.budget.elapsedMs - elapsed()
+                if (remainingMs <= 0) {
+                  abortController.abort()
+                  reject(new BudgetExhaustedError())
+                  return
+                }
+                timeout = setTimeout(
+                  () => {
+                    if (elapsed() >= runtimeState.budget.elapsedMs) {
+                      abortController.abort()
+                      reject(new BudgetExhaustedError())
+                    } else {
+                      armTimeout()
+                    }
+                  },
+                  Math.min(remainingMs, MAX_TIMER_DELAY_MS)
+                )
               }
-            },
-            Math.min(remainingMs, MAX_TIMER_DELAY_MS)
-          )
-        }
-        armTimeout()
-      })
+              armTimeout()
+            })
       let update: Update
       try {
         update = await Promise.race([

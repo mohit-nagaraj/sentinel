@@ -14,6 +14,7 @@ import { z } from "zod"
 
 import { InMemoryResumeCoordinator } from "../resume-coordinator.ts"
 import {
+  EventPersistenceError,
   LeaseOwnershipError,
   type OrchestrationEvent,
   type RuntimeDependencies,
@@ -153,13 +154,16 @@ function harness(
     authorize?: boolean
     now?: () => Date
     resumeCoordinator?: RuntimeDependencies["resumeCoordinator"]
+    events?: RuntimeDependencies["events"]
   } = {}
 ) {
   const events: OrchestrationEvent[] = []
   const dependencies: RuntimeDependencies = {
     owner: "worker-specialist",
     control: { assertActive: async () => undefined },
-    events: { append: async (event) => void events.push(event) },
+    events:
+      options.events ??
+      ({ append: async (event) => void events.push(event) } as const),
     effects: { execute: async () => undefined },
     resumeAuthorization: {
       authorize: async () => options.authorize ?? true,
@@ -172,10 +176,12 @@ function harness(
 }
 
 function registry(
-  execute: (signal: AbortSignal) => unknown | Promise<unknown> = vi.fn()
+  execute: (signal: AbortSignal) => unknown | Promise<unknown> = vi.fn(),
+  actualUsage: MissionBudget = toolUsage
 ) {
   const tool = defineSpecialistTool({
     name: "read_symbol",
+    description: "Read one bounded source symbol by repository path.",
     agents: ["code"],
     modes: ["implementation_trace"],
     argumentsSchema: z.strictObject({
@@ -196,11 +202,11 @@ function registry(
         summary: "Located the requested symbol.",
         evidenceIds: [evidenceId],
         references: [{ kind: "repository_path", id: "packages/example.ts" }],
-        usage: toolUsage,
+        usage: actualUsage,
       })
     },
   })
-  return new SpecialistToolRegistry([tool])
+  return SpecialistToolRegistry.forTesting([tool])
 }
 
 function kernelConfig(
@@ -226,10 +232,11 @@ describe("shared specialist kernel", () => {
   it("completes directly with typed usage and lifecycle events", async () => {
     const test = harness()
     const model = new ScriptedModel([modelStep(1, completeAction)])
+    const memory = new MemorySaver()
     const kernel = createSpecialistKernel(
       kernelConfig(model),
       test.dependencies,
-      new MemorySaver()
+      memory
     )
     const service = new SpecialistOrchestrationService(
       kernel,
@@ -262,6 +269,121 @@ describe("shared specialist kernel", () => {
       ),
     })
     await expect(service.start(conflictingMission)).rejects.toThrow()
+  })
+
+  it("resumes a committed terminal decision through its pending finalizer", async () => {
+    const test = harness()
+    const model = new ScriptedModel([modelStep(1, completeAction)])
+    const memory = new MemorySaver()
+    const specialist = createSpecialistKernel(
+      kernelConfig(model),
+      test.dependencies,
+      memory
+    )
+    const selectedMission = mission({
+      id: missionIdSchema.parse(`mission:v1:${"3".repeat(64)}`),
+    })
+    const initial = createSpecialistInitialState(selectedMission, {
+      graphName: specialist.config.graphName,
+      promptTemplateId: specialist.config.promptTemplateId,
+      configurationFingerprint: specialist.config.configurationFingerprint,
+      startedAtMs: Date.parse("2026-09-08T00:00:00.000Z"),
+    })
+    await specialist.graph.invoke(initial, {
+      configurable: { thread_id: selectedMission.id },
+      interruptAfter: ["specialist_model_decision"],
+      recursionLimit: specialist.config.recursionLimit,
+    })
+    const before = await specialist.graph.getState({
+      configurable: { thread_id: selectedMission.id },
+    })
+    expect(before.next).toEqual(["specialist_validate_decision"])
+    expect(before.values).toMatchObject({
+      terminalResult: { status: "complete" },
+      pendingDecisionEventId: "decision_01",
+    })
+    expect(
+      test.events.some(
+        (event) =>
+          event.kind === "node_completed" &&
+          event.nodeName === "specialist_validate_decision"
+      )
+    ).toBe(false)
+
+    const result = await new SpecialistOrchestrationService(
+      specialist,
+      test.dependencies
+    ).continue(selectedMission.id)
+    expect(result.status).toBe("complete")
+    expect(result.state.pendingDecisionEventId).toBeNull()
+    expect(test.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "node_completed",
+          reasonCode: "finish",
+        }),
+        expect.objectContaining({ kind: "mission_completed" }),
+      ])
+    )
+  })
+
+  it("retries a failed committed-decision event without losing state", async () => {
+    const persistedEvents: OrchestrationEvent[] = []
+    const attemptedDecisionEventKeys: string[] = []
+    let failCommittedEvent = true
+    const test = harness({
+      events: {
+        append: async (event, options) => {
+          if (event.kind === "node_completed") {
+            attemptedDecisionEventKeys.push(
+              options?.idempotencyKey ?? "missing"
+            )
+          }
+          if (event.kind === "node_completed" && failCommittedEvent) {
+            failCommittedEvent = false
+            throw new Error("planned event sink failure")
+          }
+          persistedEvents.push(event)
+        },
+      },
+    })
+    const selectedMission = mission({
+      id: missionIdSchema.parse(`mission:v1:${"2".repeat(64)}`),
+    })
+    const specialist = createSpecialistKernel(
+      kernelConfig(new ScriptedModel([modelStep(1, completeAction)])),
+      test.dependencies,
+      new MemorySaver()
+    )
+    const service = new SpecialistOrchestrationService(
+      specialist,
+      test.dependencies
+    )
+
+    await expect(service.start(selectedMission)).rejects.toBeInstanceOf(
+      EventPersistenceError
+    )
+    const failedSnapshot = await specialist.graph.getState({
+      configurable: { thread_id: selectedMission.id },
+    })
+    expect(failedSnapshot.next).toEqual(["specialist_validate_decision"])
+    expect(failedSnapshot.values).toMatchObject({
+      terminalResult: { status: "complete" },
+      pendingDecisionEventId: "decision_01",
+    })
+
+    const recovered = await service.continue(selectedMission.id)
+    expect(recovered.status).toBe("complete")
+    expect(recovered.state.pendingDecisionEventId).toBeNull()
+    expect(
+      persistedEvents.filter((event) => event.kind === "node_completed")
+    ).toHaveLength(1)
+    expect(
+      persistedEvents.filter((event) => event.kind === "mission_completed")
+    ).toHaveLength(1)
+    expect(attemptedDecisionEventKeys).toHaveLength(2)
+    expect(new Set(attemptedDecisionEventKeys).size).toBe(1)
+    expect(attemptedDecisionEventKeys[0]).toMatch(/^sha256:[a-f0-9]{64}$/)
   })
 
   it("serializes mission starts and rejects conflicting persisted configuration", async () => {
@@ -348,6 +470,12 @@ describe("shared specialist kernel", () => {
         test.dependencies
       ).start(selectedMission)
     ).rejects.toThrow()
+    await expect(
+      new SpecialistOrchestrationService(
+        changedKernel,
+        test.dependencies
+      ).continue(selectedMission.id)
+    ).rejects.toThrow()
   })
 
   it("recovers an abandoned start checkpoint under the current run lease", async () => {
@@ -380,6 +508,65 @@ describe("shared specialist kernel", () => {
     ).start(selectedMission)
     expect(recovered.status).toBe("complete")
     expect(model.calls()).toBe(1)
+  })
+
+  it("shares concurrent continuation work across service instances", async () => {
+    const test = harness()
+    let enterModel!: () => void
+    let releaseModel!: () => void
+    const entered = new Promise<void>((resolve) => {
+      enterModel = resolve
+    })
+    const gate = new Promise<void>((resolve) => {
+      releaseModel = resolve
+    })
+    const decide = vi.fn(async () => {
+      enterModel()
+      await gate
+      return modelStep(1, completeAction)
+    })
+    const model: SpecialistDecisionModel = {
+      estimate: () => modelUsage,
+      decide,
+    }
+    const memory = new MemorySaver()
+    const specialist = createSpecialistKernel(
+      kernelConfig(model),
+      test.dependencies,
+      memory
+    )
+    const selectedMission = mission({
+      id: missionIdSchema.parse(`mission:v1:${"5".repeat(64)}`),
+    })
+    await specialist.graph.invoke(
+      createSpecialistInitialState(selectedMission, {
+        graphName: specialist.config.graphName,
+        promptTemplateId: specialist.config.promptTemplateId,
+        configurationFingerprint: specialist.config.configurationFingerprint,
+        startedAtMs: Date.parse("2026-09-08T00:00:00.000Z"),
+      }),
+      {
+        configurable: { thread_id: selectedMission.id },
+        interruptBefore: ["specialist_prepare"],
+        recursionLimit: specialist.config.recursionLimit,
+      }
+    )
+    const first = new SpecialistOrchestrationService(
+      specialist,
+      test.dependencies
+    ).continue(selectedMission.id)
+    await entered
+    const duplicate = new SpecialistOrchestrationService(
+      specialist,
+      test.dependencies
+    ).continue(selectedMission.id)
+    releaseModel()
+
+    const [firstResult, duplicateResult] = await Promise.all([first, duplicate])
+    expect(firstResult.status).toBe("complete")
+    expect(duplicateResult.status).toBe("complete")
+    expect(duplicateResult.idempotent).toBe(true)
+    expect(decide).toHaveBeenCalledOnce()
   })
 
   it("does not persist a fresh claim without the run lease", async () => {
@@ -555,6 +742,15 @@ describe("shared specialist kernel", () => {
       interruptAfter: ["specialist_tool_execution"],
       recursionLimit: kernel.config.recursionLimit,
     })
+    expect(test.events.some((event) => event.kind === "tool_started")).toBe(
+      true
+    )
+    expect(test.events.some((event) => event.kind === "tool_completed")).toBe(
+      false
+    )
+    expect(
+      test.events.some((event) => event.reasonCode === "tool_budget_updated")
+    ).toBe(false)
 
     const result = await service.continue(selectedMission.id)
     expect(result.status).toBe("complete")
@@ -562,6 +758,9 @@ describe("shared specialist kernel", () => {
     expect(result.state.observations[0]?.evidenceIds).toEqual([evidenceId])
     expect(execute).toHaveBeenCalledOnce()
     expect(model.calls()).toBe(2)
+    expect(test.events.some((event) => event.kind === "tool_completed")).toBe(
+      true
+    )
   })
 
   it("settles an in-flight tool reservation when elapsed time expires", async () => {
@@ -615,14 +814,240 @@ describe("shared specialist kernel", () => {
     expect(execute).toHaveBeenCalledOnce()
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
     expect(test.events.some((event) => event.kind === "tool_completed")).toBe(
-      false
+      true
     )
     expect(test.events.some((event) => event.kind === "evidence_gained")).toBe(
       false
     )
     expect(
       test.events.some((event) => event.reasonCode === "tool_budget_updated")
-    ).toBe(false)
+    ).toBe(true)
+  })
+
+  it("retries committed settlement events before exceptional terminal output", async () => {
+    const toolEventKeys: string[] = []
+    let failToolEvent = true
+    const test = harness({
+      now: () => new Date(),
+      events: {
+        append: async (event, options) => {
+          if (event.kind !== "tool_completed") return
+          toolEventKeys.push(options?.idempotencyKey ?? "missing")
+          if (failToolEvent) {
+            failToolEvent = false
+            throw new Error("planned committed tool event failure")
+          }
+        },
+      },
+    })
+    const execute = vi.fn(
+      (signal: AbortSignal) =>
+        new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true })
+        })
+    )
+    const model = new ScriptedModel([
+      modelStep(1, {
+        kind: "tool_calls",
+        calls: [
+          {
+            callId: "call_01",
+            toolName: "read_symbol",
+            arguments: { path: "packages/example.ts" },
+          },
+        ],
+      }),
+    ])
+    const selectedMission = mission({
+      id: missionIdSchema.parse(`mission:v1:${"8".repeat(64)}`),
+      budget: budget({ elapsedMs: 500 }),
+    })
+    const specialist = createSpecialistKernel(
+      kernelConfig(model, registry(execute)),
+      test.dependencies,
+      new MemorySaver()
+    )
+    const service = new SpecialistOrchestrationService(
+      specialist,
+      test.dependencies
+    )
+
+    await expect(service.start(selectedMission)).rejects.toBeInstanceOf(
+      EventPersistenceError
+    )
+    const failed = await specialist.graph.getState({
+      configurable: { thread_id: selectedMission.id },
+    })
+    expect(failed.values).toMatchObject({
+      pendingTerminalEvent: true,
+      pendingTerminalToolCallIds: ["call_01"],
+      completedCalls: [expect.objectContaining({ callId: "call_01" })],
+    })
+
+    const recovered = await service.continue(selectedMission.id)
+    expect(recovered.status).toBe("budget_exhausted")
+    expect(recovered.state.pendingTerminalToolCallIds).toEqual([])
+    expect(recovered.state.pendingTerminalEvent).toBe(false)
+    expect(toolEventKeys).toHaveLength(2)
+    expect(new Set(toolEventKeys).size).toBe(1)
+    expect(execute).toHaveBeenCalledOnce()
+  })
+
+  it("retries an exceptional terminal event from its durable cursor", async () => {
+    const terminalEventKeys: string[] = []
+    let failTerminalEvent = true
+    const test = harness({
+      events: {
+        append: async (event, options) => {
+          if (event.kind !== "mission_completed") return
+          terminalEventKeys.push(options?.idempotencyKey ?? "missing")
+          if (failTerminalEvent) {
+            failTerminalEvent = false
+            throw new Error("planned terminal event failure")
+          }
+        },
+      },
+    })
+    const selectedMission = mission({
+      id: missionIdSchema.parse(`mission:v1:${"6".repeat(64)}`),
+      budget: budget({ elapsedMs: 0 }),
+    })
+    const model = new ScriptedModel([modelStep(1, completeAction)])
+    const specialist = createSpecialistKernel(
+      kernelConfig(model),
+      test.dependencies,
+      new MemorySaver()
+    )
+    const service = new SpecialistOrchestrationService(
+      specialist,
+      test.dependencies
+    )
+
+    await expect(service.start(selectedMission)).rejects.toBeInstanceOf(
+      EventPersistenceError
+    )
+    const failed = await specialist.graph.getState({
+      configurable: { thread_id: selectedMission.id },
+    })
+    expect(failed.next).toEqual([])
+    expect(failed.values).toMatchObject({
+      pendingTerminalEvent: true,
+      terminalResult: {
+        status: "budget_exhausted",
+        stopReason: { code: "elapsed_budget_exhausted" },
+      },
+    })
+
+    const recovered = await service.continue(selectedMission.id)
+    expect(recovered.status).toBe("budget_exhausted")
+    expect(recovered.state.pendingTerminalEvent).toBe(false)
+    expect(terminalEventKeys).toHaveLength(2)
+    expect(new Set(terminalEventKeys).size).toBe(1)
+    expect(model.calls()).toBe(0)
+  })
+
+  it("terminates when a tool reports usage beyond its reservation", async () => {
+    const test = harness()
+    const execute = vi.fn()
+    const model = new ScriptedModel([
+      modelStep(1, {
+        kind: "tool_calls",
+        calls: [
+          {
+            callId: "call_01",
+            toolName: "read_symbol",
+            arguments: { path: "packages/example.ts" },
+          },
+        ],
+      }),
+      modelStep(2, completeAction),
+    ])
+    const oversizedUsage = budget({
+      ...toolUsage,
+      sourceLines: toolUsage.sourceLines + 1,
+    })
+    const specialist = createSpecialistKernel(
+      kernelConfig(model, registry(execute, oversizedUsage)),
+      test.dependencies,
+      new MemorySaver()
+    )
+    const result = await new SpecialistOrchestrationService(
+      specialist,
+      test.dependencies
+    ).start(mission())
+
+    expect(result.status).toBe("budget_exhausted")
+    expect(result.mission.stopReason).toMatchObject({
+      code: "tool_usage_exceeded_preflight",
+      summary: expect.stringMatching(/sourceLines.*sha256:/),
+    })
+    expect(result.mission.budgetUsed).toMatchObject({
+      modelCalls: 1,
+      toolCalls: 1,
+      sourceLines: toolUsage.sourceLines,
+    })
+    expect(model.calls()).toBe(1)
+    expect(execute).toHaveBeenCalledOnce()
+  })
+
+  it("finalizes a tool revalidation denial without a committed-event cursor", async () => {
+    const test = harness()
+    let estimates = 0
+    const execute = vi.fn()
+    const unstableTool = defineSpecialistTool({
+      name: "read_symbol",
+      description: "Read one bounded source symbol by repository path.",
+      agents: ["code"],
+      modes: ["implementation_trace"],
+      argumentsSchema: z.strictObject({ path: z.string() }),
+      outputSchema: specialistToolOutputSchema,
+      validateScope: () => true,
+      estimate: () => {
+        estimates += 1
+        return estimates === 1
+          ? toolUsage
+          : { ...toolUsage, sourceLines: toolUsage.sourceLines + 1 }
+      },
+      execute: async () => {
+        execute()
+        return specialistToolOutputSchema.parse({
+          outcome: "succeeded",
+          summary: "This result must remain unreachable.",
+          evidenceIds: [],
+          references: [],
+          usage: toolUsage,
+        })
+      },
+    })
+    const model = new ScriptedModel([
+      modelStep(1, {
+        kind: "tool_calls",
+        calls: [
+          {
+            callId: "call_01",
+            toolName: "read_symbol",
+            arguments: { path: "packages/example.ts" },
+          },
+        ],
+      }),
+    ])
+    const specialist = createSpecialistKernel(
+      kernelConfig(model, SpecialistToolRegistry.forTesting([unstableTool])),
+      test.dependencies,
+      new MemorySaver()
+    )
+    const result = await new SpecialistOrchestrationService(
+      specialist,
+      test.dependencies
+    ).start(mission())
+
+    expect(result.status).toBe("failed")
+    expect(result.mission.stopReason.code).toBe("tool_execution_denied")
+    expect(result.state.lastCommittedToolCallId).toBeNull()
+    expect(execute).not.toHaveBeenCalled()
+    expect(test.events.some((event) => event.kind === "tool_completed")).toBe(
+      false
+    )
   })
 
   it("terminates repeated no-progress and unavailable model budgets", async () => {
@@ -659,6 +1084,39 @@ describe("shared specialist kernel", () => {
     expect(budgetModel.calls()).toBe(0)
   })
 
+  it("permits declared provider-free deterministic decisions at zero model budget", async () => {
+    const test = harness()
+    const decide = vi.fn(async (request) => {
+      expect(request.executionKind).toBe("deterministic")
+      return specialistModelDecisionSchema.parse({
+        decisionId: "deterministic_finish_01",
+        usage: EMPTY_BUDGET_USAGE,
+        action: completeAction,
+      })
+    })
+    const model: SpecialistDecisionModel = {
+      estimate: () => modelUsage,
+      estimateDecision: async () => ({
+        kind: "deterministic",
+        usage: EMPTY_BUDGET_USAGE,
+      }),
+      decide,
+    }
+    const specialist = createSpecialistKernel(
+      kernelConfig(model),
+      test.dependencies,
+      new MemorySaver()
+    )
+    const result = await new SpecialistOrchestrationService(
+      specialist,
+      test.dependencies
+    ).start(mission({ budget: budget({ modelCalls: 0 }) }))
+
+    expect(result.status).toBe("complete")
+    expect(result.mission.budgetUsed.modelCalls).toBe(0)
+    expect(decide).toHaveBeenCalledOnce()
+  })
+
   it("interrupts and resumes only with authorized matching input", async () => {
     const test = harness()
     const model = new ScriptedModel([
@@ -669,10 +1127,11 @@ describe("shared specialist kernel", () => {
       }),
       modelStep(2, completeAction),
     ])
+    const memory = new MemorySaver()
     const kernel = createSpecialistKernel(
       kernelConfig(model),
       test.dependencies,
-      new MemorySaver()
+      memory
     )
     const service = new SpecialistOrchestrationService(
       kernel,
@@ -684,6 +1143,29 @@ describe("shared specialist kernel", () => {
     expect(started.interrupts[0]).toMatchObject({
       decisionId: "decision_01",
     })
+
+    const changedKernel = createSpecialistKernel(
+      kernelConfig(
+        new ScriptedModel([modelStep(3, completeAction)]),
+        registry(),
+        {
+          completionValidatorId: "mission_result_validator_v2",
+        }
+      ),
+      test.dependencies,
+      memory
+    )
+    await expect(
+      new SpecialistOrchestrationService(
+        changedKernel,
+        test.dependencies
+      ).resume({
+        missionId: started.state.mission.id,
+        decisionId: "decision_01",
+        actorId: "reviewer:one",
+        approved: true,
+      })
+    ).rejects.toThrow()
 
     const resumed = await service.resume({
       missionId: started.state.mission.id,
@@ -758,5 +1240,29 @@ describe("shared specialist kernel", () => {
         })
       )
     ).rejects.toThrow()
+  })
+
+  it("finishes committed terminal work across a recursion boundary", async () => {
+    const test = harness()
+    const model = new ScriptedModel([modelStep(1, completeAction)])
+    const specialist = createSpecialistKernel(
+      kernelConfig(model, registry(), { recursionLimit: 2 }),
+      test.dependencies,
+      new MemorySaver()
+    )
+
+    const result = await new SpecialistOrchestrationService(
+      specialist,
+      test.dependencies
+    ).start(
+      mission({
+        id: missionIdSchema.parse(`mission:v1:${"7".repeat(64)}`),
+      })
+    )
+    expect(result.status).toBe("complete")
+    expect(result.mission.stopReason.code).toBe("criteria_met")
+    expect(result.state.pendingDecisionEventId).toBeNull()
+    expect(result.state.pendingTerminalEvent).toBe(false)
+    expect(model.calls()).toBe(1)
   })
 })

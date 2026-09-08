@@ -58,6 +58,8 @@ function request(signal = new AbortController().signal) {
     stateFingerprint: `sha256:${"c".repeat(64)}`,
     observations: [],
     completedCallIds: [],
+    executionKind: "provider" as const,
+    humanResolution: null,
     remainingBudget: selectedMission.budget,
     signal,
   }
@@ -162,6 +164,7 @@ describe("scripted specialist fakes", () => {
     })
     const tool = new ScriptedSpecialistTool({
       name: "read_symbol",
+      description: "Read one bounded source symbol by repository path.",
       agents: ["code"],
       modes: ["implementation_trace"],
       argumentsSchema: z.strictObject({ path: z.string() }),
@@ -197,6 +200,7 @@ describe("scripted specialist fakes", () => {
   it("makes blocking tool scripts abort-aware", async () => {
     const tool = new ScriptedSpecialistTool({
       name: "read_symbol",
+      description: "Read one bounded source symbol by repository path.",
       agents: ["code"],
       modes: ["implementation_trace"],
       argumentsSchema: z.strictObject({ path: z.string() }),

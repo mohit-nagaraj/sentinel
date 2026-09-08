@@ -59,6 +59,7 @@ export interface CodeExplorerModelGateway {
     readonly maxOutputTokens: number
     readonly tools: readonly CodeExplorerModelToolDefinition[]
     readonly toolChoice: "required"
+    readonly signal?: AbortSignal
   }): Promise<CodeExplorerModelDecision>
 }
 
@@ -88,7 +89,8 @@ export interface CodeExplorerToolPort {
   execute(
     name: string,
     argumentsInput: unknown,
-    limits?: CodeExplorerExecutionLimits
+    limits?: CodeExplorerExecutionLimits,
+    signal?: AbortSignal
   ): Promise<CodeExplorerToolExecution>
 }
 
