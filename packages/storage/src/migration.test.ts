@@ -30,6 +30,13 @@ const githubAppMigration = readFileSync(
   ),
   "utf8"
 )
+const realtimeActivityMigration = readFileSync(
+  new URL(
+    "../../../supabase/migrations/20260908000500_realtime_activity.sql",
+    import.meta.url
+  ),
+  "utf8"
+)
 
 describe("operational migration", () => {
   it("defines every compact operational table and private checkpoint schema", () => {
@@ -180,5 +187,30 @@ describe("GitHub App assessment migration", () => {
     expect(githubAppMigration).not.toMatch(
       /grant execute[\s\S]*to (?:anon|authenticated)/i
     )
+  })
+})
+
+describe("realtime activity migration", () => {
+  it("broadcasts cursor-only run hints to private owner-authorized topics", () => {
+    expect(realtimeActivityMigration).toContain("can_receive_run_broadcast")
+    expect(realtimeActivityMigration).toContain("sentinel_owned_run_broadcasts")
+    expect(realtimeActivityMigration).toContain(
+      "realtime.messages.extension = 'broadcast'"
+    )
+    expect(realtimeActivityMigration).toContain("'runId', new.run_id")
+    expect(realtimeActivityMigration).toContain("'sequence', new.sequence")
+    expect(realtimeActivityMigration).not.toContain("new.event")
+    expect(realtimeActivityMigration).not.toMatch(
+      /for insert\s+to authenticated/i
+    )
+  })
+
+  it("requests pause without aborting running work and clears it on resume", () => {
+    expect(realtimeActivityMigration).toContain("pause_requested_at")
+    expect(realtimeActivityMigration).toContain("pause_control_run")
+    expect(realtimeActivityMigration).toContain(
+      "resume_decision_id = 'resume_run'"
+    )
+    expect(realtimeActivityMigration).toContain("old.status = 'interrupted'")
   })
 })

@@ -7,6 +7,7 @@ import {
   missionIdSchema,
   parseRunEvent,
   reasonCodeSchema,
+  runActivityDisplaySchema,
   runIdSchema,
   type RunEvent,
 } from "@sentinel/contracts"
@@ -24,6 +25,7 @@ const customProjectionSchema = z.strictObject({
   nodeName: z.string(),
   toolName: z.string().optional(),
   phase: z.enum(["started", "completed"]),
+  activity: runActivityDisplaySchema.optional(),
 })
 
 export function projectLangGraphEmission(
@@ -86,6 +88,7 @@ export function projectLangGraphEmission(
       custom.phase === "started"
         ? "custom_tool_started"
         : "custom_tool_completed",
+    ...(custom.activity === undefined ? {} : { activity: custom.activity }),
   }
 }
 
@@ -118,6 +121,7 @@ export class DurableRunEventSink implements OrchestrationEventSink {
       nodeName: event.nodeName,
       summary: event.summary,
       reasonCode: event.reasonCode,
+      ...(event.activity === undefined ? {} : { activity: event.activity }),
       evidenceIds: [...(event.evidenceIds ?? [])],
       ...(event.agent === undefined ? {} : { agent: event.agent }),
       ...(event.missionId === undefined ? {} : { missionId: event.missionId }),

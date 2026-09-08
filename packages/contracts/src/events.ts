@@ -2,6 +2,7 @@ import { z } from "zod"
 
 import {
   agentKindSchema,
+  artifactIdSchema,
   eventIdSchema,
   evidenceIdSchema,
   missionIdSchema,
@@ -46,6 +47,40 @@ export const publicErrorSchema = z.strictObject({
   retryable: z.boolean(),
 })
 
+export const runActivityDisplaySchema = z.strictObject({
+  category: z.enum([
+    "decision",
+    "policy",
+    "tool",
+    "action",
+    "transition",
+    "request",
+    "coverage",
+    "status",
+  ]),
+  detail: persistedTextSchema.max(2_048).optional(),
+  action: z
+    .strictObject({
+      kind: reasonCodeSchema,
+      label: persistedTextSchema.max(512),
+      status: z.enum(["selected", "allowed", "blocked", "completed", "failed"]),
+    })
+    .optional(),
+  request: z
+    .strictObject({
+      method: z.enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]),
+      route: z
+        .string()
+        .min(1)
+        .max(512)
+        .regex(/^\/[A-Za-z0-9._~:/{}*-]*$/),
+      status: z.number().int().min(100).max(599).optional(),
+    })
+    .optional(),
+  coverageDelta: z.number().int().min(-10_000).max(10_000).optional(),
+  screenshotArtifactId: artifactIdSchema.optional(),
+})
+
 const budgetEventPayloadSchema = z.strictObject({
   consumed: z.number().int().nonnegative(),
   limit: z.number().int().nonnegative(),
@@ -83,6 +118,7 @@ const runEventFields = {
   evidenceIds: z.array(evidenceIdSchema).max(100),
   budget: budgetEventPayloadSchema.optional(),
   error: publicErrorSchema.optional(),
+  activity: runActivityDisplaySchema.optional(),
 }
 
 const completionStatusSchema = z.enum(["completed", "failed", "blocked"])
@@ -172,3 +208,4 @@ export const runEventSchema = z.discriminatedUnion("kind", [
 
 export type RunEvent = z.infer<typeof runEventSchema>
 export type PublicError = z.infer<typeof publicErrorSchema>
+export type RunActivityDisplay = z.infer<typeof runActivityDisplaySchema>

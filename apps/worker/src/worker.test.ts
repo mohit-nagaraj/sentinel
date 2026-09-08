@@ -36,7 +36,7 @@ const run = {
 function harness(input: {
   result?: "succeeded" | "interrupted" | "cancelled"
   failure?: unknown
-  states?: ("active" | "cancelled" | "lease_lost")[]
+  states?: ("active" | "pause_requested" | "cancelled" | "lease_lost")[]
   resume?: { decisionId: string; response: { approved: boolean } } | null
   cleanup?: () => Promise<void>
 }) {
@@ -148,6 +148,23 @@ describe("leased worker", () => {
       monitorIntervalMs: 2,
     }).runOnce()
     expect(test.calls).toEqual(["cleanup", "finish:cancelled"])
+  })
+
+  it("turns a safe-boundary pause request into a durable resume interrupt", async () => {
+    const test = harness({ states: ["pause_requested"] })
+    await createWorker({
+      owner: "worker-a",
+      store: test.store,
+      dispatcher: test.dispatcher,
+    }).runOnce()
+    expect(test.dispatcher.execute).not.toHaveBeenCalled()
+    expect(test.store.recordInterrupt).toHaveBeenCalledWith({
+      runId: run.id,
+      owner: "worker-a",
+      decisionId: "resume_run",
+      prompt: "Run paused by operator",
+    })
+    expect(test.store.finish).not.toHaveBeenCalled()
   })
 
   it("retries and reports cleanup failure instead of clean cancellation", async () => {

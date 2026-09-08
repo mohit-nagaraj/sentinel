@@ -46,6 +46,7 @@ const runRow = {
   lease_expires_at: null,
   attempt_count: 0,
   cancel_requested_at: null,
+  pause_requested_at: null,
   error_category: null,
   error_code: null,
   error_retryable: null,
@@ -157,6 +158,50 @@ describe("run repository", () => {
     expect(JSON.stringify(result)).not.toContain("request_fingerprint")
   })
 
+  it("requests owner-scoped pause and projects the pending timestamp", async () => {
+    const pauseRequestedAt = new Date("2026-09-08T01:00:00.000Z")
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([{ pause_control_run: "running" }])
+      .mockResolvedValueOnce([
+        { ...runRow, status: "running", pause_requested_at: pauseRequestedAt },
+      ])
+    const repository = new RunRepository({
+      query: query as DatabaseExecutor["query"],
+    })
+
+    await expect(
+      repository.requestOwnedPause(applicationId, runId)
+    ).resolves.toMatchObject({
+      id: runId,
+      status: "running",
+      pauseRequestedAt: pauseRequestedAt.toISOString(),
+    })
+    expect(query.mock.calls[0]?.[0]).toContain("pause_control_run")
+    expect(query.mock.calls[0]?.[1]).toEqual([applicationId, runId])
+    expect(query.mock.calls[1]?.[0]).toContain(
+      "onboarding.operator_id = $1::uuid"
+    )
+  })
+
+  it("distinguishes cooperative pause from cancellation in worker control", async () => {
+    const query = vi.fn().mockResolvedValue([
+      {
+        status: "running",
+        lease_owner: "worker-a",
+        lease_valid: true,
+        cancel_requested: false,
+        pause_requested: true,
+      },
+    ])
+    const repository = new RunRepository({
+      query: query as DatabaseExecutor["query"],
+    })
+    await expect(repository.controlState(runId, "worker-a")).resolves.toBe(
+      "pause_requested"
+    )
+  })
+
   it("normalizes database conflicts without reflecting database text", async () => {
     const query = vi
       .fn()
@@ -195,6 +240,7 @@ describe("run repository", () => {
       leaseExpiresAt: null,
       attemptCount: 1,
       cancelRequestedAt: null,
+      pauseRequestedAt: null,
       errorCategory: "provider",
       errorCode: "provider_timeout",
       errorRetryable: true,

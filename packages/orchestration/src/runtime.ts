@@ -5,6 +5,7 @@ import {
   missionIdSchema,
   persistedTextSchema,
   reasonCodeSchema,
+  runActivityDisplaySchema,
   runIdSchema,
 } from "@sentinel/contracts"
 import { isGraphInterrupt } from "@langchain/langgraph"
@@ -68,6 +69,7 @@ export interface OrchestrationEvent {
   readonly retryable?: boolean
   readonly errorCategory?:
     "authorization" | "cancelled" | "provider" | "storage" | "unknown"
+  readonly activity?: z.infer<typeof runActivityDisplaySchema>
 }
 
 export interface OrchestrationEventSink {
@@ -136,6 +138,13 @@ export class LeaseOwnershipError extends Error {
   constructor() {
     super("Orchestration lease ownership was lost")
     this.name = "LeaseOwnershipError"
+  }
+}
+
+export class PauseRequestedOrchestrationError extends Error {
+  constructor() {
+    super("Orchestration pause was requested")
+    this.name = "PauseRequestedOrchestrationError"
   }
 }
 
@@ -214,6 +223,9 @@ function safeEvent(input: OrchestrationEvent): OrchestrationEvent {
       : { budget: orchestrationBudgetSchema.parse(input.budget) }),
     summary: persistedTextSchema.parse(input.summary),
     reasonCode: reasonCodeSchema.parse(input.reasonCode),
+    ...(input.activity === undefined
+      ? {}
+      : { activity: runActivityDisplaySchema.parse(input.activity) }),
     occurredAt: z.iso.datetime({ offset: true }).parse(input.occurredAt),
   }
 }
@@ -301,6 +313,7 @@ function isSafeRuntimeError(error: unknown): error is Error {
     error instanceof TransientOrchestrationError ||
     error instanceof CancelledOrchestrationError ||
     error instanceof LeaseOwnershipError ||
+    error instanceof PauseRequestedOrchestrationError ||
     error instanceof ResumeAuthorizationError ||
     error instanceof ResumeConflictError ||
     error instanceof BudgetExhaustedError ||
@@ -474,7 +487,12 @@ export function wrapNode<State, Update extends Record<string, unknown>>(
     } catch (caught) {
       const error =
         executionSignal?.aborted === true ? externalControlError() : caught
-      if (isGraphInterrupt(error)) throw error
+      if (
+        isGraphInterrupt(error) ||
+        error instanceof PauseRequestedOrchestrationError
+      ) {
+        throw error
+      }
       const retryable = error instanceof TransientOrchestrationError
       const safeError = isSafeRuntimeError(error)
         ? error

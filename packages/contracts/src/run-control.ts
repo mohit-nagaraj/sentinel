@@ -129,6 +129,7 @@ export const publicRunSchema = z.strictObject({
   startedAt: timestampSchema.optional(),
   finishedAt: timestampSchema.optional(),
   cancelRequestedAt: timestampSchema.optional(),
+  pauseRequestedAt: timestampSchema.optional(),
   error: publicErrorSchema.optional(),
 })
 

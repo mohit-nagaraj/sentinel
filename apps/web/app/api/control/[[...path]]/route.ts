@@ -182,6 +182,11 @@ const repositoryErrors: Record<
     "configuration",
     "Application onboarding is not confirmed.",
   ],
+  pause_not_allowed: [
+    409,
+    "validation",
+    "This run cannot be paused in its current state.",
+  ],
   publication_conflict: [
     409,
     "configuration",
