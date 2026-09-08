@@ -6,6 +6,7 @@ import {
   browserTransitionEvidenceSchema,
   contentHashSchema,
   discoveryMissionSchema,
+  persistedTextSchema,
   type ApplicationExplorerPlannerContext,
   type BrowserActionCandidate,
   type BrowserObservation,
@@ -727,7 +728,9 @@ describe("Application Explorer shared specialist kernel", () => {
 
   it("cannot complete when mission questions are unrelated to observed evidence", async () => {
     const selectedMission = mission(42, "workflow_discovery", {
-      questions: ["Was the refund approval audit recorded?"],
+      questions: [
+        persistedTextSchema.parse("Was the refund approval audit recorded?"),
+      ],
     })
     const { browser } = scenario(selectedMission)
     const result = await harness(

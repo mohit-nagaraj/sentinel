@@ -9,20 +9,15 @@ import {
 import {
   InMemoryResumeCoordinator,
   InMemorySpecialistToolExecutionCoordinator,
+  InMemoryCodeExplorerSpecialistStoreForTesting,
   createInMemorySpecialistCheckpointer,
+  createCodeExplorerSpecialist,
+  type CodeExplorerModelDecision,
+  type CodeExplorerModelGateway,
   type OrchestrationEvent,
   type RuntimeDependencies,
 } from "@sentinel/orchestration"
 import { describe, expect, it } from "vitest"
-
-import {
-  InMemoryCodeExplorerSpecialistStoreForTesting,
-  createCodeExplorerSpecialist,
-} from "../../packages/orchestration/src/code-explorer-specialist.ts"
-import type {
-  CodeExplorerModelDecision,
-  CodeExplorerModelGateway,
-} from "../../packages/orchestration/src/code-explorer.ts"
 import { createCodeExplorerGoldenFixture } from "../fixtures/code-explorer.ts"
 
 class AdaptiveCodeSpecialistModel implements CodeExplorerModelGateway {
