@@ -16,6 +16,12 @@ import {
   codeMissionResultSchema,
 } from "./code-explorer.ts"
 import {
+  documentationExplorerMissionSchema,
+  documentationExplorerToolInputSchema,
+  documentationMissionResultSchema,
+  documentationRequirementClaimSchema,
+} from "./documentation-explorer.ts"
+import {
   browserFactEnvelopeSchema,
   browserTransitionSchema,
   codeFactEnvelopeSchema,
@@ -47,6 +53,30 @@ export const parseCodeExplorerMission = (input: unknown) =>
   parseContract("code explorer mission", codeExplorerMissionSchema, input)
 export const parseCodeMissionResult = (input: unknown) =>
   parseContract("code mission result", codeMissionResultSchema, input)
+export const parseDocumentationExplorerMission = (input: unknown) =>
+  parseContract(
+    "documentation explorer mission",
+    documentationExplorerMissionSchema,
+    input
+  )
+export const parseDocumentationExplorerToolInput = (input: unknown) =>
+  parseContract(
+    "documentation explorer tool input",
+    documentationExplorerToolInputSchema,
+    input
+  )
+export const parseDocumentationRequirementClaim = (input: unknown) =>
+  parseContract(
+    "documentation requirement claim",
+    documentationRequirementClaimSchema,
+    input
+  )
+export const parseDocumentationMissionResult = (input: unknown) =>
+  parseContract(
+    "documentation mission result",
+    documentationMissionResultSchema,
+    input
+  )
 export const parseDocumentFactEnvelope = (input: unknown) =>
   parseContract("document fact envelope", documentFactEnvelopeSchema, input)
 export const parseCodeFactEnvelope = (input: unknown) =>

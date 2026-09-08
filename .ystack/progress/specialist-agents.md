@@ -7,7 +7,7 @@
 - [x] Implement the reusable specialist LangGraph kernel.
 - [x] Add scripted trajectories and durable boundary tests.
 
-SNT-014 implementation, QA, P0/P1 review, and PR CI are complete. Merge remains.
+SNT-014 implementation, QA, P0/P1 review, PR CI, and merge are complete.
 
 ### SNT-014 Decisions
 
@@ -51,3 +51,17 @@ SNT-017 is complete and its shared-kernel composition passes independent P0/P1 r
 | 2026-09-08 | Recovery is bound to the checkpoint authentication reference and mission host set.  | A structurally similar screen is insufficient proof when a caller changes account state or broadens browser-policy origins.                                         |
 | 2026-09-08 | Workflow identity hashes the observed state/action path, not planner wording.       | Product identities remain stable across summary paraphrases and branch discovery order while distinct same-kind paths cannot collide.                               |
 | 2026-09-08 | Planner deadlines and tool events are enforced around cleanup-safe lifecycle paths. | Elapsed budgets terminate stalled calls, events pair, and event persistence failures cannot retain browser sessions.                                                |
+
+## SNT-015 Documentation Explorer
+
+- [x] Define strict Documentation Explorer contracts and parsers.
+- [ ] Build the bounded prepared-map tool port.
+- [ ] Compose all six tools through the shared specialist kernel.
+- [ ] Prove golden, conflict, replay, denial, and failure trajectories.
+
+### SNT-015 Decisions
+
+| Date       | Decision                                                                                         | Reason                                                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| 2026-09-08 | Separate exact excerpt citations from compact tree, search, and link summaries.                  | The model can choose evidence without moving full document bodies into checkpoint state.                               |
+| 2026-09-08 | Keep rich requirement, duplicate, conflict, capability, and exclusion records non-authoritative. | SNT-015 discovers cited intent while downstream validation, evidence-tier assignment, and publication remain separate. |
