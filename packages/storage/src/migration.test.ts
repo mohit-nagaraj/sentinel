@@ -11,7 +11,7 @@ const migration = readFileSync(
 )
 const eventIdempotencyMigration = readFileSync(
   new URL(
-    "../../../supabase/migrations/20260908000100_run_event_idempotency.sql",
+    "../../../supabase/migrations/20260908000200_run_event_idempotency.sql",
     import.meta.url
   ),
   "utf8"
