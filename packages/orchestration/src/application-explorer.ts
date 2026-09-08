@@ -81,16 +81,18 @@ export interface ApplicationBrowserRunOptions {
 export interface ApplicationBrowserRuntime<
   Options extends ApplicationBrowserRunOptions,
 > {
-  startRun(options: Options): Promise<BrowserObservation>
-  observe(runId: string): Promise<BrowserObservation>
+  startRun(options: Options, signal?: AbortSignal): Promise<BrowserObservation>
+  observe(runId: string, signal?: AbortSignal): Promise<BrowserObservation>
   performAction(
     runId: string,
-    actionId: string
+    actionId: string,
+    signal?: AbortSignal
   ): Promise<BrowserTransitionEvidence>
   createRecoveryRecipe(runId: string): BrowserRecoveryRecipe
   replay(
     options: Options,
-    recipe: BrowserRecoveryRecipe
+    recipe: BrowserRecoveryRecipe,
+    signal?: AbortSignal
   ): Promise<{
     readonly finalObservation: BrowserObservation
     readonly transitions: readonly BrowserTransitionEvidence[]
@@ -113,6 +115,7 @@ export interface ApplicationExplorerPlannerGateway {
     readonly maxOutputTokens?: number
     readonly schemaName: string
     readonly schema: z.ZodType<Output>
+    readonly signal?: AbortSignal
   }): Promise<{
     readonly output: Output
     readonly model: string
@@ -172,6 +175,7 @@ export interface ApplicationExplorerDependencies<
 
 export type ApplicationExplorerToolErrorCode =
   | "tool_not_allowed"
+  | "budget_exhausted"
   | "mission_mismatch"
   | "observation_mismatch"
   | "action_not_observed"
@@ -336,6 +340,9 @@ function blocker(
 }
 
 function assertMissionTool(mission: DiscoveryMission, tool: string): void {
+  if (mission.agent !== "application") {
+    throw new ApplicationExplorerToolError("mission_mismatch", false)
+  }
   if (!mission.scope.allowedTools.includes(tool)) {
     throw new ApplicationExplorerToolError("tool_not_allowed", false)
   }
@@ -408,7 +415,8 @@ export class ApplicationExplorerTools<
   async observePage(
     missionInput: DiscoveryMission,
     input: unknown,
-    current?: BrowserObservation
+    current?: BrowserObservation,
+    signal?: AbortSignal
   ): Promise<BrowserObservation> {
     const mission = discoveryMissionSchema.parse(missionInput)
     const parsed = observePageToolInputSchema.parse(input)
@@ -421,13 +429,14 @@ export class ApplicationExplorerTools<
     ) {
       throw new ApplicationExplorerToolError("observation_mismatch", true)
     }
-    return this.browser.observe(mission.runId)
+    return this.browser.observe(mission.runId, signal)
   }
 
   async performObservedAction(
     missionInput: DiscoveryMission,
     input: unknown,
-    observation: BrowserObservation
+    observation: BrowserObservation,
+    signal?: AbortSignal
   ): Promise<BrowserTransitionEvidence> {
     const mission = discoveryMissionSchema.parse(missionInput)
     const parsed = performObservedActionToolInputSchema.parse(input)
@@ -444,13 +453,14 @@ export class ApplicationExplorerTools<
     if (!candidate.policy.allowed || candidate.disabled) {
       throw new ApplicationExplorerToolError("unsafe_action", true, candidate)
     }
-    return this.browser.performAction(mission.runId, candidate.actionId)
+    return this.browser.performAction(mission.runId, candidate.actionId, signal)
   }
 
   async navigateHistory(
     missionInput: DiscoveryMission,
     input: unknown,
-    observation: BrowserObservation
+    observation: BrowserObservation,
+    signal?: AbortSignal
   ): Promise<BrowserTransitionEvidence> {
     const mission = discoveryMissionSchema.parse(missionInput)
     const parsed = navigateHistoryToolInputSchema.parse(input)
@@ -467,7 +477,7 @@ export class ApplicationExplorerTools<
     if (!candidate.policy.allowed || candidate.disabled) {
       throw new ApplicationExplorerToolError("unsafe_action", true, candidate)
     }
-    return this.browser.performAction(mission.runId, candidate.actionId)
+    return this.browser.performAction(mission.runId, candidate.actionId, signal)
   }
 
   finishApplicationMission(
@@ -1489,6 +1499,41 @@ function missionOutput(input: {
   })
 }
 
+export interface BuildApplicationExplorerMissionOutputInput {
+  readonly mission: DiscoveryMission
+  readonly observation: BrowserObservation
+  readonly checkpoint: ApplicationExplorerCheckpointState
+  readonly transitions: readonly BrowserTransitionEvidence[]
+  readonly priorEvidenceClaims?:
+    readonly ApplicationExplorerEvidenceClaim[] | undefined
+  readonly blockers?: readonly ApplicationExplorerBlocker[] | undefined
+  readonly terminal: ApplicationExplorerTerminal
+}
+
+export function buildApplicationExplorerMissionOutput(
+  input: BuildApplicationExplorerMissionOutputInput
+): ApplicationExplorerMissionOutput {
+  const mission = discoveryMissionSchema.parse(input.mission)
+  if (mission.agent !== "application") {
+    throw new Error("Application Explorer requires an application mission")
+  }
+  return missionOutput({
+    mission,
+    active: {
+      observation: input.observation,
+      checkpoint: applicationExplorerCheckpointStateSchema.parse(
+        input.checkpoint
+      ),
+      evidence: {
+        transitions: [...input.transitions],
+        priorClaims: [...(input.priorEvidenceClaims ?? [])],
+      },
+      blockers: [...(input.blockers ?? [])],
+    },
+    terminal: applicationExplorerTerminalSchema.parse(input.terminal),
+  })
+}
+
 export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
   private readonly browser: ApplicationBrowserRuntime<Options>
   private readonly planner: ApplicationExplorerPlannerGateway
@@ -1591,12 +1636,44 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
     capabilityHints: readonly string[],
     requirementHints: readonly string[]
   ): Promise<ActiveExploration | ApplicationExplorerMissionOutput> {
+    assertMissionTool(mission, "observe_page")
     const active: ActiveExploration = {
       observation: undefined as never,
       checkpoint,
       evidence: { transitions: [], priorClaims: [...priorClaims] },
       blockers: [],
     }
+    const recoveryBudget = incrementBudget(checkpoint.budgetUsed, {
+      toolCalls: 1,
+    })
+    const recoveryBudgetExceeded = budgetOverdrawn(
+      recoveryBudget,
+      mission.budget
+    )
+    if (recoveryBudgetExceeded !== undefined) {
+      active.blockers.push(
+        blocker(
+          "budget_exhausted",
+          recoveryBudgetExceeded,
+          "Browser recovery exceeded the remaining mission budget",
+          false
+        )
+      )
+      return this.finish(
+        mission,
+        active,
+        terminal(
+          "budget_exhausted",
+          recoveryBudgetExceeded,
+          "Browser recovery exceeded the remaining mission budget"
+        )
+      )
+    }
+    active.checkpoint = applicationExplorerCheckpointStateSchema.parse({
+      ...active.checkpoint,
+      budgetUsed: recoveryBudget,
+      updatedAt: iso(this.now),
+    })
     await this.emit(mission, {
       kind: "tool_started",
       toolName: "observe_page",
@@ -1662,6 +1739,32 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
         )
       )
     }
+    const projectedReplayBudget = incrementBudget(recoveryBudget, {
+      browserActions: checkpoint.replayBoundary.recipe.steps.length,
+    })
+    const projectedReplayExceeded = budgetOverdrawn(
+      projectedReplayBudget,
+      mission.budget
+    )
+    if (projectedReplayExceeded !== undefined) {
+      active.blockers.push(
+        blocker(
+          "budget_exhausted",
+          projectedReplayExceeded,
+          "Browser recovery exceeded the remaining mission budget",
+          false
+        )
+      )
+      return this.finish(
+        mission,
+        active,
+        terminal(
+          "budget_exhausted",
+          projectedReplayExceeded,
+          "Browser recovery exceeded the remaining mission budget"
+        )
+      )
+    }
     try {
       const replay = await this.browser.replay(
         browserOptions,
@@ -1674,6 +1777,9 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
         throw new Error("recovery fingerprint mismatch")
       }
       assertObservationScope(mission, replay.finalObservation)
+      const replayBudget = incrementBudget(recoveryBudget, {
+        browserActions: replay.transitions.length,
+      })
       const context = buildApplicationExplorerPlannerContext({
         mission,
         observation: replay.finalObservation,
@@ -1689,6 +1795,7 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
         ranked: context.candidates,
         recipe: this.browser.createRecoveryRecipe(mission.runId),
         now: iso(this.now),
+        budgetUsed: replayBudget,
       })
       await this.emit(mission, {
         kind: "tool_completed",
@@ -1813,6 +1920,10 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
       )
       if ("result" in active) return active
     } else {
+      assertMissionTool(mission, "observe_page")
+      if (mission.budget.toolCalls < 1 || mission.budget.elapsedMs < 1) {
+        throw new ApplicationExplorerToolError("budget_exhausted", false)
+      }
       await this.emit(mission, {
         kind: "tool_started",
         toolName: "observe_page",
@@ -1846,14 +1957,17 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
       const now = iso(this.now)
       active = {
         observation,
-        checkpoint: initialCheckpoint({
-          mission,
-          observation,
-          recipe: this.browser.createRecoveryRecipe(mission.runId),
-          authenticationStateReference:
-            input.browserOptions.storageStateReference,
-          ranked: context.candidates,
-          now,
+        checkpoint: applicationExplorerCheckpointStateSchema.parse({
+          ...initialCheckpoint({
+            mission,
+            observation,
+            recipe: this.browser.createRecoveryRecipe(mission.runId),
+            authenticationStateReference:
+              input.browserOptions.storageStateReference,
+            ranked: context.candidates,
+            now,
+          }),
+          budgetUsed: incrementBudget(ZERO_BUDGET, { toolCalls: 1 }),
         }),
         evidence: {
           transitions: [],
@@ -2404,6 +2518,37 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
             )
           }
           try {
+            const projectedReplayBudget = incrementBudget(
+              active.checkpoint.budgetUsed,
+              {
+                browserActions:
+                  active.checkpoint.replayBoundary.recipe.steps.length,
+              }
+            )
+            const replayBudgetExceeded = budgetOverdrawn(
+              projectedReplayBudget,
+              mission.budget
+            )
+            if (replayBudgetExceeded !== undefined) {
+              active.blockers.push(
+                blocker(
+                  "budget_exhausted",
+                  replayBudgetExceeded,
+                  "Browser recovery exceeded the remaining mission budget",
+                  false,
+                  active.observation
+                )
+              )
+              return this.finish(
+                mission,
+                active,
+                terminal(
+                  "budget_exhausted",
+                  replayBudgetExceeded,
+                  "Browser recovery exceeded the remaining mission budget"
+                )
+              )
+            }
             if (this.browser.isActive(mission.runId)) {
               await this.browser.cancelRun(mission.runId)
             }
@@ -2418,6 +2563,9 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
               throw new Error("recovery fingerprint mismatch")
             }
             assertObservationScope(mission, replay.finalObservation)
+            const replayBudget = incrementBudget(active.checkpoint.budgetUsed, {
+              browserActions: replay.transitions.length,
+            })
             active.observation = replay.finalObservation
             const recoveredContext = buildApplicationExplorerPlannerContext({
               mission,
@@ -2433,6 +2581,7 @@ export class ApplicationExplorer<Options extends ApplicationBrowserRunOptions> {
               ranked: recoveredContext.candidates,
               recipe: this.browser.createRecoveryRecipe(mission.runId),
               now: iso(this.now),
+              budgetUsed: replayBudget,
             })
             await this.emit(mission, {
               kind: "warning",

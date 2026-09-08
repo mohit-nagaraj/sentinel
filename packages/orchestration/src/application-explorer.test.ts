@@ -802,6 +802,9 @@ describe("Application Explorer mission runtime", () => {
       priorEvidenceClaims: firstOutput.evidenceClaims,
     })
     expect(resumed.result.status).toBe("complete")
+    expect(resumed.checkpoint.budgetUsed.browserActions).toBe(
+      firstOutput.checkpoint.budgetUsed.browserActions + 1
+    )
     expect(safeBrowser.replayedOptions[0]?.storageStateReference).toBe(
       browserOptions().storageStateReference
     )
@@ -820,6 +823,29 @@ describe("Application Explorer mission runtime", () => {
     expect(mismatchedAuth.result.status).toBe("needs_human")
     expect(mismatchedAuth.result.stopReason.code).toBe(
       "authentication_state_mismatch"
+    )
+    expect(safeBrowser.replayedOptions).toHaveLength(1)
+    expect(mismatchedAuth.checkpoint.budgetUsed.browserActions).toBe(
+      firstOutput.checkpoint.budgetUsed.browserActions
+    )
+
+    const replayDenied = await createApplicationExplorer({
+      browser: safeBrowser,
+      planner: new ScriptedPlanner([]),
+    }).run({
+      mission: mission({
+        budget: {
+          ...budget,
+          browserActions: firstOutput.checkpoint.budgetUsed.browserActions,
+        },
+      }),
+      browserOptions: browserOptions(),
+      checkpoint: firstOutput.checkpoint,
+      priorEvidenceClaims: firstOutput.evidenceClaims,
+    })
+    expect(replayDenied.result.status).toBe("budget_exhausted")
+    expect(replayDenied.checkpoint.budgetUsed.browserActions).toBe(
+      firstOutput.checkpoint.budgetUsed.browserActions
     )
     expect(safeBrowser.replayedOptions).toHaveLength(1)
 
