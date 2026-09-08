@@ -362,6 +362,41 @@ describe("orchestration runtime boundaries", () => {
     expect(aborted).toBe(true)
   })
 
+  it("bridges worker cancellation into active tool signals", async () => {
+    const execution = new AbortController()
+    let toolSignalAborted = false
+    const dependencies: RuntimeDependencies = {
+      owner: "worker-a",
+      control: { assertActive: async () => undefined },
+      events: { append: async () => undefined },
+      effects: { execute: async () => undefined },
+      resumeAuthorization: { authorize: async () => true },
+      resumeCoordinator: new InMemoryResumeCoordinator(),
+      executionSignal: execution.signal,
+    }
+    const node = wrapNode(
+      "cancelled_tool_node",
+      dependencies,
+      parseSyntheticState,
+      async (_state, runtime) =>
+        new Promise<never>((_resolve, reject) => {
+          runtime.signal.addEventListener(
+            "abort",
+            () => {
+              toolSignalAborted = true
+              reject(runtime.signal.reason)
+            },
+            { once: true }
+          )
+          execution.abort(new CancelledOrchestrationError())
+        })
+    )
+    await expect(node(state)).rejects.toBeInstanceOf(
+      CancelledOrchestrationError
+    )
+    expect(toolSignalAborted).toBe(true)
+  })
+
   it("chunks elapsed deadlines above Node's maximum timer delay", async () => {
     const timer = vi.spyOn(globalThis, "setTimeout")
     const dependencies: RuntimeDependencies = {

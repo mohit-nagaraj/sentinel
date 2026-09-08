@@ -15,8 +15,9 @@ corepack enable
 pnpm install --frozen-lockfile
 ```
 
-No environment variables are required for default development, tests, or
-builds. `.env.example` lists reserved names without credentials.
+No environment variables are required for default tests or builds. The durable
+worker requires its database, graph module, and health settings from
+`.env.example`; provider credentials remain optional until their workflows run.
 
 ## Workspace
 
@@ -61,6 +62,26 @@ confirmation until reinspection succeeds. Relevant source, authentication, or
 safety edits invalidate confirmation and mark published knowledge stale; name-only
 edits preserve readiness. Confirmation does not enqueue initialization.
 
+Long-running commands use the authenticated `/api/control` boundary and return a
+durable run immediately. The supported routes are:
+
+- `POST /api/control/runs` - enqueue one of the six typed run commands.
+- `GET /api/control/runs` - list owned runs with `limit`, `cursorCreatedAt`, and
+  `cursorId`; add `applicationId` to filter.
+- `GET /api/control/runs/:id` and `/events` - read an owned run and its ordered
+  event page (`after`, `limit`).
+- `POST /api/control/runs/:id/cancel` and `/retry` - request cooperative stop or
+  create a linked attempt for a retryable terminal failure.
+- `GET /api/control/runs/:id/interrupt` and
+  `POST /api/control/runs/:id/interrupts/:decisionId/respond` - read and answer a
+  bounded human decision exactly once.
+- `GET /api/control/readiness` - inspect redacted storage, worker, model,
+  browser, and GitHub readiness.
+
+Every route repeats operator authentication and storage ownership checks. API
+responses are private/no-store DTOs and never include request payloads,
+idempotency keys, leases, checkpoint state, or provider error details.
+
 Production control-plane access requires the existing server-only
 `SUPABASE_DB_URL`, optional read-only `GITHUB_TOKEN`, and a server-derived
 `SENTINEL_OPERATOR_ID` UUID. `SENTINEL_OPERATOR_TOKEN` must contain at least 32
@@ -68,6 +89,25 @@ characters; the Proxy challenges browsers with HTTP Basic and every Server Actio
 independently accepts only that Basic credential or an exact Bearer token.
 `SENTINEL_CONTROL_PLANE_FIXTURE=1` exists only for the isolated Playwright suite
 and must not be enabled in a production deployment.
+
+The durable worker loads a server module named by
+`SENTINEL_WORKER_GRAPH_MODULE`. That module must export
+`createRunGraphs({ databaseUrl, workerId })` and return handlers for all six run
+types, each with `hasCheckpoint`, `hasPendingInterrupt`, `start`, `continue`, and
+`resume` methods. Lease reclaim checks checkpoint existence before choosing
+`start` or `continue` with the same run identity. A stored response calls
+`resume` only while its exact interrupt remains pending; otherwise execution
+continues from the newer checkpoint. Successful handlers return a typed
+terminal publication that storage commits atomically with run/application state.
+SIGINT/SIGTERM and cancellation abort the execution signal and run registered
+cleanup callbacks before ownership is released. The worker serves
+`/health` and `/readiness` on `SENTINEL_WORKER_HEALTH_HOST` and
+`SENTINEL_WORKER_HEALTH_PORT`; configure the web probe with the full
+`SENTINEL_WORKER_HEALTH_URL`.
+
+Control-plane readiness is healthy only when storage and every worker/model/
+browser/GitHub health URL is configured, reachable, and returns a small JSON
+payload with `status: "ok"` or `status: "ready"`.
 
 ## Quality Commands
 

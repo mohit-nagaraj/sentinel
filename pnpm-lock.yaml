@@ -159,6 +159,12 @@ importers:
       '@sentinel/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@sentinel/orchestration':
+        specifier: workspace:*
+        version: link:../../packages/orchestration
+      '@sentinel/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
     devDependencies:
       tsup:
         specifier: ^8.5.0

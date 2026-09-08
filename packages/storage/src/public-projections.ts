@@ -38,7 +38,20 @@ export interface PublicRunSummary {
   readonly finishedAt: string | null
 }
 
-export function toPublicRunSummary(run: RunRecord): PublicRunSummary {
+export function toPublicRunSummary(
+  run: Pick<
+    RunRecord,
+    | "id"
+    | "applicationId"
+    | "runType"
+    | "status"
+    | "attemptCount"
+    | "createdAt"
+    | "startedAt"
+    | "finishedAt"
+  > &
+    Partial<RunRecord>
+): PublicRunSummary {
   return {
     id: run.id,
     applicationId: run.applicationId,

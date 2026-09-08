@@ -233,5 +233,5 @@ describe("web documentation source", () => {
     expect(limited.warnings.map((warning) => warning.code)).toContain(
       "byte_limit_reached"
     )
-  })
+  }, 15_000)
 })

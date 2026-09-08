@@ -5,13 +5,15 @@
   "type": "module",
   "scripts": {
     "build": "tsup",
-    "dev": "node --experimental-strip-types --watch src/cli.ts",
+    "dev": "node --experimental-transform-types --watch src/cli.ts",
     "health": "pnpm build && node dist/health.js",
     "start": "pnpm build && node dist/cli.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@sentinel/contracts": "workspace:*"
+    "@sentinel/contracts": "workspace:*",
+    "@sentinel/orchestration": "workspace:*",
+    "@sentinel/storage": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.5.0",
