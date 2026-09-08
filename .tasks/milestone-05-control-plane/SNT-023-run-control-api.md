@@ -63,7 +63,7 @@ Realtime UI, GitHub webhook ingress, actual deployment platform autoscaling, and
 ## Implementation notes
 
 - Public contracts: `packages/contracts/src/run-control.ts`.
-- Durable state machine: `supabase/migrations/20260908000200_run_control.sql` and `packages/storage/src/run-repository.ts`.
+- Durable state machine: `supabase/migrations/20260908000300_run_control.sql` and `packages/storage/src/run-repository.ts`.
 - Graph dispatch and process lifecycle: `packages/orchestration/src/run-dispatch.ts`, `apps/worker/src/worker.ts`, and `apps/worker/src/health-server.ts`.
 - HTTP boundary: `apps/web/lib/run-control.ts` and `apps/web/app/api/control/[[...path]]/route.ts`.
 - Verification covers focused contract/storage/orchestration/worker/web tests, a real LangGraph start/interrupt/resume path, and a disposable PostgreSQL matrix for idempotency, mutation locking, lease reclaim, interrupts, retries, pagination, ownership, and application status transitions.

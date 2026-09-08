@@ -18,7 +18,7 @@ const eventIdempotencyMigration = readFileSync(
 )
 const runControlMigration = readFileSync(
   new URL(
-    "../../../supabase/migrations/20260908000200_run_control.sql",
+    "../../../supabase/migrations/20260908000300_run_control.sql",
     import.meta.url
   ),
   "utf8"

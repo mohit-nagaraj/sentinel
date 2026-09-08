@@ -23,7 +23,7 @@ const describeIntegration = enabled ? describe : describe.skip
 const migrations = [
   "../../supabase/migrations/20260907000100_operational_state.sql",
   "../../supabase/migrations/20260908000100_onboarding_control_plane.sql",
-  "../../supabase/migrations/20260908000200_run_control.sql",
+  "../../supabase/migrations/20260908000300_run_control.sql",
 ].map((path) => readFileSync(new URL(path, import.meta.url), "utf8"))
 
 describeIntegration("run control PostgreSQL state machine", () => {
