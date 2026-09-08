@@ -14,7 +14,7 @@
 - Scope onboarding reads and mutations by server-derived operator ID next to the query.
 - Store only opaque target-secret references in ordinary tables and DTOs.
 - Protect delayed inspection and confirmation with compare-and-set fingerprints.
-- Keep run idempotency, active mutation exclusion, retry linkage, interrupt response, and application status transitions inside database functions.
+- Keep run idempotency, active mutation exclusion, retry linkage, interrupt response, typed terminal publication, and application status transitions inside database functions.
 - Project fixed public failure messages; never return request JSON, idempotency keys, leases, or database/provider error text.
 - Preserve current graph identity on failed or stale configuration changes.
 - Use scripted database unit tests and opt-in disposable Supabase integration tests.

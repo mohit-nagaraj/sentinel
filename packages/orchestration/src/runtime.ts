@@ -114,6 +114,7 @@ export interface RuntimeDependencies {
   readonly effects: SideEffectPort
   readonly resumeAuthorization: ResumeAuthorizationPort
   readonly resumeCoordinator: ResumeCoordinator
+  readonly executionSignal?: AbortSignal | (() => AbortSignal | undefined)
   readonly now?: () => Date
 }
 
@@ -339,9 +340,28 @@ export function wrapNode<State, Update extends Record<string, unknown>>(
     const eventContext = options.eventContext?.(state) ?? {}
     const started = now().getTime()
     const abortController = new AbortController()
+    const executionSignal =
+      typeof dependencies.executionSignal === "function"
+        ? dependencies.executionSignal()
+        : dependencies.executionSignal
+    const abortFromExecution = () =>
+      abortController.abort(executionSignal?.reason)
+    if (executionSignal?.aborted === true) abortFromExecution()
+    else
+      executionSignal?.addEventListener("abort", abortFromExecution, {
+        once: true,
+      })
+    const externalControlError = () =>
+      executionSignal?.reason instanceof Error &&
+      executionSignal.reason.name === "LeaseOwnershipError"
+        ? new LeaseOwnershipError()
+        : new CancelledOrchestrationError()
     const elapsed = () =>
       Math.max(0, now().getTime() - runtimeState.startedAtMs)
     const checkActive = async () => {
+      if (executionSignal?.aborted === true) {
+        throw externalControlError()
+      }
       if (
         abortController.signal.aborted ||
         (options.enforceElapsedBudget !== false &&
@@ -451,7 +471,9 @@ export function wrapNode<State, Update extends Record<string, unknown>>(
       ;(options.validateUpdate ?? assertCompactCheckpointState)(update)
       await checkActive()
       return update
-    } catch (error) {
+    } catch (caught) {
+      const error =
+        executionSignal?.aborted === true ? externalControlError() : caught
       if (isGraphInterrupt(error)) throw error
       const retryable = error instanceof TransientOrchestrationError
       const safeError = isSafeRuntimeError(error)
@@ -490,6 +512,8 @@ export function wrapNode<State, Update extends Record<string, unknown>>(
         elapsedLimitMs: runtimeState.budget.elapsedMs,
       })
       throw safeError
+    } finally {
+      executionSignal?.removeEventListener("abort", abortFromExecution)
     }
   }
 }

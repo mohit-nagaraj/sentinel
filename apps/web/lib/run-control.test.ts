@@ -118,15 +118,15 @@ describe("run control service", () => {
     const target = store()
     const fetcher = vi
       .fn()
-      .mockResolvedValue(new Response(null, { status: 204 }))
+      .mockImplementation(async () => Response.json({ status: "ready" }))
     const service = new RunControlService(
       operatorId,
       target,
       {
         SENTINEL_WORKER_HEALTH_URL: "http://worker.internal/health",
-        AZURE_OPENAI_ENDPOINT: "https://models.example.com",
-        AZURE_OPENAI_API_KEY: "private-model-key",
-        AZURE_OPENAI_DEPLOYMENT: "sentinel",
+        SENTINEL_MODEL_HEALTH_URL: "http://model.internal/health",
+        SENTINEL_BROWSER_HEALTH_URL: "http://browser.internal/health",
+        SENTINEL_GITHUB_HEALTH_URL: "http://github.internal/health",
       },
       fetcher
     )
@@ -139,6 +139,20 @@ describe("run control service", () => {
         { name: "model", status: "ready" },
       ])
     )
-    expect(JSON.stringify(readiness)).not.toContain("private-model-key")
+    expect(fetcher).toHaveBeenCalledTimes(4)
+  })
+
+  it("degrades readiness when any required provider probe is absent", async () => {
+    const service = new RunControlService(operatorId, store(), {})
+    const readiness = await service.readiness()
+    expect(readiness.status).toBe("degraded")
+    expect(readiness.dependencies).toEqual(
+      expect.arrayContaining([
+        { name: "worker", status: "unconfigured" },
+        { name: "model", status: "unconfigured" },
+        { name: "browser", status: "unconfigured" },
+        { name: "github", status: "unconfigured" },
+      ])
+    )
   })
 })

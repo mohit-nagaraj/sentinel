@@ -15,8 +15,9 @@ corepack enable
 pnpm install --frozen-lockfile
 ```
 
-No environment variables are required for default development, tests, or
-builds. `.env.example` lists reserved names without credentials.
+No environment variables are required for default tests or builds. The durable
+worker requires its database, graph module, and health settings from
+`.env.example`; provider credentials remain optional until their workflows run.
 
 ## Workspace
 
@@ -92,13 +93,21 @@ and must not be enabled in a production deployment.
 The durable worker loads a server module named by
 `SENTINEL_WORKER_GRAPH_MODULE`. That module must export
 `createRunGraphs({ databaseUrl, workerId })` and return handlers for all six run
-types, each with `start`, `continue`, and `resume` methods. Lease reclaim calls
-`continue` with the same run/checkpoint identity; a stored interrupt response
-calls `resume`. SIGINT/SIGTERM and cancellation abort the execution signal and
-run registered cleanup callbacks before ownership is released. The worker serves
+types, each with `hasCheckpoint`, `hasPendingInterrupt`, `start`, `continue`, and
+`resume` methods. Lease reclaim checks checkpoint existence before choosing
+`start` or `continue` with the same run identity. A stored response calls
+`resume` only while its exact interrupt remains pending; otherwise execution
+continues from the newer checkpoint. Successful handlers return a typed
+terminal publication that storage commits atomically with run/application state.
+SIGINT/SIGTERM and cancellation abort the execution signal and run registered
+cleanup callbacks before ownership is released. The worker serves
 `/health` and `/readiness` on `SENTINEL_WORKER_HEALTH_HOST` and
 `SENTINEL_WORKER_HEALTH_PORT`; configure the web probe with the full
 `SENTINEL_WORKER_HEALTH_URL`.
+
+Control-plane readiness is healthy only when storage and every worker/model/
+browser/GitHub health URL is configured, reachable, and returns a small JSON
+payload with `status: "ok"` or `status: "ready"`.
 
 ## Quality Commands
 

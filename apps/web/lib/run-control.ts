@@ -69,21 +69,17 @@ export interface RunControlStore {
 
 export interface ReadinessEnvironment {
   readonly SENTINEL_WORKER_HEALTH_URL?: string | undefined
-  readonly AZURE_OPENAI_ENDPOINT?: string | undefined
-  readonly AZURE_OPENAI_API_KEY?: string | undefined
-  readonly AZURE_OPENAI_DEPLOYMENT?: string | undefined
-  readonly GITHUB_APP_ID?: string | undefined
-  readonly GITHUB_APP_PRIVATE_KEY_PATH?: string | undefined
+  readonly SENTINEL_MODEL_HEALTH_URL?: string | undefined
+  readonly SENTINEL_BROWSER_HEALTH_URL?: string | undefined
+  readonly SENTINEL_GITHUB_HEALTH_URL?: string | undefined
 }
 
 function runtimeReadinessEnvironment(): ReadinessEnvironment {
   return {
     SENTINEL_WORKER_HEALTH_URL: process.env["SENTINEL_WORKER_HEALTH_URL"],
-    AZURE_OPENAI_ENDPOINT: process.env["AZURE_OPENAI_ENDPOINT"],
-    AZURE_OPENAI_API_KEY: process.env["AZURE_OPENAI_API_KEY"],
-    AZURE_OPENAI_DEPLOYMENT: process.env["AZURE_OPENAI_DEPLOYMENT"],
-    GITHUB_APP_ID: process.env["GITHUB_APP_ID"],
-    GITHUB_APP_PRIVATE_KEY_PATH: process.env["GITHUB_APP_PRIVATE_KEY_PATH"],
+    SENTINEL_MODEL_HEALTH_URL: process.env["SENTINEL_MODEL_HEALTH_URL"],
+    SENTINEL_BROWSER_HEALTH_URL: process.env["SENTINEL_BROWSER_HEALTH_URL"],
+    SENTINEL_GITHUB_HEALTH_URL: process.env["SENTINEL_GITHUB_HEALTH_URL"],
   }
 }
 
@@ -187,35 +183,35 @@ export class RunControlService {
 
   async readiness() {
     const storageReady = await this.store.ready()
-    const worker = await this.workerReadiness()
-    const modelConfigured = [
-      this.environment.AZURE_OPENAI_ENDPOINT,
-      this.environment.AZURE_OPENAI_API_KEY,
-      this.environment.AZURE_OPENAI_DEPLOYMENT,
-    ].every((value) => value !== undefined && value.length > 0)
-    const githubConfigured =
-      this.environment.GITHUB_APP_ID !== undefined &&
-      this.environment.GITHUB_APP_ID.length > 0 &&
-      this.environment.GITHUB_APP_PRIVATE_KEY_PATH !== undefined &&
-      this.environment.GITHUB_APP_PRIVATE_KEY_PATH.length > 0
+    const [worker, model, browser, github] = await Promise.all([
+      this.probeReadiness(this.environment.SENTINEL_WORKER_HEALTH_URL),
+      this.probeReadiness(this.environment.SENTINEL_MODEL_HEALTH_URL),
+      this.probeReadiness(this.environment.SENTINEL_BROWSER_HEALTH_URL),
+      this.probeReadiness(this.environment.SENTINEL_GITHUB_HEALTH_URL),
+    ])
+    const dependencies = [
+      {
+        name: "storage" as const,
+        status: storageReady ? ("ready" as const) : ("degraded" as const),
+      },
+      { name: "worker" as const, status: worker },
+      { name: "model" as const, status: model },
+      { name: "browser" as const, status: browser },
+      { name: "github" as const, status: github },
+    ]
     return controlReadinessSchema.parse({
       schemaVersion: 1,
       service: "control-plane",
-      status: storageReady && worker === "ready" ? "ready" : "degraded",
-      dependencies: [
-        { name: "storage", status: storageReady ? "ready" : "degraded" },
-        { name: "worker", status: worker },
-        { name: "model", status: modelConfigured ? "ready" : "unconfigured" },
-        { name: "browser", status: "ready" },
-        { name: "github", status: githubConfigured ? "ready" : "unconfigured" },
-      ],
+      status: dependencies.every((dependency) => dependency.status === "ready")
+        ? "ready"
+        : "degraded",
+      dependencies,
     })
   }
 
-  private async workerReadiness(): Promise<
-    "ready" | "degraded" | "unconfigured"
-  > {
-    const value = this.environment.SENTINEL_WORKER_HEALTH_URL
+  private async probeReadiness(
+    value: string | undefined
+  ): Promise<"ready" | "degraded" | "unconfigured"> {
     if (value === undefined || value.length === 0) return "unconfigured"
     let url: URL
     try {
@@ -230,7 +226,16 @@ export class RunControlService {
         headers: { accept: "application/json" },
         signal: AbortSignal.timeout(2_000),
       })
-      return response.ok ? "ready" : "degraded"
+      if (
+        !response.ok ||
+        Number(response.headers.get("content-length") ?? "0") > 4_096
+      ) {
+        return "degraded"
+      }
+      const payload = z
+        .object({ status: z.enum(["ok", "ready"]) })
+        .safeParse(await response.json())
+      return payload.success ? "ready" : "degraded"
     } catch {
       return "degraded"
     }

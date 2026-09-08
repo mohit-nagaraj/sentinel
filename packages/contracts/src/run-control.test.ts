@@ -5,6 +5,7 @@ import {
   humanDecisionSchema,
   publicRunSchema,
   runCommandSchema,
+  runTerminalPublicationSchema,
 } from "./run-control.ts"
 
 const budget = {
@@ -111,5 +112,67 @@ describe("run control contracts", () => {
     expect(() =>
       humanDecisionSchema.parse({ approved: true, note: "x".repeat(4_097) })
     ).toThrow()
+    expect(() =>
+      runCommandSchema.parse({
+        schemaVersion: 1,
+        applicationId,
+        type: "run_eval",
+        idempotencyKey: "unbounded:budget",
+        budget: { ...budget, modelCalls: 251 },
+        payload: { fixtureKey: "smoke" },
+      })
+    ).toThrow()
+  })
+
+  it("binds inspection publications to one bounded report fingerprint", () => {
+    const fingerprint = `sha256:${"a".repeat(64)}`
+    const evidence = {
+      capability: "repository_resolved" as const,
+      status: "detected" as const,
+      code: "repository_resolved",
+      summary: "Repository resolved",
+      source: "repository" as const,
+      references: ["composer.json"],
+    }
+    const report = {
+      schemaVersion: 1 as const,
+      inputFingerprint: fingerprint,
+      status: "supported" as const,
+      resolvedCommitSha: "a".repeat(40),
+      selectedAdapters: ["php_laravel"],
+      evidence: [evidence],
+      findings: [],
+      humanActions: [],
+      proposedScope: {
+        repositoryPaths: ["src"],
+        documentationSources: [],
+        applicationOrigins: ["https://app.example.com"],
+        allowedActionCategories: ["safe_read"],
+        maxActions: 10,
+        maxScreens: 10,
+        maxDurationSeconds: 60,
+      },
+      inspectedAt: "2026-09-08T00:00:00.000Z",
+    }
+    expect(() =>
+      runTerminalPublicationSchema.parse({
+        kind: "inspection",
+        inputFingerprint: `sha256:${"b".repeat(64)}`,
+        report,
+      })
+    ).toThrow("fingerprint")
+    expect(() =>
+      runTerminalPublicationSchema.parse({
+        kind: "inspection",
+        inputFingerprint: fingerprint,
+        report: {
+          ...report,
+          evidence: Array.from({ length: 100 }, () => ({
+            ...evidence,
+            references: Array.from({ length: 20 }, () => "x".repeat(2_048)),
+          })),
+        },
+      })
+    ).toThrow("persisted report limit")
   })
 })

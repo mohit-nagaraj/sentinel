@@ -17,6 +17,7 @@ import {
   reasonCodeSchema,
   runCommandSchema,
   runStatusSchema,
+  runTerminalPublicationSchema,
   runTypeSchema,
   type HumanDecision,
   type MissionBudget,
@@ -25,10 +26,11 @@ import {
   type RunCommand,
   type RunCursor,
   type RunEvent,
+  type RunTerminalPublication,
 } from "@sentinel/contracts"
 import { z } from "zod"
 
-import type { DatabaseExecutor } from "./database.ts"
+import type { DatabaseExecutor, SqlParameter } from "./database.ts"
 
 const operatorIdSchema = z.uuid()
 const ownerSchema = z
@@ -49,6 +51,10 @@ const runRowSchema = z.object({
   request_fingerprint: z.string().regex(/^sha256:[a-f0-9]{64}$/),
   retry_of: databaseRunIdSchema.nullable(),
   resume_decision_id: reasonCodeSchema.nullable(),
+  configuration_fingerprint: z
+    .string()
+    .regex(/^sha256:[a-f0-9]{64}$/)
+    .nullable(),
   lease_owner: z.string().nullable(),
   lease_expires_at: z.coerce.date().nullable(),
   attempt_count: z.coerce.number().int().nonnegative(),
@@ -77,12 +83,17 @@ const interruptRowSchema = z.object({
 const knownErrorCodes = [
   "active_run_conflict",
   "application_not_found",
+  "assessment_not_ready",
+  "cancellation_not_allowed",
   "idempotency_conflict",
   "interrupt_conflict",
   "interrupt_not_found",
+  "invalid_budget",
+  "invalid_application_state",
   "knowledge_not_ready",
   "lease_lost",
   "onboarding_not_confirmed",
+  "publication_conflict",
   "retry_not_allowed",
   "run_not_found",
 ] as const
@@ -118,6 +129,7 @@ export interface RunRecord {
   readonly requestFingerprint: string
   readonly retryOf: string | null
   readonly resumeDecisionId: string | null
+  readonly configurationFingerprint: string | null
   readonly leaseOwner: string | null
   readonly leaseExpiresAt: Date | null
   readonly attemptCount: number
@@ -143,6 +155,7 @@ function mapRun(row: RunRow): RunRecord {
     requestFingerprint: parsed.request_fingerprint,
     retryOf: parsed.retry_of,
     resumeDecisionId: parsed.resume_decision_id,
+    configurationFingerprint: parsed.configuration_fingerprint,
     leaseOwner: parsed.lease_owner,
     leaseExpiresAt: parsed.lease_expires_at,
     attemptCount: parsed.attempt_count,
@@ -218,6 +231,17 @@ function mapInterrupt(row: Record<string, unknown>): PublicRunInterrupt {
 
 export class RunRepository {
   constructor(private readonly database: DatabaseExecutor) {}
+
+  private async controlQuery<Row extends Record<string, unknown>>(
+    statement: string,
+    parameters: readonly SqlParameter[] = []
+  ): Promise<readonly Row[]> {
+    try {
+      return await this.database.query<Row>(statement, parameters)
+    } catch (error) {
+      throwControlError(error)
+    }
+  }
 
   async enqueue(input: {
     readonly applicationId: string
@@ -301,7 +325,7 @@ export class RunRepository {
     owner: string
   ): Promise<"active" | "cancelled" | "lease_lost"> {
     const leaseOwner = ownerSchema.parse(owner)
-    const rows = await this.database.query<{
+    const rows = await this.controlQuery<{
       status: z.infer<typeof runStatusSchema>
       lease_owner: string | null
       lease_valid: boolean
@@ -332,6 +356,7 @@ export class RunRepository {
     readonly errorCategory?: string
     readonly errorCode?: string
     readonly retryable?: boolean
+    readonly publication?: RunTerminalPublication
   }): Promise<boolean> {
     const errorCategory =
       input.errorCategory === undefined
@@ -353,29 +378,50 @@ export class RunRepository {
     ) {
       throw new Error("Non-failed runs cannot persist error fields")
     }
-    const retryable =
-      input.status === "failed"
-        ? (input.retryable ??
-          ["rate_limit", "timeout", "provider", "storage", "unknown"].includes(
-            errorCategory ?? ""
-          ))
+    const publication =
+      input.status === "succeeded"
+        ? runTerminalPublicationSchema.parse(input.publication)
         : null
-    const rows = await this.database.query<{ finish_control_run: boolean }>(
-      "select sentinel.finish_control_run($1::uuid, $2, $3, $4, $5, $6) as finish_control_run",
-      [
-        databaseRunIdSchema.parse(input.runId),
-        ownerSchema.parse(input.owner),
-        input.status,
-        errorCategory,
-        errorCode,
-        retryable,
-      ]
-    )
-    return (
-      rows[0]?.finish_control_run ??
-      (rows[0] as { finish_run?: boolean } | undefined)?.finish_run ??
-      false
-    )
+    if (input.status !== "succeeded" && input.publication !== undefined) {
+      throw new Error("Only succeeded runs can publish terminal output")
+    }
+    const policyRetryable = [
+      "rate_limit",
+      "timeout",
+      "provider",
+      "storage",
+      "unknown",
+    ].includes(errorCategory ?? "")
+    if (
+      input.status === "failed" &&
+      input.retryable === true &&
+      !policyRetryable
+    ) {
+      throw new Error("Failure retryability must match the category policy")
+    }
+    const retryable =
+      input.status === "failed" ? (input.retryable ?? policyRetryable) : null
+    try {
+      const rows = await this.database.query<{ finish_control_run: boolean }>(
+        "select sentinel.finish_control_run($1::uuid, $2, $3, $4, $5, $6, $7::text::jsonb) as finish_control_run",
+        [
+          databaseRunIdSchema.parse(input.runId),
+          ownerSchema.parse(input.owner),
+          input.status,
+          errorCategory,
+          errorCode,
+          retryable,
+          publication === null ? null : JSON.stringify(publication),
+        ]
+      )
+      return (
+        rows[0]?.finish_control_run ??
+        (rows[0] as { finish_run?: boolean } | undefined)?.finish_run ??
+        false
+      )
+    } catch (error) {
+      throwControlError(error)
+    }
   }
 
   async requestCancellation(runId: string): Promise<string | null> {
@@ -432,7 +478,7 @@ export class RunRepository {
   }
 
   async getOwned(operatorId: string, runId: string): Promise<PublicRun | null> {
-    const rows = await this.database.query<RunRow>(
+    const rows = await this.controlQuery<RunRow>(
       `select run.* from sentinel.runs run
        join sentinel.onboarding_configurations onboarding
          on onboarding.application_id = run.application_id
@@ -454,14 +500,17 @@ export class RunRepository {
   }> {
     const cursor = input.cursor
     const limit = pageLimitSchema.parse(input.limit)
-    const rows = await this.database.query<RunRow>(
+    const rows = await this.controlQuery<RunRow>(
       `select run.* from sentinel.runs run
        join sentinel.onboarding_configurations onboarding
          on onboarding.application_id = run.application_id
         and onboarding.operator_id = $1::uuid
        where ($2::uuid is null or run.application_id = $2::uuid)
-         and ($3::timestamptz is null or (run.created_at, run.id) < ($3::timestamptz, $4::uuid))
-       order by run.created_at desc, run.id desc limit $5`,
+         and ($3::timestamptz is null or (
+           date_trunc('milliseconds', run.created_at), run.id
+         ) < ($3::timestamptz, $4::uuid))
+       order by date_trunc('milliseconds', run.created_at) desc, run.id desc
+       limit $5`,
       [
         operatorIdSchema.parse(input.operatorId),
         input.applicationId === undefined
@@ -551,7 +600,7 @@ export class RunRepository {
     operatorId: string,
     runId: string
   ): Promise<PublicRunInterrupt | null> {
-    const rows = await this.database.query<Record<string, unknown>>(
+    const rows = await this.controlQuery<Record<string, unknown>>(
       `select interrupt.* from sentinel.run_interrupts interrupt
        join sentinel.runs run on run.id = interrupt.run_id
        join sentinel.onboarding_configurations onboarding
@@ -571,7 +620,7 @@ export class RunRepository {
     readonly decisionId: string
     readonly response: HumanDecision
   } | null> {
-    const rows = await this.database.query<{
+    const rows = await this.controlQuery<{
       decision_id: string
       response: unknown
     }>(
@@ -609,7 +658,7 @@ export class RunRepository {
     const databaseRunId = databaseRunIdSchema.parse(
       event.runId.slice("run:".length)
     )
-    const rows = await this.database.query<{
+    const rows = await this.controlQuery<{
       sequence: number
       event: unknown
     }>(
@@ -649,7 +698,7 @@ export class RunRepository {
   } | null> {
     const after = eventCursorSchema.parse(input.after ?? 0)
     const limit = pageLimitSchema.parse(input.limit)
-    const rows = await this.database.query<{
+    const rows = await this.controlQuery<{
       sequence: number
       event: unknown
     }>(
@@ -687,10 +736,19 @@ export class RunRepository {
 
   async ready(): Promise<boolean> {
     try {
-      const rows = await this.database.query<{ ready: number }>(
-        "select 1 as ready"
+      const rows = await this.database.query<{ ready: boolean }>(
+        `select (
+           to_regclass('sentinel.runs') is not null
+           and to_regclass('sentinel.run_interrupts') is not null
+           and to_regprocedure(
+             'sentinel.enqueue_control_run(uuid,uuid,text,text,jsonb,jsonb,text)'
+           ) is not null
+           and to_regprocedure(
+             'sentinel.finish_control_run(uuid,text,text,text,text,boolean,jsonb)'
+           ) is not null
+         ) as ready`
       )
-      return rows[0]?.ready === 1
+      return rows[0]?.ready === true
     } catch {
       return false
     }

@@ -31,4 +31,18 @@ describe("worker health server", () => {
     expect(available.status).toBe(200)
     expect(JSON.stringify(await available.json())).not.toContain("error")
   })
+
+  it("degrades readiness when the storage probe fails", async () => {
+    server = createWorkerHealthServer({
+      host: "127.0.0.1",
+      port: 0,
+      ready: async () => {
+        throw new Error("database credentials are private")
+      },
+    })
+    const port = await server.listen()
+    const response = await fetch(`http://127.0.0.1:${port}/readiness`)
+    expect(response.status).toBe(503)
+    expect(JSON.stringify(await response.json())).not.toContain("credentials")
+  })
 })

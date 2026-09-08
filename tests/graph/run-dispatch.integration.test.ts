@@ -16,6 +16,7 @@ import {
   type GraphExecutionResult,
   type RunExecutionContext,
 } from "@sentinel/orchestration/run-dispatch"
+import { commitShaSchema, contentHashSchema } from "@sentinel/contracts"
 import { describe, expect, it } from "vitest"
 
 const applicationId = "22222222-2222-4222-8222-222222222222"
@@ -39,7 +40,17 @@ const budget = {
 }
 
 function mapResult(result: SyntheticRunResult): GraphExecutionResult {
-  if (result.status === "completed") return { status: "succeeded" }
+  if (result.status === "completed") {
+    return {
+      status: "succeeded",
+      publication: {
+        kind: "knowledge",
+        inputFingerprint: contentHashSchema.parse(`sha256:${"a".repeat(64)}`),
+        expectedGraphRevision: 0,
+        indexedCommitSha: commitShaSchema.parse("a".repeat(40)),
+      },
+    }
+  }
   if (result.status === "cancelled") return { status: "cancelled" }
   if (result.status === "interrupted") {
     const pending = pendingReviewSchema.parse(result.interruptValues[0])
@@ -49,11 +60,12 @@ function mapResult(result: SyntheticRunResult): GraphExecutionResult {
       prompt: pending.question,
     }
   }
-  throw new RunDispatchError("unknown", "synthetic_terminal_failure", false)
+  throw new RunDispatchError("unknown", "synthetic_terminal_failure", true)
 }
 
 function syntheticAdapter(): CompiledRunGraph {
   let activeContext: RunExecutionContext | undefined
+  let checkpointExists = false
   const dependencies: RuntimeDependencies = {
     owner: "worker-graph-test",
     control: {
@@ -63,15 +75,19 @@ function syntheticAdapter(): CompiledRunGraph {
     effects: { execute: async () => undefined },
     resumeAuthorization: { authorize: async () => true },
     resumeCoordinator: new InMemoryResumeCoordinator(),
+    executionSignal: () => activeContext?.signal,
   }
   const service = new SyntheticOrchestrationService(
     buildSyntheticGraph(dependencies, new MemorySaver()),
     dependencies
   )
   return {
+    hasCheckpoint: async () => checkpointExists,
+    hasPendingInterrupt: async (input, decisionId) =>
+      service.hasPendingDecision(`run:${input.runId}`, decisionId),
     start: async (input, context) => {
       activeContext = context
-      return mapResult(
+      const result = mapResult(
         await service.start(
           createSyntheticInitialState({
             runId: `run:${input.runId}`,
@@ -80,6 +96,8 @@ function syntheticAdapter(): CompiledRunGraph {
           })
         )
       )
+      checkpointExists = true
+      return result
     },
     continue: async (input, context) => {
       activeContext = context
@@ -123,6 +141,7 @@ describe("run dispatcher with LangGraph checkpoint execution", () => {
       runType: "initialize_knowledge" as const,
       budget,
       request: {},
+      configurationFingerprint: `sha256:${"a".repeat(64)}`,
       attemptCount: 1,
     }
 
@@ -140,6 +159,22 @@ describe("run dispatcher with LangGraph checkpoint execution", () => {
         },
         context
       )
-    ).resolves.toEqual({ status: "succeeded" })
+    ).resolves.toMatchObject({
+      status: "succeeded",
+      publication: { kind: "knowledge" },
+    })
+    await expect(
+      dispatcher.execute(
+        { ...run, attemptCount: 3 },
+        {
+          decisionId: "synthetic_review",
+          response: { approved: true },
+        },
+        context
+      )
+    ).resolves.toMatchObject({
+      status: "succeeded",
+      publication: { kind: "knowledge" },
+    })
   })
 })

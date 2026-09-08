@@ -12,7 +12,10 @@ import {
   schemaVersionSchema,
   timestampSchema,
 } from "./primitives.ts"
-import { executionBudgetSchema } from "./operations.ts"
+import {
+  compatibilityReportSchema,
+  executionBudgetSchema,
+} from "./operations.ts"
 
 export const databaseApplicationIdSchema = z.uuid()
 export const databaseRunIdSchema = z.uuid()
@@ -24,6 +27,25 @@ export const idempotencyKeySchema = z
   .min(1)
   .max(255)
   .regex(/^[A-Za-z0-9:._/-]+$/)
+
+export const runControlBudgetSchema = executionBudgetSchema.extend({
+  toolCalls: executionBudgetSchema.shape.toolCalls.max(500),
+  contentBytes: executionBudgetSchema.shape.contentBytes.max(10_000_000),
+  documentBytes: executionBudgetSchema.shape.documentBytes.max(50_000_000),
+  documentPages: executionBudgetSchema.shape.documentPages.max(5_000),
+  documentSections: executionBudgetSchema.shape.documentSections.max(20_000),
+  sourceLines: executionBudgetSchema.shape.sourceLines.max(2_000_000),
+  repositoryBytes:
+    executionBudgetSchema.shape.repositoryBytes.max(2_000_000_000),
+  repositoryFiles: executionBudgetSchema.shape.repositoryFiles.max(200_000),
+  browserActions: executionBudgetSchema.shape.browserActions.max(500),
+  modelCalls: executionBudgetSchema.shape.modelCalls.max(250),
+  modelInputTokens: executionBudgetSchema.shape.modelInputTokens.max(2_000_000),
+  modelOutputTokens: executionBudgetSchema.shape.modelOutputTokens.max(500_000),
+  reconciliationRounds:
+    executionBudgetSchema.shape.reconciliationRounds.max(20),
+  elapsedMs: executionBudgetSchema.shape.elapsedMs.max(7_200_000),
+})
 
 const emptyPayloadSchema = z.strictObject({})
 const pullRequestPayloadSchema = z.strictObject({
@@ -38,7 +60,7 @@ export const runCommandSchema = z.discriminatedUnion("type", [
     applicationId: databaseApplicationIdSchema,
     type: z.literal("inspect_application"),
     idempotencyKey: idempotencyKeySchema,
-    budget: executionBudgetSchema,
+    budget: runControlBudgetSchema,
     payload: emptyPayloadSchema,
   }),
   z.strictObject({
@@ -46,7 +68,7 @@ export const runCommandSchema = z.discriminatedUnion("type", [
     applicationId: databaseApplicationIdSchema,
     type: z.literal("initialize_knowledge"),
     idempotencyKey: idempotencyKeySchema,
-    budget: executionBudgetSchema,
+    budget: runControlBudgetSchema,
     payload: emptyPayloadSchema,
   }),
   z.strictObject({
@@ -54,7 +76,7 @@ export const runCommandSchema = z.discriminatedUnion("type", [
     applicationId: databaseApplicationIdSchema,
     type: z.literal("refresh_knowledge"),
     idempotencyKey: idempotencyKeySchema,
-    budget: executionBudgetSchema,
+    budget: runControlBudgetSchema,
     payload: emptyPayloadSchema,
   }),
   z.strictObject({
@@ -62,7 +84,7 @@ export const runCommandSchema = z.discriminatedUnion("type", [
     applicationId: databaseApplicationIdSchema,
     type: z.literal("assess_pr"),
     idempotencyKey: idempotencyKeySchema,
-    budget: executionBudgetSchema,
+    budget: runControlBudgetSchema,
     payload: pullRequestPayloadSchema,
   }),
   z.strictObject({
@@ -70,7 +92,7 @@ export const runCommandSchema = z.discriminatedUnion("type", [
     applicationId: databaseApplicationIdSchema,
     type: z.literal("verify_pr"),
     idempotencyKey: idempotencyKeySchema,
-    budget: executionBudgetSchema,
+    budget: runControlBudgetSchema,
     payload: z.strictObject({ assessmentId: z.uuid() }),
   }),
   z.strictObject({
@@ -78,7 +100,7 @@ export const runCommandSchema = z.discriminatedUnion("type", [
     applicationId: databaseApplicationIdSchema,
     type: z.literal("run_eval"),
     idempotencyKey: idempotencyKeySchema,
-    budget: executionBudgetSchema,
+    budget: runControlBudgetSchema,
     payload: z.strictObject({ fixtureKey: reasonCodeSchema }),
   }),
 ])
@@ -173,6 +195,50 @@ export const controlMutationResultSchema = z.strictObject({
   idempotent: z.boolean(),
 })
 
+export const runTerminalPublicationSchema = z
+  .discriminatedUnion("kind", [
+    z.strictObject({
+      kind: z.literal("inspection"),
+      inputFingerprint: contentHashSchema,
+      report: compatibilityReportSchema,
+    }),
+    z.strictObject({
+      kind: z.literal("knowledge"),
+      inputFingerprint: contentHashSchema,
+      expectedGraphRevision: z.number().int().nonnegative(),
+      indexedCommitSha: commitShaSchema,
+    }),
+    z.strictObject({
+      kind: z.literal("assessment"),
+      assessmentId: z.uuid(),
+    }),
+    z.strictObject({
+      kind: z.literal("verification"),
+      assessmentId: z.uuid(),
+    }),
+    z.strictObject({ kind: z.literal("eval") }),
+  ])
+  .superRefine((publication, context) => {
+    if (publication.kind !== "inspection") return
+    if (publication.inputFingerprint !== publication.report.inputFingerprint) {
+      context.addIssue({
+        code: "custom",
+        message: "Inspection publication fingerprint must match its report",
+        path: ["report", "inputFingerprint"],
+      })
+    }
+    if (
+      new TextEncoder().encode(JSON.stringify(publication.report)).byteLength >
+      120_000
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Inspection publication exceeds the persisted report limit",
+        path: ["report"],
+      })
+    }
+  })
+
 export const readinessDependencySchema = z.strictObject({
   name: z.enum(["storage", "worker", "model", "browser", "github"]),
   status: z.enum(["ready", "degraded", "unconfigured"]),
@@ -189,3 +255,6 @@ export type PublicRun = z.infer<typeof publicRunSchema>
 export type PublicRunInterrupt = z.infer<typeof publicRunInterruptSchema>
 export type HumanDecision = z.infer<typeof humanDecisionSchema>
 export type RunCursor = z.infer<typeof runCursorSchema>
+export type RunTerminalPublication = z.infer<
+  typeof runTerminalPublicationSchema
+>

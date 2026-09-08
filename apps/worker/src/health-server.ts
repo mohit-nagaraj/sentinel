@@ -10,14 +10,14 @@ export interface WorkerHealthServer {
 export function createWorkerHealthServer(input: {
   readonly host: string
   readonly port: number
-  readonly ready: () => boolean
+  readonly ready: () => boolean | Promise<boolean>
 }): WorkerHealthServer {
   let server: Server | undefined
   return {
     listen: async () => {
       if (server !== undefined)
         throw new Error("Worker health server is active")
-      server = createServer((request, response) => {
+      server = createServer(async (request, response) => {
         response.setHeader("cache-control", "no-store")
         response.setHeader("content-type", "application/json; charset=utf-8")
         if (request.method === "GET" && request.url === "/health") {
@@ -26,7 +26,12 @@ export function createWorkerHealthServer(input: {
           return
         }
         if (request.method === "GET" && request.url === "/readiness") {
-          const ready = input.ready()
+          let ready = false
+          try {
+            ready = await input.ready()
+          } catch {
+            ready = false
+          }
           response.statusCode = ready ? 200 : 503
           response.end(
             JSON.stringify({

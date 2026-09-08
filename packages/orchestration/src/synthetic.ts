@@ -484,6 +484,21 @@ export class SyntheticOrchestrationService {
     return this.invoke(null, id)
   }
 
+  async hasPendingDecision(
+    runId: string,
+    decisionId: string
+  ): Promise<boolean> {
+    const id = runIdSchema.parse(runId)
+    const decision = reasonCodeSchema.parse(decisionId)
+    const snapshot = await this.graph.getState(this.config(id))
+    try {
+      const state = parseSyntheticState(snapshot.values)
+      return state.runId === id && state.pendingReview?.decisionId === decision
+    } catch {
+      return false
+    }
+  }
+
   async resume(input: {
     readonly runId: string
     readonly actorId: string

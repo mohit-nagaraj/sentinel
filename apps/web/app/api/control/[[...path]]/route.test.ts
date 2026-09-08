@@ -2,13 +2,13 @@
 
 import { runCommandSchema } from "@sentinel/contracts"
 import { RunControlRepositoryError } from "@sentinel/storage"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
 import type { RunControlService } from "@/lib/run-control"
 
-import { handleControlRequest } from "./route"
+import { GET, handleControlRequest } from "./route"
 
 const token = "operator-control-token-that-is-long-enough"
 const environment = { SENTINEL_OPERATOR_TOKEN: token }
@@ -39,6 +39,8 @@ const publicRun = {
   attemptCount: 0,
   createdAt: "2026-09-08T00:00:00.000Z",
 }
+
+afterEach(() => vi.unstubAllEnvs())
 
 function service(
   overrides: Partial<Record<keyof RunControlService, unknown>> = {}
@@ -95,6 +97,17 @@ describe("run control route", () => {
     expect(result.status).toBe(401)
     expect(result.headers.get("www-authenticate")).toContain("Basic")
     expect(target.list).not.toHaveBeenCalled()
+  })
+
+  it("authorizes the exported handler before constructing storage", async () => {
+    vi.stubEnv("SENTINEL_OPERATOR_TOKEN", token)
+    vi.stubEnv("SENTINEL_OPERATOR_ID", "")
+    vi.stubEnv("SUPABASE_DB_URL", "")
+    const result = await GET(
+      request("GET", "runs", undefined, "Bearer wrong"),
+      { params: Promise.resolve({ path: ["runs"] }) }
+    )
+    expect(result.status).toBe(401)
   })
 
   it("accepts all six command payloads and returns immediately", async () => {
@@ -217,6 +230,23 @@ describe("run control route", () => {
       environment
     )
     expect(missing.status).toBe(404)
+
+    const unavailable = await handleControlRequest(
+      request("GET", `runs/${runId}`),
+      ["runs", runId],
+      service({
+        get: vi.fn().mockRejectedValue(
+          new RunControlRepositoryError("storage_unavailable", {
+            cause: new Error("password=private"),
+          })
+        ),
+      }),
+      environment
+    )
+    expect(unavailable.status).toBe(503)
+    const unavailableBody = JSON.stringify(await unavailable.json())
+    expect(unavailableBody).toContain('"retryable":true')
+    expect(unavailableBody).not.toContain("private")
   })
 
   it("rejects partial cursors and oversized bodies", async () => {
@@ -233,6 +263,7 @@ describe("run control route", () => {
         headers: {
           authorization: `Bearer ${token}`,
           "content-length": String(65 * 1_024),
+          "content-type": "application/json",
         },
         body: "{}",
       }),
@@ -241,5 +272,43 @@ describe("run control route", () => {
       environment
     )
     expect(oversized.status).toBe(400)
+  })
+
+  it("rejects cross-origin Basic-auth mutations and non-JSON decisions", async () => {
+    const crossOrigin = request("POST", `runs/${runId}/cancel`)
+    crossOrigin.headers.set("origin", "https://attacker.example")
+    crossOrigin.headers.set(
+      "authorization",
+      `Basic ${Buffer.from(`operator:${token}`).toString("base64")}`
+    )
+    const cancelled = await handleControlRequest(
+      crossOrigin,
+      ["runs", runId, "cancel"],
+      service(),
+      environment
+    )
+    expect(cancelled.status).toBe(403)
+
+    const decision = new Request(
+      `http://sentinel.test/api/control/runs/${runId}/interrupts/approve_scope/respond`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "text/plain",
+        },
+        body: JSON.stringify({
+          schemaVersion: 1,
+          response: { approved: true },
+        }),
+      }
+    )
+    const result = await handleControlRequest(
+      decision,
+      ["runs", runId, "interrupts", "approve_scope", "respond"],
+      service(),
+      environment
+    )
+    expect(result.status).toBe(415)
   })
 })

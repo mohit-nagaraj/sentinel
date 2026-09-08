@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsup",
-    "dev": "node --experimental-strip-types --watch src/cli.ts",
+    "dev": "node --experimental-transform-types --watch src/cli.ts",
     "health": "pnpm build && node dist/health.js",
     "start": "pnpm build && node dist/cli.js",
     "typecheck": "tsc --noEmit"

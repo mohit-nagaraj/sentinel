@@ -103,8 +103,13 @@ describe("run control migration", () => {
     expect(runControlMigration).toContain(
       "runs_active_application_mutation_idx"
     )
-    expect(runControlMigration).toContain("where run_type in")
     expect(runControlMigration).toContain("lease_expires_at > now()")
+    expect(runControlMigration).toContain("run_type <> 'run_eval'")
+    expect(runControlMigration).toContain("row_number() over")
+    expect(runControlMigration.match(/pg_advisory_xact_lock/g)?.length).toBe(6)
+    expect(runControlMigration).toContain("terminal publication must match")
+    expect(runControlMigration).toContain("configuration_fingerprint")
+    expect(runControlMigration).toContain("invalid_budget")
   })
 
   it("authorizes through onboarding ownership and accepts interrupts once", () => {

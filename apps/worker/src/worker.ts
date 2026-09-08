@@ -1,6 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises"
 
 import { createHealthReport, type HealthReport } from "@sentinel/contracts"
+import type { RunTerminalPublication } from "@sentinel/contracts"
 import {
   classifyRunExecutionError,
   type DispatchableRun,
@@ -37,6 +38,7 @@ export interface WorkerRunStore {
     readonly errorCategory?: string
     readonly errorCode?: string
     readonly retryable?: boolean
+    readonly publication?: RunTerminalPublication
   }): Promise<boolean>
 }
 
@@ -75,6 +77,15 @@ function errorName(error: unknown): string {
   return error instanceof Error ? error.name : ""
 }
 
+function repositoryErrorCode(error: unknown): string | undefined {
+  return error !== null &&
+    typeof error === "object" &&
+    "code" in error &&
+    typeof error.code === "string"
+    ? error.code
+    : undefined
+}
+
 function abortError(signal: AbortSignal): Error {
   return signal.reason instanceof Error
     ? signal.reason
@@ -84,10 +95,14 @@ function abortError(signal: AbortSignal): Error {
 async function runCleanups(cleanups: readonly (() => Promise<void>)[]) {
   let failure: unknown
   for (const cleanup of [...cleanups].reverse()) {
-    try {
-      await cleanup()
-    } catch (error) {
-      failure ??= error
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await cleanup()
+        break
+      } catch (error) {
+        if (attempt === 3) failure ??= error
+        else await delay(25)
+      }
     }
   }
   if (failure !== undefined) throw failure
@@ -112,15 +127,17 @@ export function createWorker(options: WorkerOptions): WorkerProcess {
   }
 
   const runOnce = async (shutdownSignal?: AbortSignal): Promise<boolean> => {
-    if (shutdownSignal?.aborted === true) return false
+    if (isAborted(shutdownSignal)) return false
     const run = await options.store.claim(options.owner, leaseSeconds)
     if (run === null) return false
+    if (isAborted(shutdownSignal)) return true
 
     const execution = new AbortController()
     const monitor = new AbortController()
     const cleanups: (() => Promise<void>)[] = []
     const shutdown = () => execution.abort(new WorkerShutdownError())
     shutdownSignal?.addEventListener("abort", shutdown, { once: true })
+    if (isAborted(shutdownSignal)) shutdown()
 
     const context = {
       signal: execution.signal,
@@ -140,39 +157,40 @@ export function createWorker(options: WorkerOptions): WorkerProcess {
     }
 
     const monitorWork = (async () => {
-      let heartbeatAt = Date.now() + heartbeatIntervalMs
-      while (!monitor.signal.aborted && !execution.signal.aborted) {
-        try {
+      try {
+        let heartbeatAt = Date.now() + heartbeatIntervalMs
+        while (!monitor.signal.aborted) {
           await delay(monitorIntervalMs, undefined, { signal: monitor.signal })
-        } catch {
-          return
-        }
-        if (Date.now() >= heartbeatAt) {
-          const renewed = await options.store.heartbeat(
-            run.id,
-            options.owner,
-            leaseSeconds
-          )
-          if (!renewed) {
+          if (Date.now() >= heartbeatAt) {
+            const renewed = await options.store.heartbeat(
+              run.id,
+              options.owner,
+              leaseSeconds
+            )
+            if (!renewed) {
+              execution.abort(new WorkerLeaseLostError())
+              return
+            }
+            heartbeatAt = Date.now() + heartbeatIntervalMs
+          }
+          const state = await options.store.controlState(run.id, options.owner)
+          if (state === "lease_lost") {
             execution.abort(new WorkerLeaseLostError())
             return
           }
-          heartbeatAt = Date.now() + heartbeatIntervalMs
+          if (state === "cancelled") {
+            execution.abort(new WorkerCancelledError())
+            return
+          }
         }
-        const state = await options.store.controlState(run.id, options.owner)
-        if (state === "lease_lost") {
-          execution.abort(new WorkerLeaseLostError())
-          return
-        }
-        if (state === "cancelled") {
-          execution.abort(new WorkerCancelledError())
-          return
-        }
+      } catch {
+        if (!monitor.signal.aborted) execution.abort(new WorkerLeaseLostError())
       }
     })()
 
     let result: GraphExecutionResult | undefined
     let failure: unknown
+    let cleanupFailure: unknown
     try {
       await context.assertActive()
       const decision = await options.store.getResumeDecision(
@@ -183,24 +201,45 @@ export function createWorker(options: WorkerOptions): WorkerProcess {
     } catch (error) {
       failure = error
     } finally {
-      monitor.abort()
-      await monitorWork.catch((error: unknown) => {
-        failure ??= error
-      })
-      shutdownSignal?.removeEventListener("abort", shutdown)
       try {
         await runCleanups(cleanups)
       } catch (error) {
-        failure ??= error
+        cleanupFailure = error
       }
+      monitor.abort()
+      await monitorWork
+      shutdownSignal?.removeEventListener("abort", shutdown)
     }
 
     const cause = execution.signal.aborted
       ? abortError(execution.signal)
       : failure
+    if (cleanupFailure !== undefined) {
+      if (
+        errorName(cause) === "LeaseOwnershipError" ||
+        repositoryErrorCode(cause) === "storage_unavailable" ||
+        repositoryErrorCode(cause) === "lease_lost"
+      ) {
+        options.onError?.(
+          new Error("worker_cleanup_failed", { cause: cleanupFailure })
+        )
+        return true
+      }
+      await options.store.finish({
+        runId: run.id,
+        owner: options.owner,
+        status: "failed",
+        errorCategory: "storage",
+        errorCode: "cleanup_failed",
+        retryable: false,
+      })
+      return true
+    }
     if (
       cause instanceof WorkerShutdownError ||
-      errorName(cause) === "LeaseOwnershipError"
+      errorName(cause) === "LeaseOwnershipError" ||
+      repositoryErrorCode(cause) === "storage_unavailable" ||
+      repositoryErrorCode(cause) === "lease_lost"
     ) {
       return true
     }
@@ -236,11 +275,24 @@ export function createWorker(options: WorkerOptions): WorkerProcess {
       })
       return true
     }
-    await options.store.finish({
-      runId: run.id,
-      owner: options.owner,
-      status: "succeeded",
-    })
+    try {
+      await options.store.finish({
+        runId: run.id,
+        owner: options.owner,
+        status: "succeeded",
+        publication: result!.publication,
+      })
+    } catch (error) {
+      if (repositoryErrorCode(error) !== "publication_conflict") throw error
+      await options.store.finish({
+        runId: run.id,
+        owner: options.owner,
+        status: "failed",
+        errorCategory: "configuration",
+        errorCode: "publication_conflict",
+        retryable: false,
+      })
+    }
     return true
   }
 

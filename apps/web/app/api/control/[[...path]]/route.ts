@@ -140,6 +140,16 @@ const repositoryErrors: Record<
     "Another application mutation is active.",
   ],
   application_not_found: [404, "validation", "The application was not found."],
+  assessment_not_ready: [
+    409,
+    "configuration",
+    "The pull request assessment is not ready for verification.",
+  ],
+  cancellation_not_allowed: [
+    409,
+    "validation",
+    "This run cannot be cancelled in its current state.",
+  ],
   idempotency_conflict: [
     409,
     "validation",
@@ -151,6 +161,16 @@ const repositoryErrors: Record<
     "The interrupt already has a different response.",
   ],
   interrupt_not_found: [404, "validation", "The interrupt was not found."],
+  invalid_budget: [
+    400,
+    "validation",
+    "The requested execution budget exceeds the allowed limits.",
+  ],
+  invalid_application_state: [
+    409,
+    "configuration",
+    "The application cannot start this run in its current state.",
+  ],
   knowledge_not_ready: [
     409,
     "configuration",
@@ -161,6 +181,11 @@ const repositoryErrors: Record<
     409,
     "configuration",
     "Application onboarding is not confirmed.",
+  ],
+  publication_conflict: [
+    409,
+    "configuration",
+    "The run output no longer matches current application state.",
   ],
   retry_not_allowed: [409, "validation", "This run cannot be retried."],
   run_not_found: [404, "validation", "The run was not found."],
@@ -253,6 +278,37 @@ export async function handleControlRequest(
   if (rejection !== undefined) return rejection
   try {
     const method = request.method.toUpperCase()
+    if (method === "POST") {
+      const origin = request.headers.get("origin")
+      const fetchSite = request.headers.get("sec-fetch-site")
+      if (
+        (origin !== null && origin !== new URL(request.url).origin) ||
+        fetchSite === "cross-site"
+      ) {
+        throw new ControlHttpError(
+          403,
+          "authorization",
+          "cross_origin_mutation_rejected",
+          "Cross-origin control mutations are not allowed."
+        )
+      }
+      const bodylessCancel =
+        path.length === 3 && path[0] === "runs" && path[2] === "cancel"
+      if (
+        !bodylessCancel &&
+        !request.headers
+          .get("content-type")
+          ?.toLowerCase()
+          .startsWith("application/json")
+      ) {
+        throw new ControlHttpError(
+          415,
+          "validation",
+          "json_content_type_required",
+          "Control mutations require an application/json body."
+        )
+      }
+    }
     if (method === "POST" && path.length === 1 && path[0] === "runs") {
       const result = await service.command(await readJson(request))
       return response(
@@ -377,6 +433,8 @@ type ControlRouteContext = {
 
 async function dispatch(request: Request, context: ControlRouteContext) {
   const { path = [] } = await context.params
+  const rejection = authorized(request, process.env)
+  if (rejection !== undefined) return rejection
   return handleControlRequest(
     request,
     path,

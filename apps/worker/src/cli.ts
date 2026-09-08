@@ -60,14 +60,14 @@ const registry = createRunGraphRegistry(
   await graphModule.createRunGraphs({ databaseUrl, workerId })
 )
 const database = createPostgresDatabase(databaseUrl, { maxConnections: 4 })
-let ready = false
+const runs = new RunRepository(database)
 const healthServer = createWorkerHealthServer({
   host: process.env["SENTINEL_WORKER_HEALTH_HOST"]?.trim() || "127.0.0.1",
   port: Number.parseInt(
     process.env["SENTINEL_WORKER_HEALTH_PORT"]?.trim() || "8788",
     10
   ),
-  ready: () => ready,
+  ready: () => runs.ready(),
 })
 const shutdown = new AbortController()
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
@@ -76,17 +76,15 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 
 const worker = createWorker({
   owner: workerId,
-  store: new RunRepository(database),
+  store: runs,
   dispatcher: createRunDispatcher(registry),
   onError: () => process.stderr.write("worker_iteration_failed\n"),
 })
 
 try {
   await healthServer.listen()
-  ready = true
   await worker.run(shutdown.signal)
 } finally {
-  ready = false
   await healthServer.close()
   await database.close()
 }

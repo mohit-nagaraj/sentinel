@@ -27,13 +27,13 @@ const budget: MissionBudget = {
   reconciliationRounds: 1,
   elapsedMs: 1,
 }
-const result = { status: "succeeded" as const }
-
 function graph(): CompiledRunGraph {
   return {
-    start: vi.fn().mockResolvedValue(result),
-    continue: vi.fn().mockResolvedValue(result),
-    resume: vi.fn().mockResolvedValue(result),
+    hasCheckpoint: vi.fn().mockResolvedValue(false),
+    hasPendingInterrupt: vi.fn().mockResolvedValue(false),
+    start: vi.fn().mockResolvedValue({ status: "cancelled" }),
+    continue: vi.fn().mockResolvedValue({ status: "cancelled" }),
+    resume: vi.fn().mockResolvedValue({ status: "cancelled" }),
   }
 }
 
@@ -81,6 +81,7 @@ describe("run graph dispatcher", () => {
           runType,
           budget,
           request: payload,
+          configurationFingerprint: `sha256:${"a".repeat(64)}`,
           attemptCount: 1,
         },
         null,
@@ -99,15 +100,34 @@ describe("run graph dispatcher", () => {
       runType: "initialize_knowledge" as const,
       budget,
       request: {},
+      configurationFingerprint: `sha256:${"a".repeat(64)}`,
       attemptCount: 2,
     }
     await dispatcher.execute(run, null, context)
+    expect(handlers.initialize_knowledge.start).toHaveBeenCalledOnce()
+    vi.mocked(handlers.initialize_knowledge.hasCheckpoint).mockResolvedValue(
+      true
+    )
+    await dispatcher.execute(run, null, context)
+    vi.mocked(
+      handlers.initialize_knowledge.hasPendingInterrupt
+    ).mockResolvedValue(true)
     await dispatcher.execute(
       run,
       { decisionId: "approve_scope", response: { approved: true } },
       context
     )
     expect(handlers.initialize_knowledge.continue).toHaveBeenCalledOnce()
+    expect(handlers.initialize_knowledge.resume).toHaveBeenCalledOnce()
+    vi.mocked(
+      handlers.initialize_knowledge.hasPendingInterrupt
+    ).mockResolvedValue(false)
+    await dispatcher.execute(
+      run,
+      { decisionId: "approve_scope", response: { approved: true } },
+      context
+    )
+    expect(handlers.initialize_knowledge.continue).toHaveBeenCalledTimes(2)
     expect(handlers.initialize_knowledge.resume).toHaveBeenCalledOnce()
   })
 
@@ -121,6 +141,7 @@ describe("run graph dispatcher", () => {
           runType: "run_eval",
           budget,
           request: { token: "private" },
+          configurationFingerprint: `sha256:${"a".repeat(64)}`,
           attemptCount: 1,
         },
         null,
@@ -133,5 +154,9 @@ describe("run graph dispatcher", () => {
     const unknown = classifyRunExecutionError(new Error("Bearer private"))
     expect(unknown.message).toBe("unhandled_failure")
     expect(unknown.message).not.toContain("private")
+    expect(
+      () =>
+        new RunDispatchError("provider", "Authorization: Bearer private", true)
+    ).toThrow()
   })
 })

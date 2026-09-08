@@ -29,6 +29,7 @@ const run = {
   runType: "initialize_knowledge" as const,
   budget,
   request: {},
+  configurationFingerprint: `sha256:${"a".repeat(64)}`,
   attemptCount: 1,
 }
 
@@ -37,6 +38,7 @@ function harness(input: {
   failure?: unknown
   states?: ("active" | "cancelled" | "lease_lost")[]
   resume?: { decisionId: string; response: { approved: boolean } } | null
+  cleanup?: () => Promise<void>
 }) {
   const calls: string[] = []
   const states = [...(input.states ?? ["active"])]
@@ -58,6 +60,7 @@ function harness(input: {
   const dispatcher: RunDispatcher = {
     execute: vi.fn().mockImplementation(async (_run, _decision, context) => {
       context.registerCleanup(async () => {
+        await input.cleanup?.()
         calls.push("cleanup")
       })
       if (input.failure !== undefined) throw input.failure
@@ -75,7 +78,17 @@ function harness(input: {
             decisionId: "approve_scope",
             prompt: "Approve the proposed scope?",
           }
-        : { status: input.result ?? "succeeded" }
+        : input.result === "cancelled"
+          ? { status: "cancelled" as const }
+          : {
+              status: "succeeded" as const,
+              publication: {
+                kind: "knowledge" as const,
+                inputFingerprint: `sha256:${"a".repeat(64)}`,
+                expectedGraphRevision: 0,
+                indexedCommitSha: "a".repeat(40),
+              },
+            }
     }),
   }
   return { store, dispatcher, calls }
@@ -92,6 +105,11 @@ describe("leased worker", () => {
     })
     await expect(worker.runOnce()).resolves.toBe(true)
     expect(test.calls).toEqual(["cleanup", "finish:succeeded"])
+    expect(test.store.finish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        publication: expect.objectContaining({ kind: "knowledge" }),
+      })
+    )
     expect(worker.health()).toEqual({ service: "worker", status: "ok" })
   })
 
@@ -132,6 +150,35 @@ describe("leased worker", () => {
     expect(test.calls).toEqual(["cleanup", "finish:cancelled"])
   })
 
+  it("retries and reports cleanup failure instead of clean cancellation", async () => {
+    let cleanupAttempts = 0
+    const test = harness({
+      states: ["active", "cancelled"],
+      cleanup: async () => {
+        cleanupAttempts += 1
+        throw new Error("browser cleanup contained private details")
+      },
+    })
+    await createWorker({
+      owner: "worker-a",
+      store: test.store,
+      dispatcher: test.dispatcher,
+      monitorIntervalMs: 2,
+    }).runOnce()
+    expect(cleanupAttempts).toBe(3)
+    expect(test.store.finish).toHaveBeenCalledWith({
+      runId: run.id,
+      owner: "worker-a",
+      status: "failed",
+      errorCategory: "storage",
+      errorCode: "cleanup_failed",
+      retryable: false,
+    })
+    expect(
+      JSON.stringify(vi.mocked(test.store.finish).mock.calls)
+    ).not.toContain("private details")
+  })
+
   it("leaves lease loss and shutdown non-terminal for safe reclaim", async () => {
     const lost = harness({ states: ["active", "lease_lost"] })
     await createWorker({
@@ -154,6 +201,29 @@ describe("leased worker", () => {
     expect(shutdown.calls).toEqual(["cleanup"])
   })
 
+  it("does not start newly claimed work when shutdown wins the claim race", async () => {
+    const test = harness({ result: "succeeded" })
+    let releaseClaim: ((value: typeof run) => void) | undefined
+    vi.mocked(test.store.claim).mockImplementation(
+      async () =>
+        new Promise<typeof run>((resolve) => {
+          releaseClaim = resolve
+        })
+    )
+    const controller = new AbortController()
+    const pending = createWorker({
+      owner: "worker-a",
+      store: test.store,
+      dispatcher: test.dispatcher,
+    }).runOnce(controller.signal)
+    controller.abort()
+    while (releaseClaim === undefined) await Promise.resolve()
+    releaseClaim(run)
+    await expect(pending).resolves.toBe(true)
+    expect(test.dispatcher.execute).not.toHaveBeenCalled()
+    expect(test.store.finish).not.toHaveBeenCalled()
+  })
+
   it("renews leases and aborts work when a heartbeat loses ownership", async () => {
     const test = harness({ states: ["active", "active"] })
     vi.mocked(test.store.heartbeat).mockResolvedValue(false)
@@ -166,6 +236,38 @@ describe("leased worker", () => {
     }).runOnce()
     expect(test.store.heartbeat).toHaveBeenCalled()
     expect(test.calls).toEqual(["cleanup"])
+  })
+
+  it("keeps the lease alive through cleanup and aborts on monitor errors", async () => {
+    let heartbeatCount = () => 0
+    const target = harness({
+      cleanup: async () => {
+        while (heartbeatCount() === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 1))
+        }
+      },
+    })
+    heartbeatCount = () => vi.mocked(target.store.heartbeat).mock.calls.length
+    await createWorker({
+      owner: "worker-a",
+      store: target.store,
+      dispatcher: target.dispatcher,
+      heartbeatIntervalMs: 2,
+      monitorIntervalMs: 1,
+    }).runOnce()
+    expect(target.calls).toEqual(["cleanup", "finish:succeeded"])
+
+    const broken = harness({ states: ["active", "active"] })
+    vi.mocked(broken.store.controlState)
+      .mockResolvedValueOnce("active")
+      .mockRejectedValueOnce(new Error("database offline"))
+    await createWorker({
+      owner: "worker-a",
+      store: broken.store,
+      dispatcher: broken.dispatcher,
+      monitorIntervalMs: 1,
+    }).runOnce()
+    expect(broken.calls).toEqual(["cleanup"])
   })
 
   it("persists only classified failure fields", async () => {
@@ -184,6 +286,48 @@ describe("leased worker", () => {
       errorCategory: "provider",
       errorCode: "provider_timeout",
       retryable: true,
+    })
+  })
+
+  it("leaves control-store read failures available for lease reclaim", async () => {
+    const test = harness({ result: "succeeded" })
+    vi.mocked(test.store.getResumeDecision).mockRejectedValue(
+      Object.assign(new Error("storage_unavailable"), {
+        name: "RunControlRepositoryError",
+        code: "storage_unavailable",
+      })
+    )
+    await createWorker({
+      owner: "worker-a",
+      store: test.store,
+      dispatcher: test.dispatcher,
+    }).runOnce()
+    expect(test.dispatcher.execute).not.toHaveBeenCalled()
+    expect(test.store.finish).not.toHaveBeenCalled()
+  })
+
+  it("terminates a stale publication as a non-retryable failure", async () => {
+    const test = harness({ result: "succeeded" })
+    vi.mocked(test.store.finish)
+      .mockRejectedValueOnce(
+        Object.assign(new Error("publication_conflict"), {
+          name: "RunControlRepositoryError",
+          code: "publication_conflict",
+        })
+      )
+      .mockResolvedValueOnce(true)
+    await createWorker({
+      owner: "worker-a",
+      store: test.store,
+      dispatcher: test.dispatcher,
+    }).runOnce()
+    expect(test.store.finish).toHaveBeenLastCalledWith({
+      runId: run.id,
+      owner: "worker-a",
+      status: "failed",
+      errorCategory: "configuration",
+      errorCode: "publication_conflict",
+      retryable: false,
     })
   })
 })

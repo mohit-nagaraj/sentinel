@@ -1,11 +1,11 @@
 # SNT-023 — Run APIs, worker control, cancellation, and recovery
 
-| Field | Value |
-|---|---|
-| Milestone | M5 — Onboarding and observable control plane |
-| Status | `not-started` |
-| Depends on | SNT-006, SNT-022 |
-| Blocks | Activity UI, knowledge UI, GitHub App |
+| Field          | Value                                               |
+| -------------- | --------------------------------------------------- |
+| Milestone      | M5 — Onboarding and observable control plane        |
+| Status         | `not-started`                                       |
+| Depends on     | SNT-006, SNT-022                                    |
+| Blocks         | Activity UI, knowledge UI, GitHub App               |
 | PRD references | §7.4–7.5, §8.4, §13.1–13.2, FR-016, NFR-005/NFR-008 |
 
 ## Background
@@ -68,3 +68,4 @@ Realtime UI, GitHub webhook ingress, actual deployment platform autoscaling, and
 - HTTP boundary: `apps/web/lib/run-control.ts` and `apps/web/app/api/control/[[...path]]/route.ts`.
 - Verification covers focused contract/storage/orchestration/worker/web tests, a real LangGraph start/interrupt/resume path, and a disposable PostgreSQL matrix for idempotency, mutation locking, lease reclaim, interrupts, retries, pagination, ownership, and application status transitions.
 - The worker graph registry is intentionally injected: the production root graphs named by the PRD are delivered by SNT-027, SNT-031, SNT-032, and related workflow tickets. SNT-023 supplies and validates their durable execution contract; it does not substitute the synthetic fixture for those workflows.
+- Review hardening added server/SQL budget ceilings, same-origin JSON mutations, provider health probes, real checkpoint detection, application-wide non-eval serialization, consistent advisory lock ordering, configuration-bound atomic terminal publication, and millisecond-stable cursors.
