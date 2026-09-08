@@ -40,3 +40,10 @@
 | 2026-09-08 | Reclaim expired leases with the same run and LangGraph thread; only an operator retry of a retryable terminal failure creates a linked run.                  | Crash recovery continues a durable checkpoint, while explicit retries remain separately auditable.                   |
 | 2026-09-08 | Require a six-entry injected graph registry with start, continue, and resume operations instead of using the synthetic graph as a production implementation. | Domain root graphs arrive in later tickets; the worker must fail composition rather than execute a misleading stub.  |
 | 2026-09-08 | Store bounded interrupt prompts/responses and accept one owner-authorized response, with identical repeats idempotent and contradictory repeats conflicting. | Human review must survive restart without permitting a response to be changed after checkpoint resume is scheduled.  |
+
+## SNT-026 GitHub App Webhooks and Checks
+
+- [x] Define strict webhook, assessment trigger, check lifecycle, response, and least-privilege App contracts.
+- [ ] Implement raw-body authentication, GitHub App token management, PR resolution, and Checks API operations.
+- [ ] Enqueue deliveries, immutable-head assessments, runs, supersession, and check binding transactionally.
+- [ ] Expose and verify shared signed-webhook and operator-authenticated manual assessment routes.

@@ -9,6 +9,7 @@ export {
 } from "./environment.ts"
 export * from "./events.ts"
 export * from "./facts.ts"
+export * from "./github-app.ts"
 export { createHealthReport, type HealthReport } from "./health.ts"
 export * from "./identity.ts"
 export * from "./operations.ts"
