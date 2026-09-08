@@ -15,19 +15,26 @@ import {
   isOperatorRequestAuthorized,
   type OperatorAuthEnvironment,
 } from "@/lib/operator-auth"
-import { getRunControlService, type RunControlService } from "@/lib/run-control"
+import {
+  RunActivityConfigurationError,
+  getRunControlService,
+  type RunControlService,
+} from "@/lib/run-control"
 
 export const dynamic = "force-dynamic"
 
 type ControlService = Pick<
   RunControlService,
   | "cancel"
+  | "artifact"
   | "command"
   | "events"
   | "get"
   | "list"
+  | "pause"
   | "pendingInterrupt"
   | "readiness"
+  | "realtime"
   | "respond"
   | "retry"
 >
@@ -221,6 +228,17 @@ function mapFailure(error: unknown): Response {
       )
     )
   }
+  if (error instanceof RunActivityConfigurationError) {
+    return publicError(
+      new ControlHttpError(
+        503,
+        "configuration",
+        "run_activity_unavailable",
+        "Live run activity is unavailable.",
+        true
+      )
+    )
+  }
   return publicError(
     new ControlHttpError(
       500,
@@ -297,10 +315,12 @@ export async function handleControlRequest(
           "Cross-origin control mutations are not allowed."
         )
       }
-      const bodylessCancel =
-        path.length === 3 && path[0] === "runs" && path[2] === "cancel"
+      const bodylessControl =
+        path.length === 3 &&
+        path[0] === "runs" &&
+        new Set(["cancel", "pause"]).has(path[2] ?? "")
       if (
-        !bodylessCancel &&
+        !bodylessControl &&
         !request.headers
           .get("content-type")
           ?.toLowerCase()
@@ -383,6 +403,22 @@ export async function handleControlRequest(
           : { schemaVersion: 1, ...page }
       )
     }
+    if (method === "GET" && path.length === 3 && path[2] === "realtime") {
+      const bootstrap = await service.realtime(runId)
+      return response(bootstrap ?? notFound("run_not_found"))
+    }
+    if (method === "GET" && path.length === 4 && path[2] === "artifacts") {
+      const artifact = await service.artifact(runId, path[3] ?? "")
+      if (artifact === null) {
+        throw new ControlHttpError(
+          404,
+          "validation",
+          "artifact_not_found",
+          "The run screenshot was not found."
+        )
+      }
+      return response(artifact)
+    }
     if (method === "GET" && path.length === 3 && path[2] === "interrupt") {
       const interrupt = await service.pendingInterrupt(runId)
       return response(interrupt ?? notFound("interrupt_not_found"))
@@ -393,6 +429,10 @@ export async function handleControlRequest(
         run === null ? notFound("run_not_found") : { schemaVersion: 1, run },
         202
       )
+    }
+    if (method === "POST" && path.length === 3 && path[2] === "pause") {
+      const run = await service.pause(runId)
+      return response({ schemaVersion: 1, run }, 202)
     }
     if (method === "POST" && path.length === 3 && path[2] === "retry") {
       const result = await service.retry(runId, await readJson(request))

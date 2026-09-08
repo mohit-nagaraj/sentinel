@@ -51,6 +51,26 @@ function service(
     list: vi.fn().mockResolvedValue({ items: [publicRun] }),
     events: vi.fn().mockResolvedValue({ items: [] }),
     cancel: vi.fn().mockResolvedValue({ ...publicRun, status: "cancelled" }),
+    pause: vi.fn().mockResolvedValue({
+      ...publicRun,
+      pauseRequestedAt: "2026-09-08T00:00:30.000Z",
+    }),
+    realtime: vi.fn().mockResolvedValue({
+      schemaVersion: 1,
+      runId,
+      topic: `run:${runId}`,
+      supabaseUrl: "http://127.0.0.1:54321",
+      publishableKey: "publishable-key-that-is-long-enough",
+      accessToken: "x".repeat(64),
+      expiresAt: "2026-09-08T00:04:00.000Z",
+    }),
+    artifact: vi.fn().mockResolvedValue({
+      schemaVersion: 1,
+      runId,
+      artifactId: `artifact:v1:${"a".repeat(64)}`,
+      url: "https://storage.test/signed-screenshot",
+      expiresAt: "2026-09-08T00:05:00.000Z",
+    }),
     retry: vi.fn().mockResolvedValue({ run: publicRun, idempotent: false }),
     respond: vi.fn().mockResolvedValue({
       interrupt: { decisionId: "approve_scope" },
@@ -157,11 +177,22 @@ describe("run control route", () => {
       [request("GET", `runs/${runId}`), ["runs", runId], 200],
       [request("GET", `runs/${runId}/events`), ["runs", runId, "events"], 200],
       [
+        request("GET", `runs/${runId}/realtime`),
+        ["runs", runId, "realtime"],
+        200,
+      ],
+      [
+        request("GET", `runs/${runId}/artifacts/artifact:v1:${"a".repeat(64)}`),
+        ["runs", runId, "artifacts", `artifact:v1:${"a".repeat(64)}`],
+        200,
+      ],
+      [
         request("GET", `runs/${runId}/interrupt`),
         ["runs", runId, "interrupt"],
         200,
       ],
       [request("POST", `runs/${runId}/cancel`), ["runs", runId, "cancel"], 202],
+      [request("POST", `runs/${runId}/pause`), ["runs", runId, "pause"], 202],
       [
         request("POST", `runs/${runId}/retry`, {
           schemaVersion: 1,

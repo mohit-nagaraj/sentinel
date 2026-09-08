@@ -57,3 +57,16 @@ SNT-026 implementation, QA, clean-database migration verification, and productio
 | 2026-09-09 | Enqueue delivery, immutable head, supersession, cancellation, and worker run in one PostgreSQL function.          | Concurrent and out-of-order deliveries cannot rely on process locks or overwrite the current head.                   |
 | 2026-09-09 | Bind checks to assessment ID plus head SHA and recover partial creation through a short lease and external ID.    | GitHub side effects are not transactional with PostgreSQL, so retry must discover prior success without duplication. |
 | 2026-09-09 | Confirm signed webhook heads against current GitHub PR metadata before transactional enqueue.                     | Provider timestamps alone cannot totally order delayed deliveries that share timestamp resolution.                   |
+
+## SNT-024 Realtime Specialist Activity
+
+- [x] Define bounded, redacted activity metadata and persist owner-authorized private run broadcasts.
+- [x] Add safe-boundary pause requests, short-lived realtime identity, and run-scoped screenshot signing.
+- [ ] Build deterministic catch-up/reconnect state and the accessible specialist activity workspace.
+- [ ] Add run routes, synthetic live fixture coverage, screenshot storyboard proof, and operational guidance.
+
+| Date       | Decision                                                                                                                                            | Reason                                                                                                                       |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 2026-09-09 | Send only run identity and sequence on private Realtime Broadcast topics, then fetch canonical events from PostgreSQL.                              | Broadcast wakes the client without making an ephemeral transport the source of truth or duplicating event content.           |
+| 2026-09-09 | Mint four-minute owner JWTs with the configured asymmetric Supabase key, retaining legacy HS256 only for local development.                         | Private channel authorization needs `auth.uid()` while production signing should use rotatable asymmetric keys.              |
+| 2026-09-09 | Sign only PNG/JPEG screenshot artifacts that match both the owned application and run, with a five-minute maximum URL lifetime.                    | A guessed artifact identifier must not cross run boundaries or expose non-visual evidence through the activity presentation. |

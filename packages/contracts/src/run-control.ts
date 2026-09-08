@@ -251,6 +251,24 @@ export const controlReadinessSchema = z.strictObject({
   dependencies: z.array(readinessDependencySchema).min(1).max(5),
 })
 
+export const runRealtimeBootstrapSchema = z.strictObject({
+  schemaVersion: schemaVersionSchema,
+  runId: databaseRunIdSchema,
+  topic: z.string().regex(/^run:[0-9a-f-]{36}$/),
+  supabaseUrl: z.url({ protocol: /^https?$/ }),
+  publishableKey: z.string().trim().min(20).max(2_048),
+  accessToken: z.string().min(64).max(8_192),
+  expiresAt: timestampSchema,
+})
+
+export const signedRunArtifactSchema = z.strictObject({
+  schemaVersion: schemaVersionSchema,
+  runId: databaseRunIdSchema,
+  artifactId: z.string().regex(/^artifact:v1:[a-f0-9]{64}$/),
+  url: z.url({ protocol: /^https?$/ }),
+  expiresAt: timestampSchema,
+})
+
 export type RunCommand = z.infer<typeof runCommandSchema>
 export type PublicRun = z.infer<typeof publicRunSchema>
 export type PublicRunInterrupt = z.infer<typeof publicRunInterruptSchema>

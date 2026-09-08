@@ -47,6 +47,10 @@ function store(): RunControlStore {
       ...publicRun,
       status: "cancelled",
     }),
+    requestOwnedPause: vi.fn().mockResolvedValue({
+      ...publicRun,
+      pauseRequestedAt: "2026-09-08T00:00:30.000Z",
+    }),
     retryOwned: vi
       .fn()
       .mockResolvedValue({ run: publicRun, idempotent: false }),
@@ -111,6 +115,48 @@ describe("run control service", () => {
         runId,
         decisionId: "approve_scope",
       })
+    )
+  })
+
+  it("owner-scopes pause, realtime bootstrap, and screenshot URLs", async () => {
+    const target = store()
+    const tokenIssuer = {
+      issue: vi.fn().mockResolvedValue({
+        accessToken: "x".repeat(64),
+        expiresAt: "2026-09-08T00:04:00.000Z",
+      }),
+    }
+    const artifacts = {
+      signedRunDownloadUrl: vi
+        .fn()
+        .mockResolvedValue("https://storage.test/signed-screenshot"),
+    }
+    const service = new RunControlService(operatorId, target, {}, fetch, {
+      supabaseUrl: "http://127.0.0.1:54321",
+      publishableKey: "publishable-key-that-is-long-enough",
+      tokenIssuer,
+      artifacts,
+      now: () => new Date("2026-09-08T00:00:00.000Z"),
+    })
+
+    await expect(service.pause(runId)).resolves.toMatchObject({ id: runId })
+    await expect(service.realtime(runId)).resolves.toMatchObject({
+      runId,
+      topic: `run:${runId}`,
+      accessToken: "x".repeat(64),
+    })
+    const artifactId = `artifact:v1:${"a".repeat(64)}`
+    await expect(service.artifact(runId, artifactId)).resolves.toMatchObject({
+      artifactId,
+      expiresAt: "2026-09-08T00:05:00.000Z",
+    })
+    expect(target.getOwned).toHaveBeenCalledWith(operatorId, runId)
+    expect(tokenIssuer.issue).toHaveBeenCalledWith({ operatorId, runId })
+    expect(artifacts.signedRunDownloadUrl).toHaveBeenCalledWith(
+      applicationId,
+      runId,
+      artifactId,
+      300
     )
   })
 

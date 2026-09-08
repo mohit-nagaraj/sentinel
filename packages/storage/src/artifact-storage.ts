@@ -141,6 +141,24 @@ export class ArtifactMetadataRepository {
     return rows[0] === undefined ? null : mapArtifact(rows[0])
   }
 
+  async findForRun(
+    applicationId: string,
+    runId: string,
+    id: ArtifactId
+  ): Promise<ArtifactMetadata | null> {
+    const rows = await this.database.query<ArtifactRow>(
+      `select * from sentinel.artifacts
+       where application_id = $1::uuid and run_id = $2::uuid
+         and stable_key = $3 and deleted_at is null`,
+      [
+        databaseIdSchema.parse(applicationId),
+        databaseIdSchema.parse(runId),
+        artifactIdSchema.parse(id),
+      ]
+    )
+    return rows[0] === undefined ? null : mapArtifact(rows[0])
+  }
+
   async markDeleted(id: string): Promise<boolean> {
     const rows = await this.database.query<{ id: string }>(
       `update sentinel.artifacts set deleted_at = now()
@@ -248,6 +266,11 @@ export interface ArtifactMetadataStore {
     readonly created: boolean
   }>
   find(applicationId: string, id: ArtifactId): Promise<ArtifactMetadata | null>
+  findForRun(
+    applicationId: string,
+    runId: string,
+    id: ArtifactId
+  ): Promise<ArtifactMetadata | null>
   markDeleted(id: string): Promise<boolean>
   restore(id: string): Promise<void>
   assertPrivateBucket(bucket: string): Promise<void>
@@ -432,6 +455,34 @@ export class ArtifactService {
     )
     if (artifact === null) throw new Error("Artifact not found")
     const expires = z.number().int().min(1).max(900).parse(expiresInSeconds)
+    return this.objects.signedDownloadUrl(
+      artifact.bucket,
+      artifact.objectKey,
+      expires
+    )
+  }
+
+  async signedRunDownloadUrl(
+    applicationIdInput: string,
+    runIdInput: string,
+    id: string,
+    expiresInSeconds: number
+  ): Promise<string | null> {
+    const applicationId = databaseIdSchema.parse(applicationIdInput)
+    const runId = databaseIdSchema.parse(runIdInput)
+    const artifact = await this.metadata.findForRun(
+      applicationId,
+      runId,
+      artifactIdSchema.parse(id)
+    )
+    if (
+      artifact === null ||
+      artifact.artifactType !== "screenshot" ||
+      !new Set(["image/jpeg", "image/png"]).has(artifact.mimeType)
+    ) {
+      return null
+    }
+    const expires = z.number().int().min(1).max(300).parse(expiresInSeconds)
     return this.objects.signedDownloadUrl(
       artifact.bucket,
       artifact.objectKey,
