@@ -21,6 +21,13 @@ set error_retryable = false
 where status = 'failed' and error_retryable is null;
 
 alter table sentinel.runs
+  drop constraint if exists runs_request_shape_check,
+  drop constraint if exists runs_request_fingerprint_check,
+  drop constraint if exists runs_resume_decision_check,
+  drop constraint if exists runs_failure_retryability_check,
+  drop constraint if exists runs_retry_of_fkey;
+
+alter table sentinel.runs
   alter column request_fingerprint set not null,
   add constraint runs_request_shape_check check (
     jsonb_typeof(request) = 'object'
@@ -134,7 +141,7 @@ begin
     return;
   end if;
 
-  select onboarding into v_onboarding
+  select onboarding.* into v_onboarding
   from sentinel.onboarding_configurations onboarding
   join sentinel.applications application on application.id = onboarding.application_id
   where onboarding.application_id = p_application_id
@@ -145,7 +152,7 @@ begin
     raise exception using errcode = 'P0001', message = 'application_not_found';
   end if;
 
-  select application into v_application
+  select application.* into v_application
   from sentinel.applications application
   where application.id = p_application_id;
 
@@ -323,6 +330,61 @@ begin
   end if;
   result := v_interrupt;
   idempotent := false;
+  return next;
+end;
+$$;
+
+create or replace function sentinel.retry_control_run(
+  p_operator_id uuid,
+  p_run_id uuid,
+  p_idempotency_key text
+)
+returns table (result sentinel.runs, created boolean)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_previous sentinel.runs;
+  v_next sentinel.runs;
+  v_created boolean;
+  v_control record;
+begin
+  select run.* into v_previous
+  from sentinel.runs run
+  join sentinel.onboarding_configurations onboarding
+    on onboarding.application_id = run.application_id
+   and onboarding.operator_id = p_operator_id
+  where run.id = p_run_id;
+  if not found then
+    raise exception using errcode = 'P0001', message = 'run_not_found';
+  end if;
+  if v_previous.status <> 'failed' or v_previous.error_retryable is not true then
+    raise exception using errcode = 'P0001', message = 'retry_not_allowed';
+  end if;
+
+  select control.result, control.created into v_control
+  from sentinel.enqueue_control_run(
+    p_operator_id,
+    v_previous.application_id,
+    v_previous.run_type,
+    p_idempotency_key,
+    v_previous.budget,
+    v_previous.request,
+    v_previous.request_fingerprint
+  ) control;
+  v_next := v_control.result;
+  v_created := v_control.created;
+
+  if not v_created and v_next.retry_of is distinct from p_run_id then
+    raise exception using errcode = 'P0001', message = 'idempotency_conflict';
+  end if;
+  if v_created then
+    update sentinel.runs set retry_of = p_run_id
+    where id = v_next.id returning * into v_next;
+  end if;
+  result := v_next;
+  created := v_created;
   return next;
 end;
 $$;

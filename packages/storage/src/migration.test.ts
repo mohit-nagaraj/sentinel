@@ -98,6 +98,8 @@ describe("run control migration", () => {
   it("enforces idempotency, application mutation exclusion, and leases", () => {
     expect(runControlMigration).toContain("request_fingerprint")
     expect(runControlMigration).toContain("idempotency_conflict")
+    expect(runControlMigration).toContain("retry_control_run")
+    expect(runControlMigration).toContain("retry_not_allowed")
     expect(runControlMigration).toContain(
       "runs_active_application_mutation_idx"
     )
