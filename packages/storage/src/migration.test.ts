@@ -16,6 +16,13 @@ const eventIdempotencyMigration = readFileSync(
   ),
   "utf8"
 )
+const runControlMigration = readFileSync(
+  new URL(
+    "../../../supabase/migrations/20260908000200_run_control.sql",
+    import.meta.url
+  ),
+  "utf8"
+)
 
 describe("operational migration", () => {
   it("defines every compact operational table and private checkpoint schema", () => {
@@ -83,6 +90,41 @@ describe("operational migration", () => {
     )
     expect(eventIdempotencyMigration).toContain(
       "drop function if exists sentinel.append_run_event(uuid, text, jsonb, timestamptz)"
+    )
+  })
+})
+
+describe("run control migration", () => {
+  it("enforces idempotency, application mutation exclusion, and leases", () => {
+    expect(runControlMigration).toContain("request_fingerprint")
+    expect(runControlMigration).toContain("idempotency_conflict")
+    expect(runControlMigration).toContain(
+      "runs_active_application_mutation_idx"
+    )
+    expect(runControlMigration).toContain("where run_type in")
+    expect(runControlMigration).toContain("lease_expires_at > now()")
+  })
+
+  it("authorizes through onboarding ownership and accepts interrupts once", () => {
+    expect(runControlMigration).toContain(
+      "onboarding.operator_id = p_operator_id"
+    )
+    expect(runControlMigration).toContain("sentinel.run_interrupts")
+    expect(runControlMigration).toContain("response_fingerprint")
+    expect(runControlMigration).toContain("interrupt_conflict")
+    expect(runControlMigration).toContain("set status = 'queued'")
+  })
+
+  it("keeps request and response payloads bounded and secret-free", () => {
+    expect(runControlMigration).toContain(
+      "octet_length(request::text) <= 16384"
+    )
+    expect(runControlMigration).toContain(
+      "octet_length(response::text) <= 8192"
+    )
+    expect(runControlMigration).toContain("storageState")
+    expect(runControlMigration).toContain(
+      "revoke all on table sentinel.run_interrupts from public"
     )
   })
 })
