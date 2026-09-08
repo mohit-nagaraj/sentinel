@@ -23,6 +23,13 @@ const runControlMigration = readFileSync(
   ),
   "utf8"
 )
+const githubAppMigration = readFileSync(
+  new URL(
+    "../../../supabase/migrations/20260908000400_github_app_checks.sql",
+    import.meta.url
+  ),
+  "utf8"
+)
 
 describe("operational migration", () => {
   it("defines every compact operational table and private checkpoint schema", () => {
@@ -132,6 +139,46 @@ describe("run control migration", () => {
     expect(runControlMigration).toContain("storageState")
     expect(runControlMigration).toContain(
       "revoke all on table sentinel.run_interrupts from public"
+    )
+  })
+})
+
+describe("GitHub App assessment migration", () => {
+  it("atomically links deliveries, immutable heads, runs, and checks", () => {
+    expect(githubAppMigration).toContain("enqueue_github_pr_assessment")
+    expect(githubAppMigration).toContain("assessment_id uuid")
+    expect(githubAppMigration).toContain("github_installation_id")
+    expect(githubAppMigration).toContain("github_repository_id")
+    expect(githubAppMigration).toContain("github_pull_request_id")
+    expect(githubAppMigration).toContain("provider_updated_at")
+    expect(githubAppMigration).toContain("check_run_id")
+    expect(githubAppMigration).toContain(
+      "onboarding_github_installation_repository_idx"
+    )
+    expect(githubAppMigration).toContain("pg_advisory_xact_lock")
+    expect(githubAppMigration).toContain("sentinel.enqueue_control_run")
+  })
+
+  it("guards supersession, out-of-order heads, and check synchronization", () => {
+    expect(githubAppMigration).toContain(
+      "v_current.provider_updated_at > p_provider_updated_at"
+    )
+    expect(githubAppMigration).toContain("set status = 'cancelled'")
+    expect(githubAppMigration).toContain("claim_github_assessment_check")
+    expect(githubAppMigration).toContain("bind_github_assessment_check")
+    expect(githubAppMigration).toContain("release_github_assessment_check")
+    expect(githubAppMigration).toMatch(
+      /head_sha = p_head_sha[\s\S]*and assessment\.is_current/i
+    )
+  })
+
+  it("keeps GitHub mutations server-only", () => {
+    expect(githubAppMigration).toContain(
+      "revoke all on function sentinel.enqueue_github_pr_assessment"
+    )
+    expect(githubAppMigration).toContain("to service_role")
+    expect(githubAppMigration).not.toMatch(
+      /grant execute[\s\S]*to (?:anon|authenticated)/i
     )
   })
 })
