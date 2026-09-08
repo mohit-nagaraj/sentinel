@@ -698,6 +698,9 @@ function isStrictlyAscending(values: readonly number[]): boolean {
 export type DocumentationExplorerToolName = z.infer<
   typeof documentationExplorerToolNameSchema
 >
+export type DocumentationClaimKind = z.infer<
+  typeof documentationClaimKindSchema
+>
 export type ListDocumentTreeInput = z.infer<typeof listDocumentTreeInputSchema>
 export type SearchDocumentationInput = z.infer<
   typeof searchDocumentationInputSchema

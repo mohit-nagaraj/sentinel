@@ -1728,10 +1728,13 @@ class DocumentationExplorerDecisionModel {
     return executionBudgetSchema.parse({
       ...EMPTY_BUDGET_USAGE,
       modelCalls: 1,
-      modelInputTokens: Math.min(
-        this.options.maxContextCharacters,
-        remaining.modelInputTokens
-      ),
+      modelInputTokens:
+        remaining.modelInputTokens === 0
+          ? 1
+          : Math.min(
+              this.options.maxContextCharacters,
+              remaining.modelInputTokens
+            ),
       modelOutputTokens:
         remaining.modelOutputTokens === 0
           ? 1

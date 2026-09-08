@@ -57,14 +57,15 @@ SNT-017 is complete and its shared-kernel composition passes independent P0/P1 r
 - [x] Define strict Documentation Explorer contracts and parsers.
 - [x] Build the bounded prepared-map tool port.
 - [x] Compose all six tools through the shared specialist kernel.
-- [ ] Prove golden, conflict, replay, denial, and failure trajectories.
+- [x] Prove golden, conflict, replay, denial, and failure trajectories.
 
 ### SNT-015 Decisions
 
-| Date       | Decision                                                                                          | Reason                                                                                                                                |
-| ---------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-09-08 | Separate exact excerpt citations from compact tree, search, and link summaries.                   | The model can choose evidence without moving full document bodies into checkpoint state.                                              |
-| 2026-09-08 | Keep rich requirement, duplicate, conflict, capability, and exclusion records non-authoritative.  | SNT-015 discovers cited intent while downstream validation, evidence-tier assignment, and publication remain separate.                |
-| 2026-09-08 | Preserve document-relative section offsets and validate prepared-map integrity at construction.   | Exact citations remain compatible with SNT-008 provenance, and forged membership/hash/link records fail before tools are exposed.     |
-| 2026-09-08 | Commit rich finish results before provider-free kernel finalization.                              | Restart, replay, human interrupt, and exhausted-provider paths retain one coordinated terminal result without duplicate side effects. |
-| 2026-09-08 | Revalidate exact reads, source scope, tool identity, and atomic lexical support in orchestration. | The deterministic composition remains authoritative even when a structurally compatible tool port is faulty or stale.                 |
+| Date       | Decision                                                                                          | Reason                                                                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-09-08 | Separate exact excerpt citations from compact tree, search, and link summaries.                   | The model can choose evidence without moving full document bodies into checkpoint state.                                               |
+| 2026-09-08 | Keep rich requirement, duplicate, conflict, capability, and exclusion records non-authoritative.  | SNT-015 discovers cited intent while downstream validation, evidence-tier assignment, and publication remain separate.                 |
+| 2026-09-08 | Preserve document-relative section offsets and validate prepared-map integrity at construction.   | Exact citations remain compatible with SNT-008 provenance, and forged membership/hash/link records fail before tools are exposed.      |
+| 2026-09-08 | Commit rich finish results before provider-free kernel finalization.                              | Restart, replay, human interrupt, and exhausted-provider paths retain one coordinated terminal result without duplicate side effects.  |
+| 2026-09-08 | Revalidate exact reads, source scope, tool identity, and atomic lexical support in orchestration. | The deterministic composition remains authoritative even when a structurally compatible tool port is faulty or stale.                  |
+| 2026-09-08 | Keep the Hi.Events documentation evaluation explicitly target-gated.                              | No canonical Hi.Events documentation root has been selected; live crawling and paid model use require an intentional environment flag. |
