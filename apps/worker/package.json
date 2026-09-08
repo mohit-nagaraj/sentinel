@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@sentinel/contracts": "workspace:*"
+    "@sentinel/contracts": "workspace:*",
+    "@sentinel/orchestration": "workspace:*",
+    "@sentinel/storage": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.5.0",

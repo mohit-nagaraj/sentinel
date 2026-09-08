@@ -1,8 +1,4 @@
-import { createWorker } from "./worker.ts"
+import { createHealthReport } from "@sentinel/contracts"
 
-const worker = createWorker({
-  initialize: async () => Promise.resolve(),
-})
-
-const report = await worker.start()
+const report = createHealthReport("worker")
 process.stdout.write(`${JSON.stringify(report)}\n`)
