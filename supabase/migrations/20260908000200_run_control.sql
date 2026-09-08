@@ -7,7 +7,8 @@ alter table sentinel.runs
   ),
   add column if not exists retry_of uuid,
   add column if not exists resume_decision_id text,
-  add column if not exists error_retryable boolean;
+  add column if not exists error_retryable boolean,
+  add column if not exists application_status_before text;
 
 update sentinel.runs
 set request_fingerprint = 'sha256:' || encode(
@@ -24,6 +25,7 @@ alter table sentinel.runs
   drop constraint if exists runs_request_shape_check,
   drop constraint if exists runs_request_fingerprint_check,
   drop constraint if exists runs_resume_decision_check,
+  drop constraint if exists runs_application_status_before_check,
   drop constraint if exists runs_failure_retryability_check,
   drop constraint if exists runs_retry_of_fkey;
 
@@ -45,6 +47,13 @@ alter table sentinel.runs
   add constraint runs_resume_decision_check check (
     resume_decision_id is null
     or resume_decision_id ~ '^[a-z][a-z0-9]*(_[a-z0-9]+)*$'
+  ),
+  add constraint runs_application_status_before_check check (
+    application_status_before is null or application_status_before in (
+      'not_configured', 'inspecting', 'awaiting_confirmation',
+      'initializing_knowledge', 'ready', 'assessing_pr', 'verifying',
+      'refreshing', 'needs_review', 'stale', 'failed'
+    )
   ),
   add constraint runs_failure_retryability_check check (
     (status = 'failed' and error_retryable is not null)
@@ -170,10 +179,10 @@ begin
   begin
     insert into sentinel.runs (
       application_id, run_type, idempotency_key, budget, request,
-      request_fingerprint
+      request_fingerprint, application_status_before
     ) values (
       p_application_id, p_run_type, p_idempotency_key, p_budget, p_request,
-      p_request_fingerprint
+      p_request_fingerprint, v_application.status
     ) returning * into v_existing;
   exception when unique_violation then
     raise exception using errcode = 'P0001', message = 'active_run_conflict';
@@ -207,6 +216,8 @@ set search_path = ''
 as $$
 declare
   v_status text;
+  v_application_id uuid;
+  v_status_before text;
 begin
   update sentinel.runs run
   set status = case
@@ -231,7 +242,14 @@ begin
     and onboarding.application_id = run.application_id
     and onboarding.operator_id = p_operator_id
     and run.status in ('queued', 'running', 'interrupted')
-  returning run.status into v_status;
+  returning run.status, run.application_id, run.application_status_before
+  into v_status, v_application_id, v_status_before;
+
+  if v_status = 'cancelled' then
+    update sentinel.applications
+    set status = coalesce(v_status_before, status)
+    where id = v_application_id;
+  end if;
 
   if v_status is null then
     select run.status into v_status
@@ -267,6 +285,11 @@ begin
   if not found then
     raise exception using errcode = 'P0001', message = 'lease_lost';
   end if;
+
+  update sentinel.applications application
+  set status = 'needs_review'
+  from sentinel.runs run
+  where run.id = p_run_id and application.id = run.application_id;
 
   insert into sentinel.run_interrupts (run_id, decision_id, prompt)
   values (p_run_id, p_decision_id, p_prompt)
@@ -328,6 +351,17 @@ begin
   if not found then
     raise exception using errcode = 'P0001', message = 'interrupt_conflict';
   end if;
+  update sentinel.applications application
+  set status = case run.run_type
+    when 'inspect_application' then 'inspecting'
+    when 'initialize_knowledge' then 'initializing_knowledge'
+    when 'assess_pr' then 'assessing_pr'
+    when 'verify_pr' then 'verifying'
+    when 'refresh_knowledge' then 'refreshing'
+    else application.status
+  end
+  from sentinel.runs run
+  where run.id = p_run_id and application.id = run.application_id;
   result := v_interrupt;
   idempotent := false;
   return next;
@@ -404,6 +438,9 @@ set search_path = ''
 as $$
 declare
   v_changed integer;
+  v_application_id uuid;
+  v_run_type text;
+  v_status_before text;
 begin
   if p_status not in ('succeeded', 'failed', 'cancelled') then
     raise exception 'invalid terminal run status';
@@ -420,8 +457,20 @@ begin
       error_retryable = p_error_retryable, finished_at = now()
   where id = p_run_id and lease_owner = p_owner and lease_expires_at > now()
     and status in ('running', 'cancelling')
-    and (status = 'running' or p_status in ('cancelled', 'failed'));
+    and (status = 'running' or p_status in ('cancelled', 'failed'))
+  returning application_id, run_type, application_status_before
+  into v_application_id, v_run_type, v_status_before;
   get diagnostics v_changed = row_count;
+  if v_changed = 1 and v_run_type <> 'run_eval' then
+    update sentinel.applications
+    set status = case
+      when p_status = 'cancelled' then coalesce(v_status_before, 'failed')
+      when p_status = 'failed' then 'failed'
+      when v_run_type = 'inspect_application' then 'awaiting_confirmation'
+      else 'ready'
+    end
+    where id = v_application_id;
+  end if;
   return v_changed = 1;
 end;
 $$;

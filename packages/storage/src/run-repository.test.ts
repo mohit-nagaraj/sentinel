@@ -207,4 +207,18 @@ describe("run repository", () => {
     })
     expect(JSON.stringify(projected)).not.toContain("private-key")
   })
+
+  it("scopes pending interrupt reads through the owning operator", async () => {
+    const query = vi.fn().mockResolvedValue([])
+    const repository = new RunRepository({
+      query: query as DatabaseExecutor["query"],
+    })
+    await expect(
+      repository.getOwnedPendingInterrupt(applicationId, runId)
+    ).resolves.toBeNull()
+    expect(query.mock.calls[0]?.[0]).toContain(
+      "onboarding.operator_id = $1::uuid"
+    )
+    expect(query.mock.calls[0]?.[1]).toEqual([applicationId, runId])
+  })
 })

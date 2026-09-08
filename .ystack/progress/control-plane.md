@@ -24,3 +24,19 @@
 | 2026-09-08 | Persist only validated onboarding JSON whose authentication entries contain opaque Vault references, then protect inspection and confirmation with canonical compare-and-set fingerprints. | This keeps plaintext out of ordinary rows and prevents delayed probes or stale browser submissions from approving superseded configuration. |
 | 2026-09-08 | Treat every Server Action as a public mutation boundary and derive the operator UUID plus database/GitHub credentials only from server environment state.                                  | Rendering a form on an operator page is not authorization; data access must enforce ownership again next to storage.                        |
 | 2026-09-08 | Reserve and automatically delete an uninitialized application draft when Vault-backed authentication setup fails.                                                                          | Vault mappings require an application foreign key, and failed secret setup must not leave a visible half-configured application.            |
+
+## SNT-023 Run Control API
+
+- [x] Define strict command, public run, interrupt, pagination, and readiness contracts.
+- [x] Enforce owner scope, idempotency fingerprints, active mutation exclusion, linked retry attempts, and application transitions in PostgreSQL.
+- [x] Implement owner-scoped run/event reads, cancellation, interrupts, leases, and fixed public failure projections.
+- [x] Dispatch all six run types through required start/continue/resume graph handlers.
+- [x] Run a polling worker with heartbeats, checkpoint reclaim, cancellation/shutdown signals, and ordered cleanup.
+- [x] Expose authenticated command/read/control/readiness routes plus worker liveness/readiness HTTP endpoints.
+
+| Date       | Decision                                                                                                                                                   | Reason                                                                                                                |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| 2026-09-08 | Keep idempotency and application-mutation exclusion inside PostgreSQL and compare canonical request fingerprints on replay.                                 | Concurrent HTTP delivery must not depend on process-local locks, and the same key cannot silently identify new work.  |
+| 2026-09-08 | Reclaim expired leases with the same run and LangGraph thread; only an operator retry of a retryable terminal failure creates a linked run.                 | Crash recovery continues a durable checkpoint, while explicit retries remain separately auditable.                   |
+| 2026-09-08 | Require a six-entry injected graph registry with start, continue, and resume operations instead of using the synthetic graph as a production implementation. | Domain root graphs arrive in later tickets; the worker must fail composition rather than execute a misleading stub.   |
+| 2026-09-08 | Store bounded interrupt prompts/responses and accept one owner-authorized response, with identical repeats idempotent and contradictory repeats conflicting. | Human review must survive restart without permitting a response to be changed after checkpoint resume is scheduled.  |

@@ -13,11 +13,14 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - `components/onboarding-control-plane.tsx` - application rail and onboarding workflow.
 - `lib/control-plane.ts` - server-only data access, secret reconciliation, and public DTO boundary.
 - `lib/operator-auth.ts` - constant-time Basic/Bearer token verification.
+- `lib/run-control.ts` - owner-scoped run command/read service and readiness projection.
+- `app/api/control/[[...path]]/route.ts` - authenticated run control HTTP boundary.
 
 ## Conventions
 
 - Read the installed Next.js guide before changing framework behavior.
 - Treat every Server Action as a public endpoint and authorize it independently.
+- Treat every Route Handler operation as a public endpoint, authorize it independently, and return private/no-store public DTOs.
 - Keep fixture authorization bypass unavailable when `NODE_ENV=production`.
 - Import the focused `@sentinel/adapters/onboarding` server subpath, not the adapters root.
 - Return `OnboardingActionState`; never reflect credential or storage-state values.

@@ -10,6 +10,7 @@ import {
 import { createPostgresDatabase, RunRepository } from "@sentinel/storage"
 
 import { createWorker } from "./worker.ts"
+import { createWorkerHealthServer } from "./health-server.ts"
 
 interface WorkerGraphModule {
   createRunGraphs(input: {
@@ -59,6 +60,15 @@ const registry = createRunGraphRegistry(
   await graphModule.createRunGraphs({ databaseUrl, workerId })
 )
 const database = createPostgresDatabase(databaseUrl, { maxConnections: 4 })
+let ready = false
+const healthServer = createWorkerHealthServer({
+  host: process.env["SENTINEL_WORKER_HEALTH_HOST"]?.trim() || "127.0.0.1",
+  port: Number.parseInt(
+    process.env["SENTINEL_WORKER_HEALTH_PORT"]?.trim() || "8788",
+    10
+  ),
+  ready: () => ready,
+})
 const shutdown = new AbortController()
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => shutdown.abort())
@@ -72,7 +82,11 @@ const worker = createWorker({
 })
 
 try {
+  await healthServer.listen()
+  ready = true
   await worker.run(shutdown.signal)
 } finally {
+  ready = false
+  await healthServer.close()
   await database.close()
 }

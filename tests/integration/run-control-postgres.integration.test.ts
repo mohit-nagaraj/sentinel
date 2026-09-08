@@ -82,6 +82,7 @@ describeIntegration("run control PostgreSQL state machine", () => {
       payload: {},
     }
     const first = await runs.enqueueControl(operatorId, command)
+    await expect(applicationStatus()).resolves.toBe("inspecting")
     const replay = await runs.enqueueControl(operatorId, command)
     expect(replay).toEqual({ run: first.run, created: false })
 
@@ -116,6 +117,7 @@ describeIntegration("run control PostgreSQL state machine", () => {
       decisionId: "approve_scope",
       prompt: "Approve the proposed scope?",
     })
+    await expect(applicationStatus()).resolves.toBe("needs_review")
     const first = await runs.respondInterrupt({
       operatorId,
       runId: reclaimed!.id,
@@ -130,6 +132,7 @@ describeIntegration("run control PostgreSQL state machine", () => {
     })
     expect(first.idempotent).toBe(false)
     expect(replay.idempotent).toBe(true)
+    await expect(applicationStatus()).resolves.toBe("inspecting")
     await expect(
       runs.respondInterrupt({
         operatorId,
@@ -146,5 +149,85 @@ describeIntegration("run control PostgreSQL state machine", () => {
         response: { approved: true, note: "Reviewed." },
       })
     ).rejects.toMatchObject({ code: "interrupt_not_found" })
+    await expect(
+      runs.requestOwnedCancellation(operatorId, reclaimed!.id)
+    ).resolves.toMatchObject({ status: "cancelled" })
+    await expect(applicationStatus()).resolves.toBe("ready")
   })
+
+  it("creates linked attempts only for retryable terminal failures", async () => {
+    const retryable = await runs.enqueueControl(operatorId, {
+      schemaVersion: 1,
+      applicationId,
+      type: "run_eval",
+      idempotencyKey: "eval:retryable",
+      budget,
+      payload: { fixtureKey: "retryable" },
+    })
+    const claimed = await runs.claim("run-control-retry", 60)
+    expect(claimed?.id).toBe(retryable.run.id)
+    await expect(
+      runs.finish({
+        runId: claimed!.id,
+        owner: "run-control-retry",
+        status: "failed",
+        errorCategory: "provider",
+        errorCode: "provider_timeout",
+        retryable: true,
+      })
+    ).resolves.toBe(true)
+    const created = await runs.retryOwned(
+      operatorId,
+      claimed!.id,
+      "retry:delivery"
+    )
+    const replay = await runs.retryOwned(
+      operatorId,
+      claimed!.id,
+      "retry:delivery"
+    )
+    expect(created).toMatchObject({
+      idempotent: false,
+      run: { retryOf: claimed!.id },
+    })
+    expect(replay).toMatchObject({
+      idempotent: true,
+      run: { id: created.run.id },
+    })
+
+    await expect(
+      runs.retryOwned(operatorId, created.run.id, "retry:not-terminal")
+    ).rejects.toMatchObject({ code: "retry_not_allowed" })
+  })
+
+  it("paginates deterministically without crossing operator ownership", async () => {
+    await runs.enqueueControl(operatorId, {
+      schemaVersion: 1,
+      applicationId,
+      type: "run_eval",
+      idempotencyKey: "eval:page",
+      budget,
+      payload: { fixtureKey: "page" },
+    })
+    const first = await runs.listOwned({ operatorId, limit: 2 })
+    expect(first.items).toHaveLength(2)
+    expect(first.nextCursor).toBeDefined()
+    const second = await runs.listOwned({
+      operatorId,
+      limit: 2,
+      cursor: first.nextCursor,
+    })
+    expect(second.items.map((run) => run.id)).not.toContain(first.items[0]?.id)
+    await expect(
+      runs.listOwned({ operatorId: randomUUID(), limit: 100 })
+    ).resolves.toEqual({ items: [] })
+  })
+
+  async function applicationStatus(): Promise<string | undefined> {
+    const rows = await database.query<{ status: string }>(
+      "select status from sentinel.applications where id = $1::uuid",
+      [applicationId]
+    )
+    return rows[0]?.status
+  }
 })

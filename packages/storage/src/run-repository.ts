@@ -547,6 +547,23 @@ export class RunRepository {
     }
   }
 
+  async getOwnedPendingInterrupt(
+    operatorId: string,
+    runId: string
+  ): Promise<PublicRunInterrupt | null> {
+    const rows = await this.database.query<Record<string, unknown>>(
+      `select interrupt.* from sentinel.run_interrupts interrupt
+       join sentinel.runs run on run.id = interrupt.run_id
+       join sentinel.onboarding_configurations onboarding
+         on onboarding.application_id = run.application_id
+        and onboarding.operator_id = $1::uuid
+       where interrupt.run_id = $2::uuid and interrupt.status = 'pending'
+       order by interrupt.created_at desc limit 1`,
+      [operatorIdSchema.parse(operatorId), databaseRunIdSchema.parse(runId)]
+    )
+    return rows[0] === undefined ? null : mapInterrupt(rows[0])
+  }
+
   async getResumeDecision(
     runId: string,
     owner: string
