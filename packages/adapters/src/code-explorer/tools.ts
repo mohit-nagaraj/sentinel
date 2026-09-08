@@ -51,6 +51,7 @@ export const defaultCodeExplorerLimits: Readonly<CodeExplorerLimits> =
   })
 
 export type CodeExplorerToolErrorCode =
+  | "cancelled"
   | "invalid_arguments"
   | "result_limit_exceeded"
   | "scope_denied"
@@ -280,8 +281,10 @@ export class CodeExplorerTools {
   async execute(
     nameInput: string,
     argumentsInput: unknown,
-    limitOverride: Partial<CodeExplorerLimits> = {}
+    limitOverride: Partial<CodeExplorerLimits> = {},
+    signal?: AbortSignal
   ): Promise<CodeExplorerToolExecution> {
+    if (signal?.aborted) throw new CodeExplorerToolError("cancelled")
     let name: CodeExplorerToolName
     try {
       name = codeExplorerToolNameSchema.parse(nameInput)
@@ -290,122 +293,135 @@ export class CodeExplorerTools {
     }
     this.assertAllowed(name)
     const limits = this.repositoryLimits(limitOverride)
-    switch (name) {
-      case "list_repository_modules": {
-        const input = parseArguments(
-          listRepositoryModulesInputSchema,
-          argumentsInput
-        )
-        this.assertFilters(input)
-        return this.checked(
-          this.repository.listModules(this.scope, input, limits),
-          limits
-        )
-      }
-      case "search_symbols": {
-        const input = parseArguments(searchSymbolsInputSchema, argumentsInput)
-        this.assertFilters(input)
-        return this.checked(
-          this.repository.searchSymbols(this.scope, input, limits),
-          limits
-        )
-      }
-      case "search_code_text": {
-        const input = parseArguments(searchCodeTextInputSchema, argumentsInput)
-        this.assertFilters(input)
-        return this.checked(
-          await this.repository.searchText(this.scope, input, limits),
-          limits
-        )
-      }
-      case "inspect_symbol": {
-        const input = parseArguments(inspectSymbolInputSchema, argumentsInput)
-        this.assertSymbol(input.symbolId)
-        return this.checked(
-          await this.repository.inspectSymbol(
-            this.scope,
-            input.symbolId,
+    const execution = await (async (): Promise<CodeExplorerToolExecution> => {
+      switch (name) {
+        case "list_repository_modules": {
+          const input = parseArguments(
+            listRepositoryModulesInputSchema,
+            argumentsInput
+          )
+          this.assertFilters(input)
+          return this.checked(
+            this.repository.listModules(this.scope, input, limits),
             limits
-          ),
-          limits
-        )
-      }
-      case "find_definition": {
-        const input = parseArguments(findDefinitionInputSchema, argumentsInput)
-        this.assertFilters(input)
-        return this.checked(
-          this.repository.findDefinition(this.scope, input, limits),
-          limits
-        )
-      }
-      case "find_references": {
-        const input = parseArguments(findReferencesInputSchema, argumentsInput)
-        this.assertSymbol(input.symbolId)
-        return this.checked(
-          this.repository.findReferences(
-            this.scope,
-            input.symbolId,
-            input.limit,
+          )
+        }
+        case "search_symbols": {
+          const input = parseArguments(searchSymbolsInputSchema, argumentsInput)
+          this.assertFilters(input)
+          return this.checked(
+            this.repository.searchSymbols(this.scope, input, limits),
             limits
-          ),
-          limits
-        )
-      }
-      case "trace_callers": {
-        const input = parseArguments(traceCallersInputSchema, argumentsInput)
-        this.assertSymbol(input.symbolId)
-        return this.checked(
-          this.repository.trace("callers", this.scope, input, limits),
-          limits
-        )
-      }
-      case "trace_callees": {
-        const input = parseArguments(traceCalleesInputSchema, argumentsInput)
-        this.assertSymbol(input.symbolId)
-        return this.checked(
-          this.repository.trace("callees", this.scope, input, limits),
-          limits
-        )
-      }
-      case "find_endpoint_handler": {
-        const input = parseArguments(
-          findEndpointHandlerInputSchema,
-          argumentsInput
-        )
-        return this.checked(
-          this.repository.findEndpointHandler(this.scope, input, limits),
-          limits
-        )
-      }
-      case "find_frontend_callers": {
-        const input = parseArguments(
-          findFrontendCallersInputSchema,
-          argumentsInput
-        )
-        return this.checked(
-          this.repository.findFrontendCallers(this.scope, input, limits),
-          limits
-        )
-      }
-      case "inspect_tests": {
-        const input = parseArguments(inspectTestsInputSchema, argumentsInput)
-        if (input.targetKind === "symbol") this.assertSymbol(input.symbolId)
-        return this.checked(
-          await this.repository.inspectTests(this.scope, input, limits),
-          limits
-        )
-      }
-      case "submit_code_claim":
-        return {
-          kind: "claim",
-          input: parseArguments(submitCodeClaimInputSchema, argumentsInput),
+          )
         }
-      case "finish_code_mission":
-        return {
-          kind: "finish",
-          input: parseArguments(finishCodeMissionInputSchema, argumentsInput),
+        case "search_code_text": {
+          const input = parseArguments(
+            searchCodeTextInputSchema,
+            argumentsInput
+          )
+          this.assertFilters(input)
+          return this.checked(
+            await this.repository.searchText(this.scope, input, limits),
+            limits
+          )
         }
-    }
+        case "inspect_symbol": {
+          const input = parseArguments(inspectSymbolInputSchema, argumentsInput)
+          this.assertSymbol(input.symbolId)
+          return this.checked(
+            await this.repository.inspectSymbol(
+              this.scope,
+              input.symbolId,
+              limits
+            ),
+            limits
+          )
+        }
+        case "find_definition": {
+          const input = parseArguments(
+            findDefinitionInputSchema,
+            argumentsInput
+          )
+          this.assertFilters(input)
+          return this.checked(
+            this.repository.findDefinition(this.scope, input, limits),
+            limits
+          )
+        }
+        case "find_references": {
+          const input = parseArguments(
+            findReferencesInputSchema,
+            argumentsInput
+          )
+          this.assertSymbol(input.symbolId)
+          return this.checked(
+            this.repository.findReferences(
+              this.scope,
+              input.symbolId,
+              input.limit,
+              limits
+            ),
+            limits
+          )
+        }
+        case "trace_callers": {
+          const input = parseArguments(traceCallersInputSchema, argumentsInput)
+          this.assertSymbol(input.symbolId)
+          return this.checked(
+            this.repository.trace("callers", this.scope, input, limits),
+            limits
+          )
+        }
+        case "trace_callees": {
+          const input = parseArguments(traceCalleesInputSchema, argumentsInput)
+          this.assertSymbol(input.symbolId)
+          return this.checked(
+            this.repository.trace("callees", this.scope, input, limits),
+            limits
+          )
+        }
+        case "find_endpoint_handler": {
+          const input = parseArguments(
+            findEndpointHandlerInputSchema,
+            argumentsInput
+          )
+          return this.checked(
+            this.repository.findEndpointHandler(this.scope, input, limits),
+            limits
+          )
+        }
+        case "find_frontend_callers": {
+          const input = parseArguments(
+            findFrontendCallersInputSchema,
+            argumentsInput
+          )
+          return this.checked(
+            this.repository.findFrontendCallers(this.scope, input, limits),
+            limits
+          )
+        }
+        case "inspect_tests": {
+          const input = parseArguments(inspectTestsInputSchema, argumentsInput)
+          if (input.targetKind === "symbol") this.assertSymbol(input.symbolId)
+          return this.checked(
+            await this.repository.inspectTests(this.scope, input, limits),
+            limits
+          )
+        }
+        case "submit_code_claim":
+          return {
+            kind: "claim",
+            input: parseArguments(submitCodeClaimInputSchema, argumentsInput),
+          }
+        case "finish_code_mission":
+          return {
+            kind: "finish",
+            input: parseArguments(finishCodeMissionInputSchema, argumentsInput),
+          }
+      }
+    })()
+    if (signal?.aborted) throw new CodeExplorerToolError("cancelled")
+    return execution
   }
 }
 

@@ -1,17 +1,24 @@
 import {
   createEventId,
+  contentHashSchema,
+  evidenceIdSchema,
   hashCanonical,
+  agentKindSchema,
   missionIdSchema,
   parseRunEvent,
   reasonCodeSchema,
   runIdSchema,
   type RunEvent,
 } from "@sentinel/contracts"
+import { randomUUID } from "node:crypto"
 import { z } from "zod"
 
 import type { OrchestrationEvent, OrchestrationEventSink } from "./runtime.ts"
 
-export type AppendRunEvent = (event: RunEvent) => Promise<unknown>
+export type AppendRunEvent = (
+  event: RunEvent,
+  idempotencyKey: string
+) => Promise<unknown>
 
 const customProjectionSchema = z.strictObject({
   nodeName: z.string(),
@@ -27,12 +34,24 @@ export function projectLangGraphEmission(
     readonly runId: string
     readonly graphName: string
     readonly occurredAt: string
+    readonly agent?: OrchestrationEvent["agent"]
+    readonly missionId?: string
+    readonly evidenceIds?: readonly string[]
   }
 ): OrchestrationEvent {
   const parsedContext = {
     runId: runIdSchema.parse(context.runId),
     graphName: reasonCodeSchema.parse(context.graphName),
     occurredAt: z.iso.datetime({ offset: true }).parse(context.occurredAt),
+    ...(context.agent === undefined
+      ? {}
+      : { agent: agentKindSchema.parse(context.agent) }),
+    ...(context.missionId === undefined
+      ? {}
+      : { missionId: missionIdSchema.parse(context.missionId) }),
+    evidenceIds: (context.evidenceIds ?? []).map((id) =>
+      evidenceIdSchema.parse(id)
+    ),
   }
   if (emission.mode === "updates") {
     const data = z.record(z.string(), z.unknown()).parse(emission.data)
@@ -72,10 +91,14 @@ export function projectLangGraphEmission(
 
 export class DurableRunEventSink implements OrchestrationEventSink {
   private sequence = 0
+  private readonly instanceId = randomUUID()
 
   constructor(private readonly appendRunEvent: AppendRunEvent) {}
 
-  async append(event: OrchestrationEvent): Promise<void> {
+  async append(
+    event: OrchestrationEvent,
+    options?: { readonly idempotencyKey?: string }
+  ): Promise<void> {
     this.sequence += 1
     const runId = runIdSchema.parse(event.runId)
     const missionId = missionIdSchema.parse(
@@ -95,16 +118,20 @@ export class DurableRunEventSink implements OrchestrationEventSink {
       nodeName: event.nodeName,
       summary: event.summary,
       reasonCode: event.reasonCode,
-      evidenceIds: [],
-      ...(event.elapsedMs === undefined || event.elapsedLimitMs === undefined
-        ? {}
-        : {
-            budget: {
-              consumed: event.elapsedMs,
-              limit: event.elapsedLimitMs,
-              unit: "elapsed_ms" as const,
-            },
-          }),
+      evidenceIds: [...(event.evidenceIds ?? [])],
+      ...(event.agent === undefined ? {} : { agent: event.agent }),
+      ...(event.missionId === undefined ? {} : { missionId: event.missionId }),
+      ...(event.budget !== undefined
+        ? { budget: event.budget }
+        : event.elapsedMs === undefined || event.elapsedLimitMs === undefined
+          ? {}
+          : {
+              budget: {
+                consumed: event.elapsedMs,
+                limit: event.elapsedLimitMs,
+                unit: "elapsed_ms" as const,
+              },
+            }),
     }
     const projected = (() => {
       switch (event.kind) {
@@ -112,13 +139,34 @@ export class DurableRunEventSink implements OrchestrationEventSink {
           return { ...common, kind: event.kind, status: "started" as const }
         case "node_completed":
           return { ...common, kind: event.kind, status: "completed" as const }
+        case "mission_started":
+          return {
+            ...common,
+            kind: event.kind,
+            status: "started" as const,
+            agent: event.agent ?? ("system" as const),
+            missionId: event.missionId ?? missionId,
+          }
+        case "mission_completed":
+          return {
+            ...common,
+            kind: event.kind,
+            status:
+              event.status === "failed"
+                ? ("failed" as const)
+                : event.status === "blocked"
+                  ? ("blocked" as const)
+                  : ("completed" as const),
+            agent: event.agent ?? ("system" as const),
+            missionId: event.missionId ?? missionId,
+          }
         case "tool_started":
           return {
             ...common,
             kind: event.kind,
             status: "started" as const,
-            agent: "system" as const,
-            missionId,
+            agent: event.agent ?? ("system" as const),
+            missionId: event.missionId ?? missionId,
             toolName: event.toolName,
           }
         case "tool_completed":
@@ -126,10 +174,20 @@ export class DurableRunEventSink implements OrchestrationEventSink {
             ...common,
             kind: event.kind,
             status: "completed" as const,
-            agent: "system" as const,
-            missionId,
+            agent: event.agent ?? ("system" as const),
+            missionId: event.missionId ?? missionId,
             toolName: event.toolName,
           }
+        case "evidence_gained":
+          return {
+            ...common,
+            kind: event.kind,
+            status: "completed" as const,
+            agent: event.agent ?? ("system" as const),
+            missionId: event.missionId ?? missionId,
+          }
+        case "budget_updated":
+          return { ...common, kind: event.kind, status: "completed" as const }
         case "interrupt_requested":
           return { ...common, kind: event.kind, status: "blocked" as const }
         case "interrupt_resumed":
@@ -150,6 +208,16 @@ export class DurableRunEventSink implements OrchestrationEventSink {
           }
       }
     })()
-    await this.appendRunEvent(parseRunEvent(projected))
+    const parsed = parseRunEvent(projected)
+    const idempotencyKey =
+      options?.idempotencyKey === undefined
+        ? hashCanonical({
+            kind: "unkeyed_orchestration_event",
+            instanceId: this.instanceId,
+            sequence: this.sequence,
+            event: parsed,
+          })
+        : contentHashSchema.parse(options.idempotencyKey)
+    await this.appendRunEvent(parsed, idempotencyKey)
   }
 }

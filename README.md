@@ -187,6 +187,45 @@ threads are interrupted or failed. Drain/resume those threads on the prior graph
 or publish a versioned graph/checkpoint namespace and run an explicit validated
 state migration. Never reinterpret an in-flight checkpoint implicitly.
 
+## Shared Specialist Kernel
+
+`@sentinel/orchestration` provides one LangGraph kernel for Documentation, Code,
+and Application specialists. A kernel configuration fixes the specialist
+identity, permitted mission modes, prompt/model/toolset/completion-validator IDs,
+described tool registry, no-progress limit, and recursion limit. The canonical
+configuration fingerprint is stored with the mission checkpoint, so a resumed
+thread cannot silently switch prompts, tools, models, validators, or limits.
+
+Specialist state contains only the mission, compact decisions, call hashes,
+evidence/reference IDs, correlated budget entries, progress fingerprints, bounded
+human-interrupt data, committed-event cursors, and a terminal `MissionResult`.
+Rich source slices, browser observations, DOM state, prompts, raw tool output, and
+credentials remain behind injected durable ports. The aggregate checkpoint and
+each tool argument payload have independent byte limits.
+
+Every model decision is classified as provider-backed or deterministic. Provider
+decisions consume exactly one model call; deterministic reconstruction consumes no
+model tokens. Tool calls pass strict schemas, fixed agent/mode permissions,
+mission allowlists, scope checks, state correlation, duplicate-call checks, and
+preflight budget reservation before execution. Production registries require an
+explicit durable execution coordinator. Completed calls, conservative uncertain
+failures, and budget entries are checkpointed together and replay by call ID.
+
+State-changing nodes are followed by committed-event nodes. Durable run events use
+idempotency keys so event-sink or checkpoint retries cannot publish contradictory
+decision, tool, evidence, budget, interrupt, or terminal history. Mission start,
+continue, and resume are serialized per mission, guarded by the current run lease,
+and recover abandoned nonterminal checkpoints. Human resume requires an authorized
+matching decision on the same thread and exposes only decision, reason, and
+approval state to the next model decision.
+
+Run focused kernel checks with:
+
+```sh
+pnpm vitest run --project unit packages/orchestration/src/specialist packages/orchestration/src/runtime.test.ts
+pnpm test:agent
+```
+
 ## Documentation Evidence Maps
 
 `@sentinel/adapters` prepares deterministic documentation maps from approved web
@@ -319,10 +358,13 @@ results, traversal hops, source lines, and source characters are validated at
 the deterministic tool boundary. Text matches have lexical strength, and
 focused tests are marked as corroboration only.
 
-`@sentinel/orchestration` exposes `CodeExplorerService`. Each iteration requires
-one strict function-tool call, revalidates it through the tool port, accounts
-for model/tool/content/source/repository/time budgets, and records normalized
-visit keys before execution. Repeated visits stop without replaying the tool.
+`@sentinel/orchestration` exposes the legacy `CodeExplorerService` plus
+`createCodeExplorerSpecialist`, which composes all thirteen described Code tools
+through the shared specialist kernel. Rich source, edge, path, boundary, and result
+records live in an injected durable Code store; checkpoints retain only compact
+hashes and evidence/reference IDs. Each provider turn selects one strict tool,
+while committed finish reconstruction is deterministic and consumes no additional
+model budget. Repeated semantic visits stop without rereading the source tool.
 Only a recorded structural edge whose source, target, and relationship kind
 match the proposal can support a claim; lexical matches, same-name symbols,
 source slices, and tests do not establish a relationship by themselves. All
@@ -330,13 +372,14 @@ composed indexes must share one application, run, repository, and immutable
 commit identity, and resolved targets outside mission scope are suppressed.
 Dynamic calls, computed targets,
 dependency-injection ambiguity, and unmapped endpoints remain typed unresolved
-boundaries. This service is a feature-specific bounded loop; generic specialist
-checkpoint, interrupt, and cross-agent behavior is not part of its API.
+boundaries. Documentation and Application follow-ups remain proposed missions in
+the same run/application boundary. Production composition injects the checkpointer,
+execution coordinator, run-control dependencies, and durable rich-result store.
 
 Run focused Code Explorer checks with:
 
 ```sh
-pnpm exec vitest run --project unit packages/contracts/src/code-explorer.test.ts packages/adapters/src/code-explorer/tools.test.ts packages/orchestration/src/code-explorer.test.ts
+pnpm exec vitest run --project unit packages/contracts/src/code-explorer.test.ts packages/adapters/src/code-explorer/tools.test.ts packages/orchestration/src/code-explorer.test.ts packages/orchestration/src/code-explorer-specialist.test.ts
 pnpm test:agent
 ```
 
@@ -356,8 +399,11 @@ types for planner decisions, bounded context and checkpoint state, frontier and
 replay metadata, terminal classifications, blockers, evidence claims, and
 mission output. `@sentinel/orchestration` exports `ApplicationExplorer`,
 `ApplicationExplorerTools`, `createApplicationExplorer`,
-`buildApplicationExplorerPlannerContext`, and the browser, planner, and event
-ports used to compose the explorer.
+`buildApplicationExplorerPlannerContext`, and `createApplicationExplorerSpecialist`.
+The specialist composition fixes all four mission modes and tool descriptions,
+uses the shared checkpoint/lease/budget/event/interrupt lifecycle, and keeps rich
+observations, transitions, frontier state, replay recipes, and outputs in an
+injected durable Application store.
 
 The planner can select only `observe_page`, `perform_observed_action`,
 `navigate_history`, or `finish_application_mission`. Observed action IDs remain
@@ -366,7 +412,10 @@ policy, stale-state, host, reuse, and budget authority. Mission hints affect
 candidate relevance only. Executed transitions produce contract-validated
 screen, workflow, flow-step, UI-element, and runtime-request claims. Recovery
 replays only fingerprint-confirmed safe history and requests human review at an
-uncertain mutable boundary.
+uncertain mutable boundary. The authentication-state reference must still match
+the checkpoint before replay. Complete results require actual transition evidence
+that deterministically addresses every mission question and success criterion;
+all non-interrupted terminal paths close an active browser session.
 
 The deterministic unit, agent, and integration suites require no live target.
 The Hi.Events smoke remains disabled unless explicitly enabled against a trusted

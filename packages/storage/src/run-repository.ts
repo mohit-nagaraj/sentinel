@@ -167,18 +167,33 @@ export class RunRepository {
     return rows[0]?.request_run_cancellation ?? null
   }
 
-  async appendEvent(eventInput: unknown): Promise<{
+  async appendEvent(
+    eventInput: unknown,
+    idempotencyKeyInput: string
+  ): Promise<{
     readonly sequence: number
     readonly event: RunEvent
   }> {
     const event = parseRunEvent(eventInput)
+    const idempotencyKey = z
+      .string()
+      .min(1)
+      .max(128)
+      .regex(/^[A-Za-z0-9:._-]+$/)
+      .parse(idempotencyKeyInput)
     const databaseRunId = z.uuid().parse(event.runId.slice("run:".length))
     const rows = await this.database.query<{
       sequence: number
       event: unknown
     }>(
-      "select sequence, event from sentinel.append_run_event($1::uuid, $2, $3::text::jsonb, $4::timestamptz)",
-      [databaseRunId, event.kind, JSON.stringify(event), event.occurredAt]
+      "select sequence, event from sentinel.append_run_event($1::uuid, $2, $3::text::jsonb, $4::timestamptz, $5)",
+      [
+        databaseRunId,
+        event.kind,
+        JSON.stringify(event),
+        event.occurredAt,
+        idempotencyKey,
+      ]
     )
     const row = rows[0]
     if (row === undefined) {

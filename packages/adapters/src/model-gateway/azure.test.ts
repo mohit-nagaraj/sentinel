@@ -40,6 +40,7 @@ function completed(
 
 class QueueTransport implements AzureResponsesTransport {
   readonly requests: Readonly<Record<string, unknown>>[] = []
+  readonly signals: (AbortSignal | undefined)[] = []
   streamReturned = false
 
   constructor(
@@ -47,17 +48,23 @@ class QueueTransport implements AzureResponsesTransport {
     private readonly events: unknown[] = []
   ) {}
 
-  async create(request: Readonly<Record<string, unknown>>): Promise<unknown> {
+  async create(
+    request: Readonly<Record<string, unknown>>,
+    options?: { readonly signal?: AbortSignal }
+  ): Promise<unknown> {
     this.requests.push(request)
+    this.signals.push(options?.signal)
     const response = this.responses.shift()
     if (response instanceof Error) throw response
     return response
   }
 
   async stream(
-    request: Readonly<Record<string, unknown>>
+    request: Readonly<Record<string, unknown>>,
+    options?: { readonly signal?: AbortSignal }
   ): Promise<AsyncIterable<unknown>> {
     this.requests.push(request)
+    this.signals.push(options?.signal)
     const events = this.events
     const markReturned = () => {
       this.streamReturned = true
@@ -93,6 +100,30 @@ describe("Azure OpenAI model gateway", () => {
       store: false,
     })
     expect(transport.requests[0]).not.toHaveProperty("previous_response_id")
+  })
+
+  it("forwards abort signals and rejects already-aborted requests", async () => {
+    const controller = new AbortController()
+    const transport = new QueueTransport([completed("hello")])
+    const gateway = new AzureOpenAIModelGateway(transport, "deployment")
+    await expect(
+      gateway.generateText({
+        input: "Say hello",
+        signal: controller.signal,
+      })
+    ).resolves.toMatchObject({ output: "hello" })
+    expect(transport.signals).toEqual([controller.signal])
+
+    const aborted = new AbortController()
+    aborted.abort()
+    const untouched = new QueueTransport([completed("unused")])
+    await expect(
+      new AzureOpenAIModelGateway(untouched, "deployment").generateText({
+        input: "Do not send",
+        signal: aborted.signal,
+      })
+    ).rejects.toMatchObject({ code: "timeout", retryable: false })
+    expect(untouched.requests).toEqual([])
   })
 
   it("sends strict JSON schema and revalidates output", async () => {
