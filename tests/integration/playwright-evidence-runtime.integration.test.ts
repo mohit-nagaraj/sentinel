@@ -368,7 +368,8 @@ describe("Playwright browser evidence runtime", () => {
     const staleAction = stale.candidates.find(
       (value) => value.name === "Continue"
     )
-    await new Promise((resolve) => setTimeout(resolve, 600))
+    fixture.triggerMutation("stale")
+    await waitForFixtureRequest("/api/mutation-ready/stale")
     await expect(
       runtime.performAction(runIds.stale, staleAction?.actionId ?? "missing")
     ).rejects.toSatisfy(
@@ -405,7 +406,8 @@ describe("Playwright browser evidence runtime", () => {
     const positioned = positionObservation.candidates.find(
       (value) => value.name === "Show position state"
     )
-    await waitForFixtureRequest("/api/position-ready")
+    fixture.triggerMutation("position")
+    await waitForFixtureRequest("/api/mutation-ready/position")
     const positionedTransition = await runtime.performAction(
       runIds.expired,
       positioned?.actionId ?? "missing"
@@ -421,7 +423,8 @@ describe("Playwright browser evidence runtime", () => {
     const piiAction = piiObservation.candidates.find(
       (value) => value.name === "View [EMAIL_REDACTED]"
     )
-    await new Promise((resolve) => setTimeout(resolve, 600))
+    fixture.triggerMutation("pii")
+    await waitForFixtureRequest("/api/mutation-ready/pii")
     await expect(
       runtime.performAction(runIds.expired, piiAction?.actionId ?? "missing")
     ).rejects.toSatisfy(
@@ -435,7 +438,8 @@ describe("Playwright browser evidence runtime", () => {
     const mutable = attributeObservation.candidates.find(
       (value) => value.name === "Load mutable state"
     )
-    await new Promise((resolve) => setTimeout(resolve, 600))
+    fixture.triggerMutation("attributes")
+    await waitForFixtureRequest("/api/mutation-ready/attributes")
     await expect(
       runtime.performAction(runIds.expired, mutable?.actionId ?? "missing")
     ).rejects.toSatisfy(
