@@ -8,8 +8,11 @@ import { once } from "node:events"
 export interface BrowserFixtureApplication {
   readonly origin: string
   readonly requests: readonly { method: string; path: string }[]
+  triggerMutation(kind: BrowserFixtureMutation): void
   close(): Promise<void>
 }
+
+export type BrowserFixtureMutation = "attributes" | "pii" | "position" | "stale"
 
 function send(
   response: ServerResponse,
@@ -119,10 +122,17 @@ function fixturePage(
     document.querySelector('#delayed-socket').addEventListener('click', () => {
       setTimeout(() => new WebSocket('ws://127.0.0.1:9/delayed'), 1000);
     });
-    ${stale ? "setTimeout(() => { const button = document.createElement('button'); button.textContent = 'Late action'; document.querySelector('main').append(button); }, 500);" : ""}
-    ${staleAttributes ? "setTimeout(() => { document.querySelector('#mutable').type = 'submit'; }, 500);" : ""}
-    ${stalePosition ? "setTimeout(() => { const hidden = document.createElement('button'); hidden.hidden = true; document.querySelector('main').prepend(hidden); }, 500);" : ""}
-    ${stalePiiName ? "setTimeout(() => { document.querySelector('#person').textContent = 'View bob@example.test'; }, 500);" : ""}
+    const runMutation = async (kind, mutate) => {
+      const response = await fetch('/api/wait-mutation/' + kind);
+      if (!response.ok) return;
+      mutate();
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      await fetch('/api/mutation-ready/' + kind);
+    };
+    ${stale ? "runMutation('stale', () => { const button = document.createElement('button'); button.textContent = 'Late action'; document.querySelector('main').append(button); });" : ""}
+    ${staleAttributes ? "runMutation('attributes', () => { document.querySelector('#mutable').type = 'submit'; });" : ""}
+    ${stalePosition ? "runMutation('position', () => { const hidden = document.createElement('button'); hidden.hidden = true; document.querySelector('main').prepend(hidden); });" : ""}
+    ${stalePiiName ? "runMutation('pii', () => { document.querySelector('#person').textContent = 'View bob@example.test'; });" : ""}
   </script>
 </body>
 </html>`
@@ -130,6 +140,14 @@ function fixturePage(
 
 export async function startBrowserFixtureApplication(): Promise<BrowserFixtureApplication> {
   const requests: Array<{ method: string; path: string }> = []
+  const pendingMutations = new Map<BrowserFixtureMutation, ServerResponse[]>()
+  const triggeredMutations = new Set<BrowserFixtureMutation>()
+  const mutationKinds = new Set<BrowserFixtureMutation>([
+    "attributes",
+    "pii",
+    "position",
+    "stale",
+  ])
   const server = createServer(
     async (request: IncomingMessage, response: ServerResponse) => {
       const url = new URL(request.url ?? "/", "http://127.0.0.1")
@@ -161,6 +179,30 @@ export async function startBrowserFixtureApplication(): Promise<BrowserFixtureAp
         send(response, 200, JSON.stringify({ ok: true }), {
           "content-type": "application/json",
         })
+        return
+      }
+      if (url.pathname.startsWith("/api/wait-mutation/")) {
+        const kind = url.pathname.slice(
+          "/api/wait-mutation/".length
+        ) as BrowserFixtureMutation
+        if (!mutationKinds.has(kind)) {
+          response.writeHead(404)
+          response.end()
+          return
+        }
+        if (triggeredMutations.delete(kind)) {
+          response.writeHead(204)
+          response.end()
+          return
+        }
+        const waiters = pendingMutations.get(kind) ?? []
+        waiters.push(response)
+        pendingMutations.set(kind, waiters)
+        return
+      }
+      if (url.pathname.startsWith("/api/mutation-ready/")) {
+        response.writeHead(204)
+        response.end()
         return
       }
       if (url.pathname === "/redirect-external") {
@@ -213,7 +255,26 @@ export async function startBrowserFixtureApplication(): Promise<BrowserFixtureAp
   return {
     origin: `http://127.0.0.1:${address.port}`,
     requests,
+    triggerMutation(kind) {
+      const waiters = pendingMutations.get(kind) ?? []
+      if (waiters.length === 0) {
+        triggeredMutations.add(kind)
+        return
+      }
+      pendingMutations.delete(kind)
+      for (const response of waiters) {
+        response.writeHead(204)
+        response.end()
+      }
+    },
     async close() {
+      for (const waiters of pendingMutations.values()) {
+        for (const response of waiters) {
+          response.writeHead(410)
+          response.end()
+        }
+      }
+      pendingMutations.clear()
       server.close()
       await once(server, "close")
     },

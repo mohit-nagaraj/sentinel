@@ -21,17 +21,20 @@ export interface GitRunner {
 }
 
 function gitEnvironment(credentials: GitCredentials = {}): NodeJS.ProcessEnv {
-  const environment: NodeJS.ProcessEnv = Object.fromEntries(
-    Object.entries(process.env).filter(([key]) => {
-      const normalized = key.toUpperCase()
-      return (
-        !normalized.startsWith("GIT_") &&
-        normalized !== "GCM_INTERACTIVE" &&
-        normalized !== "GITHUB_TOKEN" &&
-        normalized !== "GH_TOKEN"
-      )
-    })
-  )
+  const environment: NodeJS.ProcessEnv = {
+    ...Object.fromEntries(
+      Object.entries(process.env).filter(([key]) => {
+        const normalized = key.toUpperCase()
+        return (
+          !normalized.startsWith("GIT_") &&
+          normalized !== "GCM_INTERACTIVE" &&
+          normalized !== "GITHUB_TOKEN" &&
+          normalized !== "GH_TOKEN"
+        )
+      })
+    ),
+    NODE_ENV: process.env["NODE_ENV"] ?? "production",
+  }
   environment["GIT_TERMINAL_PROMPT"] = "0"
   environment["GCM_INTERACTIVE"] = "Never"
   environment["GIT_ASKPASS"] = ""

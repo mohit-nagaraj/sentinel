@@ -91,7 +91,8 @@ export class CheckoutLeaseRegistry {
 
   constructor(options: CheckoutLeaseRegistryOptions = {}) {
     this.configuredRoot = resolve(
-      options.rootDirectory ?? defaultRootDirectory()
+      /* turbopackIgnore: true */ options.rootDirectory ??
+        defaultRootDirectory()
     )
     this.now = options.now ?? (() => new Date())
     this.heartbeatIntervalMs = z

@@ -14,7 +14,10 @@ const secretNameSchema = z
   .min(1)
   .max(128)
   .regex(/^[a-z][a-z0-9_.-]*$/)
-const secretValueSchema = z.string().min(1).max(16_384)
+const secretValueSchema = z
+  .string()
+  .min(1)
+  .max(256 * 1_024)
 
 const secretMappingRowSchema = z.object({
   id: databaseIdSchema,
