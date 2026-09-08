@@ -515,11 +515,15 @@ export const documentationMissionResultSchema = missionResultSchema
       ])
     })
     result.requirements.forEach((claim, index) => {
-      if (claim.requirement.applicationId !== result.applicationId) {
+      if (
+        claim.requirement.applicationId !== result.applicationId ||
+        claim.citation.sourceId !== result.sourceId
+      ) {
         context.addIssue({
           code: "custom",
-          message: "Requirement must belong to the mission application",
-          path: ["requirements", index, "requirement", "applicationId"],
+          message:
+            "Requirement must belong to the mission application and documentation source",
+          path: ["requirements", index],
         })
       }
     })
@@ -564,7 +568,7 @@ export const documentationMissionResultSchema = missionResultSchema
     }
     if (
       result.status === "budget_exhausted" &&
-      result.stopReason.code !== "budget_exhausted"
+      !result.stopReason.code.endsWith("budget_exhausted")
     ) {
       context.addIssue({
         code: "custom",
