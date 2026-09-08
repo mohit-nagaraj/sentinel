@@ -1,12 +1,12 @@
 # SNT-017 — Application Explorer agent
 
-| Field | Value |
-|---|---|
-| Milestone | M3 — Specialist discovery agents |
-| Status | `not-started` |
-| Depends on | SNT-012, SNT-014 |
-| Blocks | Evidence linking, coverage, verification, activity UX |
-| PRD references | §13.6, §15.4, FR-005 |
+| Field          | Value                                                 |
+| -------------- | ----------------------------------------------------- |
+| Milestone      | M3 — Specialist discovery agents                      |
+| Status         | `done`                                                |
+| Depends on     | SNT-012, SNT-014                                      |
+| Blocks         | Evidence linking, coverage, verification, activity UX |
+| PRD references | §13.6, §15.4, FR-005                                  |
 
 ## Background
 
@@ -32,17 +32,17 @@ Add mission-aware action selection, state/frontier tracking, workflow constructi
 
 ## Implementation tasks
 
-- [ ] Define compact application-agent state referencing browser/evidence IDs.
-- [ ] Build context from sanitized observation and top bounded candidate actions.
-- [ ] Require action selection by opaque ID only.
-- [ ] Map mission capability/requirement hints into non-authoritative action relevance.
-- [ ] Track visited state/action pairs and multi-branch frontier.
-- [ ] Convert transitions into typed workflow/step/UI/runtime claims.
-- [ ] Distinguish terminal goal, dead end, recoverable branch, login block, unsafe action, and budget limit.
-- [ ] Implement backtracking/history within approved context.
-- [ ] Implement crash recovery by re-authentication and safe/idempotent replay with fingerprint confirmation.
-- [ ] Interrupt at uncertain non-idempotent replay or mutable-action boundaries.
-- [ ] Emit concise structured action reasons and evidence-gain events.
+- [x] Define compact application-agent state referencing browser/evidence IDs.
+- [x] Build context from sanitized observation and top bounded candidate actions.
+- [x] Require action selection by opaque ID only.
+- [x] Map mission capability/requirement hints into non-authoritative action relevance.
+- [x] Track visited state/action pairs and multi-branch frontier.
+- [x] Convert transitions into typed workflow/step/UI/runtime claims.
+- [x] Distinguish terminal goal, dead end, recoverable branch, login block, unsafe action, and budget limit.
+- [x] Implement backtracking/history within approved context.
+- [x] Implement crash recovery by re-authentication and safe/idempotent replay with fingerprint confirmation.
+- [x] Interrupt at uncertain non-idempotent replay or mutable-action boundaries.
+- [x] Emit concise structured action reasons and evidence-gain events.
 
 ## Acceptance criteria
 
@@ -70,4 +70,11 @@ PR impact planning, final deterministic test verdicts, real payment, arbitrary s
 
 ## Implementation notes
 
-_Populate during implementation with final paths, commands, decisions, test evidence, and any explicitly deferred acceptance item._
+- Contracts and public types: `packages/contracts/src/application-explorer.ts`, exported through `packages/contracts/src/index.ts`.
+- Explorer runtime and ports: `packages/orchestration/src/application-explorer.ts`, exported through `packages/orchestration/src/index.ts`. The runtime exposes `ApplicationExplorer`, `ApplicationExplorerTools`, `createApplicationExplorer`, and `buildApplicationExplorerPlannerContext` around the four approved browser tools.
+- Browser proof: `tests/fixtures/application-explorer-application.ts`, `tests/agent/application-explorer.agent.test.ts`, and `tests/integration/application-explorer.integration.test.ts`. The opt-in trusted-target smoke is `tests/live/application-explorer.live.test.ts`.
+- Planner decisions are validated against the latest bounded observation before the existing browser runtime applies its own stale-state, reuse, policy, host, and budget checks. Mission hints rank candidates but never create evidence.
+- Checkpoints retain bounded public state, frontier, budgets, authentication-state references, and replay-safe history. Recovery restores that reference and fingerprint-confirms safe replay; uncertain mutable boundaries stop with `needs_human`.
+- Verified commands: `pnpm exec vitest run --project unit packages/contracts/src/application-explorer.test.ts packages/orchestration/src/application-explorer.test.ts`, `pnpm test:agent`, `pnpm exec vitest run --project integration tests/integration/application-explorer.integration.test.ts --maxWorkers=1`, and `pnpm test:live -- tests/live/application-explorer.live.test.ts` with the Hi.Events opt-in disabled.
+- Repository gates: `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:integration`, and `pnpm build`.
+- SNT-014 remains incomplete on the current base. SNT-017 ships a composable explorer with typed browser, planner, and event ports; shared specialist-kernel/LangGraph composition remains SNT-014 work.

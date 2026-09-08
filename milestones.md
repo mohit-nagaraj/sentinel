@@ -92,7 +92,9 @@ graph LR
 | SNT-014 | [Shared specialist agent kernel](./.tasks/milestone-03-specialist-agents/SNT-014-specialist-agent-kernel.md) | SNT-005, SNT-006 | not-started |
 | SNT-015 | [Documentation Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-015-documentation-explorer.md) | SNT-008, SNT-014 | not-started |
 | SNT-016 | [Code Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-016-code-explorer.md) | SNT-009, SNT-010, SNT-011, SNT-014 | not-started |
-| SNT-017 | [Application Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-017-application-explorer.md) | SNT-012, SNT-014 | not-started |
+| SNT-017 | [Application Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-017-application-explorer.md) | SNT-012, SNT-014 | done |
+
+SNT-017 provides a composable explorer and typed ports. SNT-014 remains incomplete and still owns generic specialist-kernel and parent-graph composition.
 
 ---
 
@@ -185,13 +187,13 @@ graph LR
 |---|---:|---:|---|
 | M1 Foundation and durable execution | 6 | 6 | done |
 | M2 Deterministic source evidence | 6 | 7 | in-progress |
-| M3 Specialist discovery agents | 0 | 4 | not-started |
+| M3 Specialist discovery agents | 1 | 4 | in-progress |
 | M4 Graph construction and reconciliation | 0 | 4 | not-started |
 | M5 Onboarding and control plane | 0 | 4 | not-started |
 | M6 PR blast-radius loop | 0 | 4 | not-started |
 | M7 Verification and refresh | 0 | 3 | blocked on deployment decision |
 | M8 Evaluation and delivery | 0 | 3 | not-started |
-| **Overall** | **12** | **35** | **in-progress** |
+| **Overall** | **13** | **35** | **in-progress** |
 
 ## Active front
 

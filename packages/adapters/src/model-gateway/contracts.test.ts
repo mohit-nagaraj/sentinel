@@ -2,12 +2,17 @@ import { describe, expect, it } from "vitest"
 
 import {
   assertModelSafeValue,
+  defaultModelCallLimits,
   ModelGatewayError,
   modelCallLimitsSchema,
   parseModelSafeText,
 } from "./contracts.ts"
 
 describe("model gateway contracts", () => {
+  it("admits the complete bounded specialist tool surface by default", () => {
+    expect(defaultModelCallLimits.maxTools).toBeGreaterThanOrEqual(13)
+  })
+
   it("defines bounded per-call limits", () => {
     expect(() =>
       modelCallLimitsSchema.parse({

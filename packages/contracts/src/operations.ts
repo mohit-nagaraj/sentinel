@@ -8,6 +8,7 @@ import {
   contentHashSchema,
   evidenceIdSchema,
   hostnameSchema,
+  languageSchema,
   missionIdSchema,
   persistedTextSchema,
   publicHttpUrlSchema,
@@ -124,6 +125,7 @@ export const missionBudgetSchema = executionBudgetSchema
 
 export const missionScopeSchema = z.strictObject({
   repositoryPaths: z.array(repositoryPathSchema).max(100).default([]),
+  languages: z.array(languageSchema).min(1).max(3).optional(),
   sourceUris: z.array(sourceUriSchema).max(100).default([]),
   allowedHosts: z.array(hostnameSchema).max(50).default([]),
   allowedTools: z.array(reasonCodeSchema).min(1).max(50),
