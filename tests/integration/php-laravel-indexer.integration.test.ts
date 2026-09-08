@@ -563,29 +563,32 @@ describe("PHP indexer process limits", () => {
     }
   }
 
-  it("enforces timeout, output, malformed-output, and executable limits", async () => {
-    const hash = `sha256:${createHash("sha256")
-      .update("<?php final class Input {}\n")
-      .digest("hex")}`
-    const cases = [
-      {
-        code: "timeout",
-        source: "<?php usleep(500000); echo '{}';",
-        options: { timeoutMs: 50 },
-      },
-      {
-        code: "limit_exceeded",
-        source: "<?php echo str_repeat('x', 10000);",
-        options: { maxOutputBytes: 100 },
-      },
-      {
-        code: "malformed_output",
-        source: "<?php echo '{bad json';",
-        options: {},
-      },
-    ] as const
-    for (const testCase of cases) {
+  it.each([
+    {
+      label: "timeout",
+      code: "timeout",
+      source: "<?php usleep(500000); echo '{}';",
+      options: { timeoutMs: 50 },
+    },
+    {
+      label: "stdout limit",
+      code: "limit_exceeded",
+      source: "<?php echo str_repeat('x', 10000);",
+      options: { maxOutputBytes: 100 },
+    },
+    {
+      label: "malformed output",
+      code: "malformed_output",
+      source: "<?php echo '{bad json';",
+      options: {},
+    },
+  ] as const)(
+    "enforces the $label process boundary",
+    async (testCase) => {
       const temporary = await temporaryCli(testCase.source)
+      const hash = `sha256:${createHash("sha256")
+        .update("<?php final class Input {}\n")
+        .digest("hex")}`
       try {
         await expect(
           new PhpLaravelIndexer({
@@ -601,8 +604,11 @@ describe("PHP indexer process limits", () => {
       } finally {
         await temporary.cleanup()
       }
-    }
+    },
+    10_000
+  )
 
+  it("rejects an unavailable PHP executable", async () => {
     await expect(
       new PhpLaravelIndexer({ phpExecutable: "missing-sentinel-php" }).index({
         source: fixtureSource,
@@ -613,7 +619,7 @@ describe("PHP indexer process limits", () => {
         ]),
       })
     ).rejects.toMatchObject({ code: "executable_missing" })
-  }, 15_000)
+  }, 10_000)
 
   it("enforces file, fact, request, path-depth, and stderr limits", async () => {
     const hashes = await phpFixtureHashes(fixtureRoot, [
