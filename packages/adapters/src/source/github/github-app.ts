@@ -300,6 +300,13 @@ function ignored(
   })
 }
 
+function canonicalPullRequestUrl(
+  repository: GitHubRepositoryIdentity,
+  pullRequestNumber: number
+): string {
+  return `https://github.com/${repository.owner}/${repository.name}/pull/${pullRequestNumber}`
+}
+
 export function parseGithubWebhook(
   body: Uint8Array,
   headers: {
@@ -357,7 +364,10 @@ export function parseGithubWebhook(
         repository,
         pullRequestId: parsed.data.pull_request.id,
         pullRequestNumber: parsed.data.pull_request.number,
-        pullRequestUrl: parsed.data.pull_request.html_url,
+        pullRequestUrl: canonicalPullRequestUrl(
+          repository,
+          parsed.data.pull_request.number
+        ),
         baseSha: parsed.data.pull_request.base.sha.toLowerCase(),
         headSha: parsed.data.pull_request.head.sha.toLowerCase(),
         providerUpdatedAt: parsed.data.pull_request.updated_at,
@@ -633,7 +643,10 @@ export class GithubAppClient {
       repository: identity.repository,
       pullRequestId: String(response.data.id),
       pullRequestNumber: response.data.number,
-      pullRequestUrl: response.data.html_url,
+      pullRequestUrl: canonicalPullRequestUrl(
+        identity.repository,
+        response.data.number
+      ),
       baseSha: response.data.base.sha.toLowerCase(),
       headSha: response.data.head.sha.toLowerCase(),
       providerUpdatedAt: response.data.updated_at,

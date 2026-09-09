@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./github-app": "./src/source/github/github-app.ts",
     "./onboarding": "./src/onboarding/compatibility.ts"
   },
   "scripts": {

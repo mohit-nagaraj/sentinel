@@ -46,4 +46,4 @@
 - [x] Define strict webhook, assessment trigger, check lifecycle, response, and least-privilege App contracts.
 - [x] Implement raw-body authentication, GitHub App token management, PR resolution, and Checks API operations.
 - [x] Enqueue deliveries, immutable-head assessments, runs, supersession, and check binding transactionally.
-- [ ] Expose and verify shared signed-webhook and operator-authenticated manual assessment routes.
+- [x] Expose and verify shared signed-webhook and operator-authenticated manual assessment routes.
