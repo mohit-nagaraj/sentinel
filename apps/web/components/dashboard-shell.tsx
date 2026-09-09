@@ -95,7 +95,13 @@ function ThemeMenu({ collapsed }: { readonly collapsed: boolean }) {
     () => true,
     () => false
   )
-  const Icon = theme === "dark" ? Moon : theme === "light" ? Sun : Settings2
+  const displayedTheme = mounted ? theme : "system"
+  const Icon =
+    displayedTheme === "dark"
+      ? Moon
+      : displayedTheme === "light"
+        ? Sun
+        : Settings2
 
   return (
     <DropdownMenu>
@@ -123,10 +129,7 @@ function ThemeMenu({ collapsed }: { readonly collapsed: boolean }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" className="w-48">
         <DropdownMenuLabel>Appearance</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={mounted ? theme : "system"}
-          onValueChange={setTheme}
-        >
+        <DropdownMenuRadioGroup value={displayedTheme} onValueChange={setTheme}>
           <DropdownMenuRadioItem value="light">
             <Sun />
             Light

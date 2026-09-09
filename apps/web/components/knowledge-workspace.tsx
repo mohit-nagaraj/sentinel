@@ -41,7 +41,13 @@ import { Button } from "@/components/ui/button"
 import { KnowledgeGraphExplorer } from "@/components/knowledge-graph-explorer"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Table,
   TableBody,
@@ -65,6 +71,11 @@ const coverageLabels: Record<CoverageItem["status"], string> = {
   blocked: "Blocked",
   not_evaluated: "Not evaluated",
   ambiguous: "Ambiguous",
+}
+
+const coverageStatusLabels: Readonly<Record<string, string>> = {
+  all: "All coverage",
+  ...coverageLabels,
 }
 
 function statusTone(status: CoverageItem["status"] | string): string {
@@ -1254,25 +1265,33 @@ export function KnowledgeWorkspace({
                         className="min-h-11 w-full rounded-md border border-input bg-background pr-3 pl-9 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       />
                     </Label>
-                    <Label className="block">
-                      <span className="sr-only">Coverage status</span>
-                      <NativeSelect
+                    <div className="block">
+                      <span id="coverage-status-label" className="sr-only">
+                        Coverage status
+                      </span>
+                      <Select
+                        items={coverageStatusLabels}
                         value={status}
-                        onChange={(event) => setStatus(event.target.value)}
-                        className="w-full [&>select]:min-h-11 [&>select]:rounded-md [&>select]:bg-background"
+                        onValueChange={(value) => value && setStatus(value)}
                       >
-                        <NativeSelectOption value="all">
-                          All coverage
-                        </NativeSelectOption>
-                        {Object.entries(coverageLabels).map(
-                          ([value, label]) => (
-                            <NativeSelectOption key={value} value={value}>
-                              {label}
-                            </NativeSelectOption>
-                          )
-                        )}
-                      </NativeSelect>
-                    </Label>
+                        <SelectTrigger
+                          className="min-h-11 w-full bg-background"
+                          aria-labelledby="coverage-status-label"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent align="start">
+                          <SelectItem value="all">All coverage</SelectItem>
+                          {Object.entries(coverageLabels).map(
+                            ([value, label]) => (
+                              <SelectItem key={value} value={value}>
+                                {label}
+                              </SelectItem>
+                            )
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <Button
                       type="submit"
                       variant="outline"

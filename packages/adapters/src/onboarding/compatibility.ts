@@ -328,6 +328,11 @@ function repositoryRoot(path: string): string {
   return root ?? path
 }
 
+function parentPath(path: string): string {
+  const separator = path.lastIndexOf("/")
+  return separator < 0 ? "" : path.slice(0, separator)
+}
+
 async function readJsonFiles(
   repository: RepositoryCompatibilitySnapshot,
   names: ReadonlySet<string>
@@ -526,9 +531,6 @@ export class CompatibilityInspector {
             "repository",
             [resolvedCommitSha]
           )
-          const paths = new Set(
-            repository.paths.map((path) => path.toLowerCase())
-          )
           const configs = await readJsonFiles(
             repository,
             new Set(["package.json", "composer.json"])
@@ -560,6 +562,13 @@ export class CompatibilityInspector {
               )
             )
             .map(([path]) => path)
+          const artisanPaths = repository.paths.filter((path) =>
+            /(?:^|\/)artisan$/i.test(path)
+          )
+          const laravelDirectories = new Set(laravelConfigs.map(parentPath))
+          const matchingArtisanPaths = artisanPaths.filter((path) =>
+            laravelDirectories.has(parentPath(path))
+          )
           const tsxPaths = repository.paths.filter((path) =>
             /\.(?:tsx|jsx)$/i.test(path)
           )
@@ -625,8 +634,8 @@ export class CompatibilityInspector {
           )
           capability(
             "php_laravel",
-            laravelConfigs.length > 0 && paths.has("artisan"),
-            [...laravelConfigs, ...(paths.has("artisan") ? ["artisan"] : [])],
+            laravelConfigs.length > 0 && matchingArtisanPaths.length > 0,
+            [...laravelConfigs, ...matchingArtisanPaths],
             "php_laravel",
             true,
             "PHP or Laravel source evidence is incomplete",

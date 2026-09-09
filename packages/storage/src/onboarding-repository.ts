@@ -225,7 +225,7 @@ async function syncSources(
   const desired = sourceEntries(stableKey, configuration, statuses)
   await database.query(
     `with desired as (
-       select * from jsonb_to_recordset($2::jsonb) as source(
+       select * from jsonb_to_recordset($2::text::jsonb) as source(
          stable_key text, kind text, uri text, status text
        )
      ), upserted as (
@@ -446,7 +446,7 @@ export class OnboardingRepository {
           `insert into sentinel.onboarding_configurations (
              application_id, operator_id, configuration, input_fingerprint,
              knowledge_stale, completed_through
-           ) values ($1::uuid, $2::uuid, $3::jsonb, $4, $5, $6)`,
+           ) values ($1::uuid, $2::uuid, $3::text::jsonb, $4, $5, $6)`,
           [
             applicationId,
             operatorId,
@@ -511,7 +511,7 @@ export class OnboardingRepository {
       )
       await transaction.query(
         `update sentinel.onboarding_configurations
-         set configuration = $3::jsonb,
+         set configuration = $3::text::jsonb,
              input_fingerprint = $4,
              knowledge_stale = $5,
              inspected_fingerprint = case when $6 then null else inspected_fingerprint end,
@@ -603,9 +603,9 @@ export class OnboardingRepository {
 
       await transaction.query(
         `update sentinel.onboarding_configurations
-         set configuration = $3::jsonb,
+         set configuration = $3::text::jsonb,
              inspected_fingerprint = $4,
-             compatibility_report = $5::jsonb,
+             compatibility_report = $5::text::jsonb,
              inspected_at = $6,
              confirmation_fingerprint = null,
              confirmed_at = null

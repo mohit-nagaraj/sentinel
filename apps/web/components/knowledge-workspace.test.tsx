@@ -69,6 +69,9 @@ describe("knowledge workspace", () => {
     expect(
       screen.getByText(/Missing links are unknown until a bounded assessment/)
     ).toBeInTheDocument()
+    expect(
+      screen.getByRole("combobox", { name: "Coverage status" })
+    ).toHaveTextContent("All coverage")
     fireEvent.click(screen.getByRole("tab", { name: "Graph" }))
     fireEvent.click(screen.getByText("Evidence path details"))
     expect(

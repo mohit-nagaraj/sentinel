@@ -196,6 +196,31 @@ describe("onboarding compatibility inspector", () => {
     expect(repository.disposeCalls).toBe(1)
   })
 
+  it("detects Laravel in a nested application root", async () => {
+    const nestedFiles = Object.fromEntries(
+      Object.entries(supportedFiles)
+        .filter(([path]) => path !== "composer.json" && path !== "artisan")
+        .concat([
+          ["backend/composer.json", supportedFiles["composer.json"]],
+          ["backend/artisan", supportedFiles["artisan"]],
+        ])
+    )
+    const repository = new FakeRepositoryProbe(nestedFiles)
+
+    const report = await inspector({ repository }).inspect(configuration())
+
+    expect(report.evidence).toContainEqual(
+      expect.objectContaining({
+        capability: "php_laravel",
+        status: "detected",
+        references: ["backend/composer.json", "backend/artisan"],
+      })
+    )
+    expect(report.findings).not.toContainEqual(
+      expect.objectContaining({ code: "php_laravel_missing" })
+    )
+  })
+
   it("blocks protected targets until automated login is explicitly confirmed", async () => {
     const protectedConfiguration = onboardingConfigurationSchema.parse({
       ...configuration(),

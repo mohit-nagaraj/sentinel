@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
@@ -7,14 +13,31 @@ import {
   type PublicOnboardingApplication,
 } from "@sentinel/contracts"
 
+const navigation = vi.hoisted(() => ({
+  push: vi.fn(),
+  refresh: vi.fn(),
+  replace: vi.fn(),
+}))
+const initializeKnowledgeAction = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({
+    runId: "22222222-2222-4222-8222-222222222222",
+  })
+)
+
+vi.mock("next/navigation", () => ({ useRouter: () => navigation }))
+
 vi.mock("@/app/actions", () => ({
   inspectOnboardingAction: async (state: unknown) => state,
   confirmOnboardingAction: async (state: unknown) => state,
+  initializeKnowledgeAction,
 }))
 
 import { OnboardingControlPlane } from "@/components/onboarding-control-plane"
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.clearAllMocks()
+})
 
 const connectedApplication: PublicOnboardingApplication = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -60,6 +83,18 @@ const connectedApplication: PublicOnboardingApplication = {
   updatedAt: "2026-09-08T00:00:00.000Z",
 }
 
+const githubAppApplication: PublicOnboardingApplication = {
+  ...connectedApplication,
+  configuration: {
+    ...connectedApplication.configuration,
+    repository: {
+      ...connectedApplication.configuration.repository,
+      accessMode: "github_app",
+      installationId: "12345678",
+    },
+  },
+}
+
 const inspectedApplication = publicOnboardingApplicationSchema.parse({
   ...connectedApplication,
   compatibility: {
@@ -93,7 +128,32 @@ const inspectedApplication = publicOnboardingApplicationSchema.parse({
   },
 })
 
+const confirmedApplication = publicOnboardingApplicationSchema.parse({
+  ...inspectedApplication,
+  confirmed: true,
+  completedThrough: "review",
+})
+
 describe("onboarding control plane page", () => {
+  it("starts initial knowledge indexing and opens its activity workspace", async () => {
+    render(
+      <OnboardingControlPlane initialApplications={[confirmedApplication]} />
+    )
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Initialize knowledge" })
+    )
+
+    await waitFor(() => {
+      expect(initializeKnowledgeAction).toHaveBeenCalledWith(
+        confirmedApplication.id
+      )
+      expect(navigation.push).toHaveBeenCalledWith(
+        `/applications/${confirmedApplication.id}/activity/22222222-2222-4222-8222-222222222222`
+      )
+    })
+  })
+
   it("renders the application shell and a server-backed onboarding workspace", () => {
     render(<OnboardingControlPlane initialApplications={[]} />)
 
@@ -110,6 +170,9 @@ describe("onboarding control plane page", () => {
       screen.getByRole("tab", { name: "Sources" }).getAttribute("aria-selected")
     ).toBe("true")
     expect(screen.getByLabelText("Application name")).toBeDefined()
+    expect(
+      screen.getByRole("combobox", { name: "Repository connection" })
+    ).toHaveTextContent("Manual URL")
   })
 
   it("renders generic fields from the selected authentication method", () => {
@@ -138,6 +201,28 @@ describe("onboarding control plane page", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Storage state" }))
     expect(screen.getByLabelText("Encrypted storage state")).toBeDefined()
     expect(screen.queryByLabelText("Email or username")).toBeNull()
+  })
+
+  it("shows the install link for a GitHub App repository connection", () => {
+    render(
+      <OnboardingControlPlane initialApplications={[githubAppApplication]} />
+    )
+    fireEvent.click(screen.getByRole("tab", { name: "Sources" }))
+
+    expect(screen.getByLabelText("GitHub installation ID")).toBeDefined()
+    expect(
+      screen.getByRole("combobox", { name: "Repository connection" })
+    ).toHaveTextContent("GitHub App installation")
+    expect(
+      screen
+        .getByRole("link", { name: /Install Sentinel GitHub App/ })
+        .getAttribute("href")
+    ).toBe("https://github.com/apps/sentinel-app-demo/installations/new")
+    expect(
+      document.querySelector<HTMLInputElement>(
+        'input[name="repositoryAccessMode"]'
+      )?.value
+    ).toBe("github_app")
   })
 
   it("keeps high-risk action classes visibly and immutably denied", () => {

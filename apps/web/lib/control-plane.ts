@@ -298,6 +298,20 @@ function errorState(values: OnboardingFormValues): OnboardingActionState {
   })
 }
 
+function logInspectionError(error: unknown): void {
+  const code =
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string"
+      ? error.code
+      : undefined
+  console.error("onboarding_inspection_failed", {
+    name: error instanceof Error ? error.name : "UnknownError",
+    ...(code === undefined ? {} : { code }),
+  })
+}
+
 function baseConfiguration(
   values: OnboardingFormValues
 ): OnboardingConfiguration {
@@ -654,6 +668,7 @@ export class ControlPlane {
         application: toPublicOnboardingApplication(inspected),
       })
     } catch (error) {
+      logInspectionError(error)
       if (error instanceof FormValidationError) {
         if (provisionalApplicationId !== undefined) {
           await this.options.store.deleteDraft(

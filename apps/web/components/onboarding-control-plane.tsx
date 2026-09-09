@@ -20,6 +20,7 @@ import {
   CircleDot,
   Eye,
   EyeOff,
+  ExternalLink,
   FileCheck2,
   FolderGit2,
   Gauge,
@@ -27,6 +28,7 @@ import {
   KeyRound,
   LoaderCircle,
   LockKeyhole,
+  Play,
   Plus,
   RefreshCw,
   ShieldCheck,
@@ -43,13 +45,23 @@ import type {
   PublicOnboardingApplication,
 } from "@sentinel/contracts"
 
-import { confirmOnboardingAction, inspectOnboardingAction } from "@/app/actions"
+import {
+  confirmOnboardingAction,
+  initializeKnowledgeAction,
+  inspectOnboardingAction,
+} from "@/app/actions"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Progress } from "@/components/ui/progress"
 import { useDashboardGuard } from "@/components/dashboard-shell"
@@ -88,6 +100,11 @@ const capabilityLabels: Readonly<Record<string, string>> = {
   authentication_automatable: "Authentication automatable",
   safe_action_policy: "Safe action policy",
 }
+
+const repositoryAccessModeLabels = {
+  manual: "Manual URL",
+  github_app: "GitHub App installation",
+} as const
 
 const fieldClass =
   "h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-base outline-none transition-colors placeholder:text-muted-foreground/70 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/15"
@@ -330,10 +347,18 @@ function StepNavigation({
   step,
   availableStep,
   onStep,
+  canInitialize,
+  initializationPending,
+  initializationError,
+  onInitialize,
 }: {
   readonly step: number
   readonly availableStep: number
   readonly onStep: (step: number) => void
+  readonly canInitialize: boolean
+  readonly initializationPending: boolean
+  readonly initializationError: string
+  readonly onInitialize: () => void
 }) {
   return (
     <aside
@@ -401,6 +426,28 @@ function StepNavigation({
           )
         })}
       </div>
+      {canInitialize ? (
+        <div className="mt-4 grid gap-2 border-t border-border pt-4">
+          <Button
+            type="button"
+            className="min-h-11 w-full rounded-md"
+            disabled={initializationPending}
+            onClick={onInitialize}
+          >
+            {initializationPending ? (
+              <LoaderCircle className="animate-spin" aria-hidden="true" />
+            ) : (
+              <Play aria-hidden="true" />
+            )}
+            {initializationPending ? "Starting..." : "Initialize knowledge"}
+          </Button>
+          {initializationError ? (
+            <p role="alert" className="text-xs text-destructive">
+              {initializationError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </aside>
   )
 }
@@ -481,6 +528,9 @@ function Workspace({
     deploymentUrl: seed.values.deploymentUrl,
     repositoryRef: seed.values.repositoryRef,
   })
+  const [initializationPending, setInitializationPending] = useState(false)
+  const [initializationError, setInitializationError] = useState("")
+  const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
   const radioId = useId()
   const pending = inspectPending || confirmPending
@@ -511,6 +561,28 @@ function Workspace({
       })
     }
     setStep(nextStep)
+  }
+
+  const canInitialize =
+    currentApplication?.confirmed === true &&
+    currentApplication.status === "awaiting_confirmation" &&
+    currentApplication.graphRevision === 0 &&
+    report?.status === "supported" &&
+    !dirty
+
+  const handleInitialize = async () => {
+    if (!canInitialize || currentApplication === null) return
+    setInitializationPending(true)
+    setInitializationError("")
+    try {
+      const result = await initializeKnowledgeAction(currentApplication.id)
+      router.push(
+        `/applications/${currentApplication.id}/activity/${result.runId}`
+      )
+    } catch {
+      setInitializationError("Initialization could not be started. Try again.")
+      setInitializationPending(false)
+    }
   }
 
   return (
@@ -693,29 +765,72 @@ function Workspace({
                       }
                     />
                   </Field>
-                  <Field
-                    label="Repository connection"
-                    name="repositoryAccessMode"
-                    errors={fieldErrors["repositoryAccessMode"]}
-                  >
-                    <NativeSelect
-                      className="w-full [&>select]:h-10 [&>select]:rounded-md [&>select]:bg-background [&>select]:text-base"
+                  <div className="grid min-w-0 gap-1.5 text-sm leading-normal font-medium">
+                    <div className="flex min-w-0 items-center gap-1">
+                      <span id="repository-access-mode-label">
+                        Repository connection
+                      </span>
+                      {accessMode === "github_app" ? (
+                        <>
+                          <span
+                            className="text-muted-foreground"
+                            aria-hidden="true"
+                          >
+                            -
+                          </span>
+                          <a
+                            href="https://github.com/apps/sentinel-app-demo/installations/new"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex min-w-0 items-center gap-1 text-primary underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:outline-none"
+                          >
+                            <span className="truncate">
+                              Install Sentinel GitHub App
+                            </span>
+                            <ExternalLink
+                              className="size-3.5 shrink-0"
+                              aria-hidden="true"
+                            />
+                          </a>
+                        </>
+                      ) : null}
+                    </div>
+                    <Select
+                      items={repositoryAccessModeLabels}
                       name="repositoryAccessMode"
                       value={accessMode}
-                      onChange={(event) =>
-                        setAccessMode(
-                          event.target.value as "manual" | "github_app"
-                        )
-                      }
+                      onValueChange={(value) => {
+                        if (value === "manual" || value === "github_app") {
+                          setAccessMode(value)
+                        }
+                      }}
                     >
-                      <NativeSelectOption value="manual">
-                        Manual URL
-                      </NativeSelectOption>
-                      <NativeSelectOption value="github_app">
-                        GitHub App installation
-                      </NativeSelectOption>
-                    </NativeSelect>
-                  </Field>
+                      <SelectTrigger
+                        className="h-10 w-full bg-background text-base"
+                        aria-labelledby="repository-access-mode-label"
+                        aria-describedby={
+                          fieldErrors["repositoryAccessMode"]
+                            ? "repositoryAccessMode-error"
+                            : undefined
+                        }
+                        aria-invalid={
+                          fieldErrors["repositoryAccessMode"] ? true : undefined
+                        }
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent align="start">
+                        <SelectItem value="manual">Manual URL</SelectItem>
+                        <SelectItem value="github_app">
+                          GitHub App installation
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FieldError
+                      errors={fieldErrors["repositoryAccessMode"]}
+                      id="repositoryAccessMode-error"
+                    />
+                  </div>
                   {accessMode === "github_app" ? (
                     <Field
                       label="GitHub installation ID"
@@ -1430,6 +1545,10 @@ function Workspace({
           step={step}
           availableStep={availableStep}
           onStep={handleStep}
+          canInitialize={canInitialize}
+          initializationPending={initializationPending}
+          initializationError={initializationError}
+          onInitialize={handleInitialize}
         />
       </div>
     </section>
