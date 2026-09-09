@@ -129,20 +129,23 @@ Configure these server-only values:
 - `GITHUB_APP_INSTALLATION_ID` for the default single-fork installation
 - `GITHUB_APP_PRIVATE_KEY_PATH`, an absolute path to a regular RSA PEM file
 - `GITHUB_APP_WEBHOOK_SECRET`, a high-entropy value of at least 32 characters
-- `SENTINEL_PUBLIC_BASE_URL`, the canonical public Sentinel origin used by check
-  details links
+- `SENTINEL_PUBLIC_BASE_URL`, the canonical HTTPS Sentinel origin used by check
+  details links; loopback HTTP remains valid for local development
 
 `POST /api/github/webhooks` authenticates the exact bounded request bytes with
 `X-Hub-Signature-256` before parsing. It validates `X-GitHub-Delivery`, event,
 action, installation, repository, sender, PR, base SHA, head SHA, and provider
-timestamp. PostgreSQL records the delivery, creates or reuses the immutable-head
-assessment, and enqueues the `assess_pr` run atomically. A newer head cancels the
-prior run; an older delivery remains non-current.
+timestamp. Before enqueue, Sentinel resolves current PR metadata through the
+installation and ignores a delivery whose head is no longer current. PostgreSQL
+then records the delivery, creates or reuses the immutable-head assessment, and
+enqueues the `assess_pr` run atomically. A newer head cancels the prior run; an
+older delivery and any replay of its delivery ID remain non-current.
 
 Sentinel creates one `Sentinel blast radius` check per assessment/head and uses
 the assessment UUID as `external_id`. A durable short lease prevents concurrent
 creation, while recovery searches the head for that external ID after a partial
-failure. Check updates require the same assessment and head to remain current.
+failure. Later lifecycle publication also recovers a missing initial check before
+updating it. Check updates require the same assessment and head to remain current.
 Predicted risk, unknown scope, and unavailable verification use a neutral
 conclusion; deterministic verification failure uses failure, and infrastructure
 failure is explicitly labelled as analysis failure.

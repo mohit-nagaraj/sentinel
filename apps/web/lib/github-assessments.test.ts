@@ -116,7 +116,8 @@ function provider(overrides: Partial<GithubAssessmentProvider> = {}) {
 describe("GithubAssessmentService", () => {
   it("rejects invalid signatures before parsing or persistence", async () => {
     const target = store()
-    const service = new GithubAssessmentService(target, provider(), secret)
+    const github = provider()
+    const service = new GithubAssessmentService(target, github, secret)
     await expect(
       service.receiveWebhook({
         body: new TextEncoder().encode("not json"),
@@ -126,6 +127,7 @@ describe("GithubAssessmentService", () => {
       })
     ).rejects.toMatchObject({ code: "signature_invalid" })
     expect(target.enqueue).not.toHaveBeenCalled()
+    expect(github.resolvePullRequest).not.toHaveBeenCalled()
   })
 
   it("ignores unsupported and draft deliveries without side effects", async () => {
@@ -178,6 +180,32 @@ describe("GithubAssessmentService", () => {
       DEFAULT_GITHUB_ASSESSMENT_BUDGET
     )
     expect(github.ensureQueuedCheck).not.toHaveBeenCalled()
+  })
+
+  it("ignores a signed delivery whose head is no longer current on GitHub", async () => {
+    const target = store()
+    const github = provider({
+      resolvePullRequest: vi.fn().mockResolvedValue({
+        ...resolved,
+        headSha: "c".repeat(40),
+        providerUpdatedAt: "2026-09-08T12:01:00Z",
+      }),
+    })
+    const service = new GithubAssessmentService(target, github, secret)
+    const body = webhookBody()
+    await expect(
+      service.receiveWebhook({
+        body,
+        signature: signature(body),
+        deliveryId: "delivery-delayed",
+        event: "pull_request",
+      })
+    ).resolves.toEqual({
+      schemaVersion: 1,
+      status: "ignored",
+      reason: "stale_delivery",
+    })
+    expect(target.enqueue).not.toHaveBeenCalled()
   })
 
   it("uses one normalized assessment contract for webhook and manual entry", async () => {
@@ -333,6 +361,45 @@ describe("GithubAssessmentService", () => {
     ).resolves.toBe(true)
     expect(github.updateCheck).toHaveBeenCalledWith(
       expect.objectContaining({ assessmentId, headSha, checkRunId: "777" }),
+      expect.objectContaining({ assessmentId, headSha })
+    )
+  })
+
+  it("recovers a missing queued check before publishing its lifecycle", async () => {
+    const boundTarget = {
+      ...checkTarget,
+      checkRunId: "777",
+      syncLeaseToken: null,
+    }
+    const getCurrentCheck = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ...checkTarget,
+        syncLeaseToken: null,
+      })
+      .mockResolvedValueOnce(boundTarget)
+    const target = store({
+      getCurrentCheck,
+      claimCheck: vi.fn().mockResolvedValue(checkTarget),
+    })
+    const github = provider()
+    const service = new GithubAssessmentService(target, github, secret)
+    await expect(
+      service.publishCheck({
+        assessmentId,
+        headSha,
+        lifecycle: { state: "running", startedAt: "2026-09-09T00:00:00Z" },
+      })
+    ).resolves.toBe(true)
+    expect(github.ensureQueuedCheck).toHaveBeenCalledWith(checkTarget)
+    expect(target.bindCheck).toHaveBeenCalledWith({
+      assessmentId,
+      headSha,
+      syncLeaseToken: leaseToken,
+      checkRunId: "777",
+    })
+    expect(github.updateCheck).toHaveBeenCalledWith(
+      boundTarget,
       expect.objectContaining({ assessmentId, headSha })
     )
   })

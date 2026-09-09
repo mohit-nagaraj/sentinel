@@ -38,6 +38,14 @@ export const GITHUB_API_VERSION = "2026-03-10"
 export const GITHUB_CHECK_NAME = "Sentinel blast radius"
 export const MAX_GITHUB_WEBHOOK_BYTES = 2 * 1_024 * 1_024
 
+const sentinelPublicBaseUrlSchema = publicHttpUrlSchema.refine((value) => {
+  const url = new URL(value)
+  return (
+    url.protocol === "https:" ||
+    new Set(["localhost", "127.0.0.1", "[::1]"]).has(url.hostname)
+  )
+}, "Sentinel public URL must use HTTPS outside loopback development")
+
 const appEnvironmentSchema = z.strictObject({
   GITHUB_APP_ID: z.string().regex(/^[1-9][0-9]{0,19}$/),
   GITHUB_APP_CLIENT_ID: z
@@ -52,7 +60,7 @@ const appEnvironmentSchema = z.strictObject({
     .optional(),
   GITHUB_APP_PRIVATE_KEY_PATH: z.string().trim().min(1).max(4_096),
   GITHUB_APP_WEBHOOK_SECRET: z.string().min(32).max(4_096),
-  SENTINEL_PUBLIC_BASE_URL: publicHttpUrlSchema,
+  SENTINEL_PUBLIC_BASE_URL: sentinelPublicBaseUrlSchema,
 })
 
 const supportedPayloadSchema = z.looseObject({
@@ -492,7 +500,7 @@ export class GithubAppClient {
   ) {
     this.requesterFactory =
       options.requesterFactory ??
-      defaultRequesterFactory(options.timeoutMs ?? 3_000)
+      defaultRequesterFactory(options.timeoutMs ?? 2_000)
     this.now = options.now ?? Date.now
     this.refreshMarginMs = options.tokenRefreshMarginMs ?? 2 * 60_000
   }

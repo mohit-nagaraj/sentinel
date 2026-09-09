@@ -75,20 +75,21 @@ opened, reopened, synchronize, and ready-for-review actions for non-draft pull
 requests. It does not write repository contents, PR text, issues, branches, or
 comments.
 
-The webhook route authenticates the exact request bytes before parsing. A single
-PostgreSQL transaction deduplicates the GitHub delivery, creates or reuses the
-immutable-head assessment, and enqueues the worker-owned assessment run. When a
-newer head arrives, the prior run is cancelled and the prior assessment becomes
-non-current. Provider timestamps keep delayed older heads from reclaiming current
-status.
+The webhook route authenticates the exact request bytes before parsing, then
+confirms the delivery head against current GitHub PR metadata. A single PostgreSQL
+transaction deduplicates the delivery, creates or reuses the immutable-head
+assessment, and enqueues the worker-owned assessment run. When a newer head
+arrives, the prior run is cancelled and the prior assessment becomes non-current.
+Delayed older heads and replays remain non-current.
 
 Each assessment/head owns one concise GitHub check linked to the canonical
 Sentinel assessment URL. Check creation uses a durable lease and recovers partial
 external writes through the assessment ID stored as GitHub `external_id`.
-Running and terminal updates require the same assessment and head to remain
-current. Predicted risk is not a test failure: risk, unknown scope, and unavailable
-verification remain neutral, while deterministic verification failure and
-infrastructure analysis failure are distinguished explicitly.
+Running and terminal publication recovers a missing initial check, then requires
+the same assessment and head to remain current. Predicted risk is not a test
+failure: risk, unknown scope, and unavailable verification remain neutral, while
+deterministic verification failure and infrastructure analysis failure are
+distinguished explicitly.
 
 The authenticated manual PR URL route resolves the current GitHub metadata and
 invokes the same assessment service and execution budget as the webhook route.

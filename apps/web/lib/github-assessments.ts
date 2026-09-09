@@ -155,7 +155,35 @@ export class GithubAssessmentService {
       event: input.event,
     })
     if (decision.kind === "ignored") return ignored(decision.reason)
-    return this.enqueue(decision.trigger)
+    const resolved = await this.provider.resolvePullRequest({
+      installationId: decision.trigger.installationId,
+      pullRequestUrl: decision.trigger.pullRequestUrl,
+      expectedRepository: decision.trigger.repository,
+    })
+    if (
+      resolved.state !== "open" ||
+      resolved.headSha !== decision.trigger.headSha
+    ) {
+      return ignored("stale_delivery")
+    }
+    if (resolved.draft) return ignored("draft_pull_request")
+    if (
+      resolved.repositoryId !== decision.trigger.repositoryId ||
+      resolved.pullRequestId !== decision.trigger.pullRequestId ||
+      resolved.pullRequestNumber !== decision.trigger.pullRequestNumber
+    ) {
+      throw new GithubAppError(
+        "payload_invalid",
+        "GitHub webhook and current pull request identities differ"
+      )
+    }
+    return this.enqueue({
+      ...decision.trigger,
+      pullRequestUrl: resolved.pullRequestUrl,
+      baseSha: resolved.baseSha,
+      headSha: resolved.headSha,
+      providerUpdatedAt: resolved.providerUpdatedAt,
+    })
   }
 
   async submitManual(
@@ -196,8 +224,18 @@ export class GithubAssessmentService {
   }): Promise<boolean> {
     const assessmentId = z.uuid().parse(input.assessmentId)
     const lifecycle = githubCheckLifecycleSchema.parse(input.lifecycle)
-    const target = await this.store.getCurrentCheck(assessmentId, input.headSha)
-    if (target === null || target.checkRunId === null) return false
+    let target = await this.store.getCurrentCheck(assessmentId, input.headSha)
+    if (target === null) return false
+    if (target.checkRunId === null) {
+      const synchronized = await this.synchronizeQueuedCheck({
+        assessmentId,
+        headSha: target.headSha,
+        checkRunId: null,
+      })
+      if (synchronized === "sync_pending") return false
+      target = await this.store.getCurrentCheck(assessmentId, input.headSha)
+      if (target === null || target.checkRunId === null) return false
+    }
     await this.provider.updateCheck(target, {
       schemaVersion: 1,
       assessmentId,
@@ -230,7 +268,10 @@ export class GithubAssessmentService {
   }
 
   private async synchronizeQueuedCheck(
-    result: GithubAssessmentEnqueueResult
+    result: Pick<
+      GithubAssessmentEnqueueResult,
+      "assessmentId" | "headSha" | "checkRunId"
+    >
   ): Promise<"queued" | "sync_pending"> {
     if (result.checkRunId !== null) return "queued"
     const target = await this.store.claimCheck(

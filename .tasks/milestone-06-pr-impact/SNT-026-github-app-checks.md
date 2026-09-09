@@ -76,6 +76,7 @@ Marketplace/public multi-org install UX, PR comments, source writes, branch prot
 - Transactional delivery/assessment/run/check state: `supabase/migrations/20260908000400_github_app_checks.sql` and `packages/storage/src/github-assessment-repository.ts`.
 - Shared service and routes: `apps/web/lib/github-assessments.ts` and `apps/web/app/api/github/[[...path]]/route.ts`.
 - Recorded action fixtures: `tests/fixtures/github/pull-request-events.json`.
-- Default verification: format, lint, typecheck, 93 files/930 tests, and all production builds passed on 2026-09-09.
+- Default verification: format, lint, typecheck, 93 files/932 tests, and all production builds passed on 2026-09-09.
 - Database verification: the focused race suite passed against the local disposable Supabase database and a separate clean Supabase-shaped database; database lint found no SNT-026 issue.
+- Review hardening confirms the signed delivery head against current GitHub PR metadata, normalizes replay of superseded deliveries to a stale result, and recovers a missing initial check during lifecycle publication.
 - `check_run.rerequested` remains deferred. The optional action requires a successful-run replay contract; normal check create/update lifecycle is complete without PR comments.

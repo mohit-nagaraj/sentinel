@@ -388,7 +388,9 @@ begin
       where assessment.id = v_delivery.assessment_id;
       return query select
         case when v_existing.is_current then 'duplicate' else 'stale' end,
-        v_existing.id, v_existing.run_id, v_existing.github_installation_id,
+        v_existing.id,
+        case when v_existing.is_current then v_existing.run_id else null::uuid end,
+        v_existing.github_installation_id,
         v_existing.repository_host, v_existing.repository_owner,
         v_existing.repository_name, v_existing.pull_request_number,
         v_existing.head_sha, v_existing.is_current,
@@ -432,7 +434,9 @@ begin
     end if;
     return query select
       case when v_existing.is_current then 'duplicate' else 'stale' end,
-      v_existing.id, v_existing.run_id, v_existing.github_installation_id,
+      v_existing.id,
+      case when v_existing.is_current then v_existing.run_id else null::uuid end,
+      v_existing.github_installation_id,
       v_existing.repository_host, v_existing.repository_owner,
       v_existing.repository_name, v_existing.pull_request_number,
       v_existing.head_sha, v_existing.is_current,

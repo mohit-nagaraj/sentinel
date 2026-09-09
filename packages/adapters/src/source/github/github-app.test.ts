@@ -240,6 +240,15 @@ describe("GitHub App credentials", () => {
     await expect(
       loadGithubAppConfiguration({
         GITHUB_APP_ID: "123",
+        GITHUB_APP_CLIENT_ID: configuration.clientId,
+        GITHUB_APP_PRIVATE_KEY_PATH: privateKeyPath,
+        GITHUB_APP_WEBHOOK_SECRET: configuration.webhookSecret,
+        SENTINEL_PUBLIC_BASE_URL: "http://sentinel.example",
+      })
+    ).rejects.toMatchObject({ code: "configuration_invalid" })
+    await expect(
+      loadGithubAppConfiguration({
+        GITHUB_APP_ID: "123",
         GITHUB_APP_PRIVATE_KEY_PATH: privateKeyPath,
       })
     ).rejects.toMatchObject({ code: "configuration_invalid" })

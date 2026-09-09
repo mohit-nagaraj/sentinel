@@ -207,6 +207,14 @@ describeIntegration("GitHub App assessment PostgreSQL lifecycle", () => {
     await expect(
       assessments.getCurrentCheck(first.assessmentId, firstHeadSha)
     ).resolves.toBeNull()
+    await expect(
+      assessments.enqueue(webhook(), operationalTestBudget)
+    ).resolves.toMatchObject({
+      disposition: "stale",
+      assessmentId: first.assessmentId,
+      runId: null,
+      isCurrent: false,
+    })
 
     const stale = await assessments.enqueue(
       webhook({
