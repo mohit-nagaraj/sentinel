@@ -174,24 +174,24 @@ graph LR
 | ID      | Issue                                                                                                                                    | Depends on                                  | Status      |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ----------- |
 | SNT-033 | [Golden dataset and stage/trajectory evaluation harness](./.tasks/milestone-08-evaluation-delivery/SNT-033-evaluation-harness.md)        | SNT-015, SNT-016, SNT-017, SNT-019, SNT-028 | done        |
-| SNT-034 | [Security, resilience, and regression hardening](./.tasks/milestone-08-evaluation-delivery/SNT-034-security-resilience-hardening.md)     | SNT-026, SNT-029, SNT-031, SNT-032, SNT-033 | not-started |
+| SNT-034 | [Security, resilience, and regression hardening](./.tasks/milestone-08-evaluation-delivery/SNT-034-security-resilience-hardening.md)     | SNT-026, SNT-029, SNT-031, SNT-032, SNT-033 | done        |
 | SNT-035 | [README, design document, sample output, and Loom preparation](./.tasks/milestone-08-evaluation-delivery/SNT-035-assignment-delivery.md) | SNT-029, SNT-033, SNT-034                   | not-started |
 
 ---
 
 ## Global progress
 
-| Milestone                                |   Done |  Total | Status                         |
-| ---------------------------------------- | -----: | -----: | ------------------------------ |
-| M1 Foundation and durable execution      |      6 |      6 | done                           |
-| M2 Deterministic source evidence         |      7 |      7 | done                           |
-| M3 Specialist discovery agents           |      4 |      4 | done                           |
-| M4 Graph construction and reconciliation |      4 |      4 | done                           |
-| M5 Onboarding and control plane          |      4 |      4 | done                           |
-| M6 PR blast-radius loop                  |      1 |      4 | in-progress                    |
-| M7 Verification and refresh              |      1 |      3 | in-progress                    |
-| M8 Evaluation and delivery               |      1 |      3 | in-progress                    |
-| **Overall**                              | **28** | **35** | **in-progress**                |
+| Milestone                                |   Done |  Total | Status          |
+| ---------------------------------------- | -----: | -----: | --------------- |
+| M1 Foundation and durable execution      |      6 |      6 | done            |
+| M2 Deterministic source evidence         |      7 |      7 | done            |
+| M3 Specialist discovery agents           |      4 |      4 | done            |
+| M4 Graph construction and reconciliation |      4 |      4 | done            |
+| M5 Onboarding and control plane          |      4 |      4 | done            |
+| M6 PR blast-radius loop                  |      1 |      4 | in-progress     |
+| M7 Verification and refresh              |      1 |      3 | in-progress     |
+| M8 Evaluation and delivery               |      2 |      3 | in-progress     |
+| **Overall**                              | **29** | **35** | **in-progress** |
 
 ## Active front
 

@@ -47,6 +47,10 @@ jobs:
             command: pnpm build
             php: false
             playwright: false
+          - name: security
+            command: pnpm security
+            php: false
+            playwright: false
     steps:
       - uses: actions/checkout@v4
 
