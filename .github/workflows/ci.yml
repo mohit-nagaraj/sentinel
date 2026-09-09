@@ -11,6 +11,8 @@ permissions:
 jobs:
   verify:
     name: ${{ matrix.name }}
+    # PR checks already cover merge commits. Still run on direct pushes to main.
+    if: github.event_name == 'pull_request' || !startsWith(github.event.head_commit.message, 'Merge pull request')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
