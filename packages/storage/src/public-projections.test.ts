@@ -1,16 +1,83 @@
-import { artifactIdSchema, contentHashSchema } from "@sentinel/contracts"
+import {
+  applicationIdSchema,
+  artifactIdSchema,
+  contentHashSchema,
+  coverageAssessmentSchema,
+  evidenceIdSchema,
+  missionIdSchema,
+  requirementIdSchema,
+  runIdSchema,
+} from "@sentinel/contracts"
 import { describe, expect, it } from "vitest"
 
 import {
   toPublicApplicationSummary,
   toPublicArtifactSummary,
+  toPublicCoverageAssessmentSummary,
   toPublicRunSummary,
   toPublicSourceSummary,
 } from "./public-projections.ts"
 
+const coverageAssessment = coverageAssessmentSchema.parse({
+  schemaVersion: 1,
+  id: `coverage-assessment:v1:${"1".repeat(64)}`,
+  applicationId: applicationIdSchema.parse(`application:v1:${"2".repeat(64)}`),
+  requirementId: requirementIdSchema.parse(`requirement:v1:${"3".repeat(64)}`),
+  status: "blocked",
+  scope: {
+    summary: "checkout",
+    missionIds: [missionIdSchema.parse(`mission:v1:${"4".repeat(64)}`)],
+    workflowIds: [],
+    screenIds: [],
+    exploredRoutes: ["/checkout"],
+  },
+  scopeFingerprint: contentHashSchema.parse(`sha256:${"5".repeat(64)}`),
+  revisionContext: {
+    requirementSourceHash: contentHashSchema.parse(`sha256:${"6".repeat(64)}`),
+    crawlConfigurationHash: contentHashSchema.parse(`sha256:${"7".repeat(64)}`),
+    authenticationRevision: 1,
+  },
+  environment: { authentication: "missing", testData: "configured" },
+  reasonCode: "login_required",
+  reason: "Authentication was required.",
+  wording:
+    "Coverage within checkout could not be completed because authentication was required.",
+  possibleCauses: ["Coverage was blocked by authentication."],
+  runId: runIdSchema.parse("run:11111111-1111-4111-8111-111111111111"),
+  graphRevision: 2,
+  evidenceIds: [evidenceIdSchema.parse(`evidence:v1:${"8".repeat(64)}`)],
+  attemptEvidenceIds: [],
+  blockers: [
+    {
+      kind: "authentication",
+      reasonCode: "login_required",
+      summary: "Authentication was required.",
+      humanAction: "Supply safe test credentials.",
+      evidenceIds: [evidenceIdSchema.parse(`evidence:v1:${"8".repeat(64)}`)],
+    },
+  ],
+  ambiguities: [],
+  evaluatedAt: "2026-09-09T04:00:00.000Z",
+})
+
 const now = new Date("2026-09-07T00:00:00.000Z")
 
 describe("public storage projections", () => {
+  it("projects a compact coverage summary without revision internals", () => {
+    const summary = toPublicCoverageAssessmentSummary(coverageAssessment)
+
+    expect(summary).toMatchObject({
+      requirementId: coverageAssessment.requirementId,
+      status: "blocked",
+      scope: "checkout",
+      blockerKinds: ["authentication"],
+      humanActions: ["Supply safe test credentials."],
+      evidenceCount: 1,
+    })
+    expect(JSON.stringify(summary)).not.toContain("crawlConfigurationHash")
+    expect(JSON.stringify(summary)).not.toContain("authenticationRevision")
+  })
+
   it("omits queue ownership, object keys, and secret references", () => {
     const application = toPublicApplicationSummary({
       id: "11111111-1111-4111-8111-111111111111",

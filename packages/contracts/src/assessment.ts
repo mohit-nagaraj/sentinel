@@ -41,6 +41,8 @@ import {
   workflowIdSchema,
 } from "./primitives.ts"
 
+export * from "./coverage.ts"
+
 export const evidenceRelationshipSchema = z.enum([
   "HAS_PAGE",
   "HAS_SECTION",
@@ -131,28 +133,6 @@ export const evidenceLinkSchema = z.discriminatedUnion("relationship", [
     coverageAssessmentIdSchema
   ),
 ])
-
-export const coverageStatusSchema = z.enum([
-  "observed",
-  "partially_observed",
-  "not_observed",
-  "blocked",
-  "not_evaluated",
-  "ambiguous",
-])
-
-export const coverageAssessmentSchema = z.strictObject({
-  schemaVersion: schemaVersionSchema,
-  id: coverageAssessmentIdSchema,
-  applicationId: applicationIdSchema,
-  requirementId: requirementIdSchema,
-  status: coverageStatusSchema,
-  scope: nonEmptyStringSchema,
-  reason: nonEmptyStringSchema,
-  possibleCauses: z.array(nonEmptyStringSchema).max(20),
-  runId: runIdSchema,
-  evidenceIds: z.array(evidenceIdSchema).max(100),
-})
 
 export const pullRequestSchema = z.strictObject({
   schemaVersion: schemaVersionSchema,
@@ -841,7 +821,6 @@ export const verificationResultSchema = z
 
 export type EvidenceLink = z.infer<typeof evidenceLinkSchema>
 export type EvidenceRelationship = z.infer<typeof evidenceRelationshipSchema>
-export type CoverageAssessment = z.infer<typeof coverageAssessmentSchema>
 export type PullRequest = z.infer<typeof pullRequestSchema>
 export type PrChange = z.infer<typeof prChangeSchema>
 export type BaselineCompatibility = z.infer<typeof baselineCompatibilitySchema>
