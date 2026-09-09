@@ -19,7 +19,7 @@ Two modes:
 - **Full project** (`/scaffold` with a project plan) — scaffold all modules for a new project
 - **Single module** (`/scaffold <module-name>` in an existing project) — add one new module
 
-**You produce structure, not detail.** Module overviews get purpose statements and feature stubs. The detail fills in later via `/docs` as features are implemented.
+**You produce structure, not detail.** Module overviews get purpose statements and feature stubs. Detail can be added later.
 
 ---
 
@@ -310,7 +310,7 @@ export default {
 }
 ```
 
-Sub-module pages are NOT created yet — just the overview with a stub table. Pages get created by `/docs` as features are built and verified.
+Sub-module pages are NOT created yet — just the overview with a stub table.
 
 ### Writing rules for stubs
 
@@ -403,7 +403,7 @@ payments/stripe → payments/wallet → dashboard/usage
 
 Create an `AGENTS.md` in each module's code directory (e.g., `packages/auth/AGENTS.md`, `apps/api/AGENTS.md`). If `.ystack/config.json` has `"runtime": "claude-code"`, also create a `CLAUDE.md` alongside it.
 
-These files are **stubs** at scaffold time — real references get filled in by `/docs` after code exists.
+These files are **stubs** at scaffold time and can be filled in after code exists.
 
 ### Template
 
@@ -426,7 +426,7 @@ _Populated after implementation._
 
 - One file per module, placed in the module's code root (not in docs/)
 - `CLAUDE.md` mirrors `AGENTS.md` content — only generate it when runtime is `claude-code`
-- Keep the stub minimal — `/docs` will rewrite it with real file references later
+- Keep the stub minimal
 - If the code directory doesn't exist yet, skip — the file gets created when the package is set up
 
 ### Single-module mode
@@ -464,7 +464,6 @@ Show the user what was generated:
 ### Next Steps
   1. Pick a module to start with — check `.ystack/progress/_overview.md` for the ready front
   2. `/build <feature>` to plan the first feature
-  3. Doc pages will fill in as features are built via `/docs`
 ```
 
 ---
@@ -478,7 +477,7 @@ For adding a single module to an existing project, read [references/single-modul
 ## What This Skill Does NOT Do
 
 - **Does not scaffold code.** No package.json, no source files, no configs. That's `npx ystack create`.
-- **Does not write detailed specs.** Only stubs — purpose, scope, dependency tables. Detail comes from `/docs` after features are built.
+- **Does not write detailed specs.** Only stubs — purpose, scope, dependency tables.
 - **Does not set up Turborepo/Nextra/Ultracite.** That's the installer's job.
-- **Does not create sub-module pages.** Only module overviews with stub tables. Pages are created by `/docs` when features complete.
+- **Does not create sub-module pages.** Only module overviews with stub tables.
 - **Does not make up features.** Only includes what the plan describes. If the plan is vague, the stubs are vague.

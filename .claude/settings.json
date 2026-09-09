@@ -10,16 +10,6 @@
             "timeout": 5
           }
         ]
-      },
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/docs-match-progress.js",
-            "timeout": 5
-          }
-        ]
       }
     ],
     "PreToolUse": [
@@ -39,16 +29,6 @@
           {
             "type": "command",
             "command": "node .claude/hooks/progress-before-ship.js",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/no-undocumented-check.js",
             "timeout": 5
           }
         ]

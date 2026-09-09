@@ -119,5 +119,4 @@ Create `AGENTS.md` (and `CLAUDE.md` if `runtime` is `claude-code` in `.ystack/co
 
 ### Next Steps
   1. `/build <feature>` to plan the first feature in this module
-  2. Doc detail will fill in as features are built via `/docs`
 ```

@@ -204,7 +204,6 @@ After all tasks complete (or if execution stops due to a deviation), report:
 
 ### Next Steps
 - Run /review to verify against success criteria
-- Run /docs if documentation needs updating
 ```
 
 Write this summary to `.context/<feature-id>/SUMMARY.md`.
@@ -215,6 +214,5 @@ Write this summary to `.context/<feature-id>/SUMMARY.md`.
 
 - **Does not create plans.** That's `/build`. If no PLAN.md exists, say so.
 - **Does not redesign.** Follow the plan. Deviations go through the deviation rules.
-- **Does not update docs.** That's `/docs`.
 - **Does not create PRs.** That's `/pr`.
 - **Does not skip verification.** Every task's Verify step must run.

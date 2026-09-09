@@ -267,7 +267,7 @@ This page is a generated view of `DECISIONS.md` and `PLAN.md`. It is not canonic
 
 6. Do not generate a separate top-level flow strip, table of contents, stepper, or duplicated row that summarizes `Context → Decisions → Criteria → Tasks`.
 
-7. If the preview reveals a missing decision, criterion, task, migration, environment variable, or docs update, update `DECISIONS.md` or `PLAN.md` first, then re-run the copy + `Edit` workflow on `plan.html`.
+7. If the preview reveals a missing decision, criterion, task, migration, or environment variable, update `DECISIONS.md` or `PLAN.md` first, then re-run the copy + `Edit` workflow on `plan.html`.
 
 ## Phase 7: Plan Check
 
@@ -321,6 +321,5 @@ If the user confirms inline execution, execute the single task directly — make
 
 - **Does not write code.** That's `/go`.
 - **Does not create PRs.** That's `/pr`.
-- **Does not update docs.** That's `/docs`.
 - **Does not run without user confirmation.** The plan is always presented for approval.
 - **Does not invent architecture.** It reads docs and code to understand what exists, then plans within those boundaries.

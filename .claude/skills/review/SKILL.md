@@ -75,7 +75,7 @@ Do not report:
 - enterprise security, compliance, scaling, or production-hardening concerns
 - theoretical edge cases without a realistic path in the current feature
 - architecture preferences, refactoring ideas, style, naming, or maintainability
-- generic test-coverage or documentation requests
+- generic test-coverage requests
 - linter, formatter, or type-checker output as review findings
 - pre-existing problems or code outside the change
 
@@ -129,5 +129,5 @@ Mention tests you could not run only when that leaves meaningful uncertainty.
 ## Boundaries
 
 - Review only; do not modify code unless the user asks for fixes.
-- Do not update docs, create commits, open PRs, or post comments as part of review.
+- Do not create commits, open PRs, or post comments as part of review.
 - Do not expand a simple MVP review into a production readiness assessment.

@@ -45,7 +45,6 @@ Run this check before opening `.context/<feature-id>/plan.html`.
 - [ ] `Critical Changes` appears only if large behavioral, security, data, billing, auth, compatibility, or user-visible changes exist.
 - [ ] `Environment Variables Added` appears only if new environment variables are required.
 - [ ] `Migrations` appears only if schema migrations, backfills, data risks, or rollback notes exist.
-- [ ] `Docs To Be Updated` appears only if exact docs pages need updates after verified implementation.
 - [ ] No empty impact category renders as `None`.
 
 ## Source Consistency

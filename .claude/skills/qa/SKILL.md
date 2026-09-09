@@ -306,7 +306,7 @@ If `/qa` found issues and remediation was not authorized, do not claim `PASSED`;
 > - All detected CI checks passing (or: no CI gauntlet — this repo has none)
 > - <X> human-required items remain (not blockers): see QA-REPORT.md
 >
-> Ready for `/docs` to update documentation, then `/review` and `/pr`.
+> Ready for `/review` and `/pr`.
 
 If human-required items exist, list them so the user can decide whether to address them before shipping.
 
@@ -331,7 +331,6 @@ If invoked with just a URL or no plan (`/qa http://localhost:3000`):
 - **Does not review code quality.** That's `/review`. QA is about runtime correctness and standards compliance.
 - **Does not fix by default.** Automatic remediation only runs with `--fix` or explicit user confirmation after the report.
 - **Does not create PRs.** That's `/pr`.
-- **Does not update docs.** That's `/docs`, which the user should run after QA passes.
 - **Does not require Playwright.** Browser automation is a nice-to-have for frontend features, not a dependency. Backend QA works fully without it.
 - **Does not require pnpm / npm / any specific toolchain.** CI commands are detected per-repo in Step 3.
 - **Does not start long-running servers.** If a dev server is needed for API/browser checks, note it in the plan and ask the user to start it.

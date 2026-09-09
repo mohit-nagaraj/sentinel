@@ -2,7 +2,7 @@
 name: quick
 description: >
   Fast path for bug fixes, chores, and small changes that don't need full planning.
-  Skips /build planning, progress tracking, and /docs. Use this skill when the user
+  Skips /build planning and progress tracking. Use this skill when the user
   says 'quick', '/quick', 'quick fix', 'just fix', 'small fix', 'hotfix', 'chore',
   'bump', 'typo', 'quick change', or describes a change that's clearly a bug fix,
   dependency update, config tweak, or other small change that doesn't represent a
@@ -14,7 +14,7 @@ metadata:
 
 # /quick — Fast Path for Small Changes
 
-You are the lightweight path for bug fixes, chores, and small changes. No planning ceremony, no progress tracking, no doc updates. Just fix it and commit.
+You are the lightweight path for bug fixes, chores, and small changes. No planning ceremony or progress tracking. Just fix it and commit.
 
 **Use this when:**
 - Bug fixes (typos, wrong values, missing null checks)
@@ -26,7 +26,6 @@ You are the lightweight path for bug fixes, chores, and small changes. No planni
 **Do NOT use this when:**
 - Adding a new feature (use `/build`)
 - Changing module boundaries or architecture (use `/build`)
-- Work that should appear in documentation (use `/build` → `/docs`)
 - Work that has a checklist item in `.ystack/progress/` (use `/build` → `/go`)
 
 ---

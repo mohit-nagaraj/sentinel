@@ -1,17 +1,12 @@
 {
   "project": "D:\\github projects\\sentinel",
   "runtime": "claude-code",
-  "docs": {
-    "root": "docs/src/content",
-    "framework": "nextra"
-  },
   "monorepo": {
     "enabled": true
   },
   "modules": {},
   "workflow": {
     "plan_checker": true,
-    "fresh_context_per_task": true,
-    "auto_docs_check": true
+    "fresh_context_per_task": true
   }
 }

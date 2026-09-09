@@ -99,7 +99,6 @@ Supported impact categories:
 - `Critical Changes` - behavioral, security, data, billing, auth, compatibility, or user-visible risks
 - `Environment Variables Added` - new keys, required environments, defaults, and secret requirements
 - `Migrations` - schema migrations, backfills, data risks, and rollback notes
-- `Docs To Be Updated` - exact docs pages that `/docs` must update after implementation is verified
 
 If a category does not apply, omit it. Do not render `None` cards in real generated previews.
 
@@ -119,6 +118,6 @@ task-1
 
 ## Source Of Truth
 
-The preview must not introduce a decision, criterion, task, migration, environment variable, or doc update that is missing from `DECISIONS.md` or `PLAN.md`.
+The preview must not introduce a decision, criterion, task, migration, or environment variable that is missing from `DECISIONS.md` or `PLAN.md`.
 
 If the preview reveals missing content, update the Markdown first, then regenerate the preview.

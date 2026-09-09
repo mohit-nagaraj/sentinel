@@ -1,10 +1,10 @@
 ---
 name: pr
 description: >
-  Create a pull request after verification and docs are updated. Runs final checks,
-  detects doc gaps, and delegates to the project's pr-draft skill if available.
+  Create a pull request after verification. Runs final checks and delegates to the
+  project's pr-draft skill if available.
   Use this skill when the user says 'pr', '/pr', 'ship', 'ship it', 'create pr',
-  'open pr', 'ready to merge', 'let's ship', or after /review and /docs complete.
+  'open pr', 'ready to merge', 'let's ship', or after /review completes.
 compatibility: Designed for Claude Code
 metadata:
   user-invocable: "true"
@@ -28,37 +28,7 @@ ls .context/*/PLAN.md 2>/dev/null
 If a PLAN.md exists, check whether all success criteria have been verified. If not:
 > Success criteria haven't been verified. Run `/review` first?
 
-### 2. Documentation check
-
-Detect if code changes affect documented modules:
-
-```bash
-# Resolve the repo's default branch dynamically
-BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo main)
-
-# Get changed files
-git diff "$BASE"...HEAD --stat
-
-# Check if any changed packages map to doc pages
-# Read .ystack/config.json or scan docs structure
-```
-
-**If this is a `/quick` change** (`.context/.quick` exists): skip doc check entirely. Quick fixes don't need doc updates.
-
-**If this is a feature** (`.context/<feature>/PLAN.md` exists):
-
-1. Read `.ystack/progress/<module>.md` for newly checked `[x]` items.
-2. Check if the linked doc sections still have `<!-- ystack:stub -->`.
-3. If stubs remain:
-   > Feature **OAuth** is checked off but docs still have stubs. Running `/docs` to fill them in...
-
-   Run `/docs` inline — don't just warn, actually execute the doc update. Then continue with the PR.
-4. If no stubs and no doc changes needed, proceed.
-
-**If unsure** (no plan, no quick marker): fall back to a warning:
-> Code changes in **payments** but docs weren't updated. Run `/docs` to update, or confirm docs don't need changes.
-
-### 3. Lint and typecheck
+### 2. Lint and typecheck
 
 ```bash
 pnpm fix 2>/dev/null    # or the project's lint fix command
@@ -68,7 +38,7 @@ pnpm check 2>/dev/null
 
 If any fail, report the errors and offer to fix.
 
-### 4. Clean working tree
+### 3. Clean working tree
 
 ```bash
 git status
@@ -147,7 +117,6 @@ After the PR is created:
    - Feature: <name>
    - Commits: N
    - Files changed: N
-   - Docs updated: yes/no
    - All criteria verified: yes
    ```
 
@@ -157,6 +126,5 @@ After the PR is created:
 
 - **Does not write code.** That's `/go`.
 - **Does not review code.** That's `/review`.
-- **Does not update docs.** That's `/docs`. But it DOES check if docs need updating.
 - **Does not force-push.** Ever.
 - **Does not merge.** Only creates the PR. Merging is a human decision.
