@@ -28,17 +28,27 @@
 - [x] Checkpoint and resume accepted or rejected human decisions with serialized run execution.
 - [x] Emit stable reconciliation activity only after the corresponding state is committed and prove reporting retry recovery.
 
+## SNT-021 Atomic Graph Publication And Evidence Queries
+
+- [x] Define strict revisioned publication contracts over all graph entity and relationship types.
+- [x] Stage and validate idempotent bounded batches before advancing the Postgres current-revision pointer.
+- [x] Copy unaffected facts during scoped refreshes and remove superseded facts after activation.
+- [x] Preserve assessment-retained historical evidence and its endpoint nodes.
+- [x] Expose bounded tenant/revision/tier constrained requirement, workflow, UI, code, coverage, evidence-path, and PR-seed queries.
+- [x] Persist compact owner-scoped publication summaries for the knowledge UI.
+
 ## Decisions
 
-| Date       | Decision                                                                                                          | Reason                                                                                                        |
-| ---------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 2026-09-09 | Require relationship-specific endpoint bindings on every evidence record used by a submitted authoritative claim. | A matching extraction-method label cannot prove an unrelated subject/object relationship.                     |
-| 2026-09-09 | Treat exact observations as deterministic inputs and reject stale or equally specific route matches.              | Exact tiers require a unique compatible structural match rather than every pattern that happens to match.     |
-| 2026-09-09 | Keep all model-adjudicated Tier C/D candidates outside the pending authoritative link set.                        | Model selection can prioritize review but cannot create graph truth or enter confident blast-radius paths.    |
-| 2026-09-09 | Derive link IDs from relationship endpoints and confirmation time from cited evidence.                            | Duplicate support strengthens one stable link, and identical reprocessing remains byte-for-byte idempotent.   |
-| 2026-09-09 | Derive coverage status only from normalized attempt, checkpoint, blocker, and ambiguity inputs.                   | A model summary or missing graph relationship must never become an authoritative absence declaration.         |
-| 2026-09-09 | Keep assessment identity stable across outcome evidence while content-addressing evaluator evidence.              | New evidence can advance one scoped assessment without mutating or aliasing the evidence that justified it.   |
-| 2026-09-09 | Generate public reasons and wording deterministically and validate retained attempt summaries.                    | Qualified blocker details remain available internally without crashing or leaking absolute absence claims.    |
-| 2026-09-09 | Treat Curator model output as advisory mission proposals and derive mission authority in the parent graph.        | A structured model call cannot grant itself tools, graph writes, evidence authority, or additional budget.    |
-| 2026-09-09 | Serialize each Curator run and report reconciliation activity from post-commit graph nodes with stable IDs.       | Duplicate starts and event retries must not repeat specialist work or advertise state that was not committed. |
-| 2026-09-09 | Count both new links/gap closure and strengthened evidence fingerprints as material reconciliation gain.          | Corroboration can improve evidence quality without changing aggregate link or gap counts.                     |
+| Date       | Decision                                                                                                            | Reason                                                                                                        |
+| ---------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| 2026-09-09 | Require relationship-specific endpoint bindings on every evidence record used by a submitted authoritative claim.   | A matching extraction-method label cannot prove an unrelated subject/object relationship.                     |
+| 2026-09-09 | Treat exact observations as deterministic inputs and reject stale or equally specific route matches.                | Exact tiers require a unique compatible structural match rather than every pattern that happens to match.     |
+| 2026-09-09 | Keep all model-adjudicated Tier C/D candidates outside the pending authoritative link set.                          | Model selection can prioritize review but cannot create graph truth or enter confident blast-radius paths.    |
+| 2026-09-09 | Derive link IDs from relationship endpoints and confirmation time from cited evidence.                              | Duplicate support strengthens one stable link, and identical reprocessing remains byte-for-byte idempotent.   |
+| 2026-09-09 | Derive coverage status only from normalized attempt, checkpoint, blocker, and ambiguity inputs.                     | A model summary or missing graph relationship must never become an authoritative absence declaration.         |
+| 2026-09-09 | Keep assessment identity stable across outcome evidence while content-addressing evaluator evidence.                | New evidence can advance one scoped assessment without mutating or aliasing the evidence that justified it.   |
+| 2026-09-09 | Generate public reasons and wording deterministically and validate retained attempt summaries.                      | Qualified blocker details remain available internally without crashing or leaking absolute absence claims.    |
+| 2026-09-09 | Treat Curator model output as advisory mission proposals and derive mission authority in the parent graph.          | A structured model call cannot grant itself tools, graph writes, evidence authority, or additional budget.    |
+| 2026-09-09 | Serialize each Curator run and report reconciliation activity from post-commit graph nodes with stable IDs.         | Duplicate starts and event retries must not repeat specialist work or advertise state that was not committed. |
+| 2026-09-09 | Count both new links/gap closure and strengthened evidence fingerprints as material reconciliation gain.            | Corroboration can improve evidence quality without changing aggregate link or gap counts.                     |
+| 2026-09-09 | Keep Postgres as the authoritative atomic graph-revision pointer and treat Neo4j finalization as retryable cleanup. | Cross-database activation remains safe when a commit response is lost or cleanup must be retried.             |

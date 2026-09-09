@@ -52,7 +52,8 @@ describe("knowledge contracts", () => {
           relationship: "states",
           tier: "A",
           reviewState: "not_required",
-          extractionMethod: "document_parser",
+          extractionMethod:
+            "corroborated:document_parse+validated_requirement_extraction",
           sourceIdentityHash: `sha256:${"d".repeat(64)}`,
           explanation: "The exact source section states the requirement.",
           stale: false,

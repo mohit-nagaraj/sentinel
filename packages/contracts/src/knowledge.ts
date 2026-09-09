@@ -145,7 +145,7 @@ export const evidencePathLinkSchema = z.strictObject({
   relationship: reasonCodeSchema,
   tier: evidenceTierSchema,
   reviewState: reviewStateSchema,
-  extractionMethod: reasonCodeSchema,
+  extractionMethod: z.string().trim().min(1).max(128),
   sourceIdentityHash: contentHashSchema,
   sourceCommitSha: commitShaSchema.optional(),
   sourceRunId: z.string().trim().min(1).max(512).optional(),

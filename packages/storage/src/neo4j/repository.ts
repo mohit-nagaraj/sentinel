@@ -14,8 +14,12 @@ import { z } from "zod"
 import type { GraphDatabase, GraphTransaction } from "./database.ts"
 import {
   constraintStatements,
+  legacyConstraintDropStatements,
+  legacyRelationshipConstraintDropStatements,
+  nodeRevisionIndexStatements,
   relationshipConstraintStatements,
   relationshipEndpointKinds,
+  relationshipRevisionIndexStatements,
   resolveNodeLabel,
   resolveRelationshipType,
 } from "./schema.ts"
@@ -30,6 +34,9 @@ const reservedNodeProperties = new Set([
   "application_id",
   "stable_key",
   "graph_revision",
+  "entity_kind",
+  "publication_hash",
+  "publication_status",
   "created_at",
   "updated_at",
 ])
@@ -95,7 +102,7 @@ export type GraphPropertyValue =
   null | boolean | number | string | readonly (boolean | number | string)[]
 export type GraphProperties = Readonly<Record<string, GraphPropertyValue>>
 
-function parseProperties(input: GraphProperties): GraphProperties {
+export function parseGraphProperties(input: GraphProperties): GraphProperties {
   if (Object.keys(input).length > 128) {
     throw new Error("Graph facts are limited to 128 properties")
   }
@@ -195,32 +202,56 @@ function parseNodeFact(input: GraphNodeFact) {
     kind,
     stableKey,
     graphRevision: graphRevisionSchema.parse(input.graphRevision),
-    properties: parseProperties(input.properties),
+    properties: parseGraphProperties(input.properties),
   }
 }
 
 function nodeMergeStatement(kind: EntityKind): string {
   const label = resolveNodeLabel(kind)
-  return `MERGE (n:${label} {application_id: $applicationId, stable_key: $stableKey})
+  return `OPTIONAL MATCH (newer:${label} {
+  application_id: $applicationId,
+  stable_key: $stableKey
+})
+WHERE newer.graph_revision > $graphRevision
+WITH count(newer) AS newerCount
+WHERE newerCount = 0
+MERGE (n:${label} {
+  application_id: $applicationId,
+  stable_key: $stableKey,
+  graph_revision: $graphRevision
+})
 ON CREATE SET n.created_at = datetime()
-WITH n
-WHERE n.graph_revision IS NULL OR n.graph_revision <= $graphRevision
 SET n += $properties,
-    n.graph_revision = $graphRevision,
     n.updated_at = datetime()
 RETURN n`
 }
 
 function relationshipMergeStatement(typeInput: unknown): string {
   const type = resolveRelationshipType(typeInput)
-  return `MATCH (from {application_id: $applicationId, stable_key: $fromStableKey})
-MATCH (to {application_id: $applicationId, stable_key: $toStableKey})
-MERGE (from)-[r:${type} {application_id: $applicationId, stable_key: $stableKey}]->(to)
+  return `OPTIONAL MATCH ()-[newer:${type} {
+  application_id: $applicationId,
+  stable_key: $stableKey
+}]-()
+WHERE newer.graph_revision > $graphRevision
+WITH count(newer) AS newerCount
+WHERE newerCount = 0
+MATCH (from {
+  application_id: $applicationId,
+  stable_key: $fromStableKey,
+  graph_revision: $graphRevision
+})
+MATCH (to {
+  application_id: $applicationId,
+  stable_key: $toStableKey,
+  graph_revision: $graphRevision
+})
+MERGE (from)-[r:${type} {
+  application_id: $applicationId,
+  stable_key: $stableKey,
+  graph_revision: $graphRevision
+}]->(to)
 ON CREATE SET r.created_at = datetime()
-WITH r
-WHERE r.graph_revision IS NULL OR r.graph_revision <= $graphRevision
 SET r += $properties,
-    r.graph_revision = $graphRevision,
     r.updated_at = datetime()
 RETURN r`
 }
@@ -233,8 +264,12 @@ export class Neo4jFactRepository {
       { operation: "bootstrap_graph_schema" },
       async (transaction) => {
         for (const statement of [
+          ...legacyRelationshipConstraintDropStatements,
+          ...legacyConstraintDropStatements,
           ...constraintStatements,
           ...relationshipConstraintStatements,
+          ...nodeRevisionIndexStatements,
+          ...relationshipRevisionIndexStatements,
         ]) {
           await transaction.run(statement)
         }
@@ -290,7 +325,7 @@ export class Neo4jFactRepository {
       throw new Error(`Relationship ${type} has an invalid target kind`)
     }
     const graphRevision = graphRevisionSchema.parse(input.graphRevision)
-    const properties = parseProperties(input.properties)
+    const properties = parseGraphProperties(input.properties)
     const parsedRunId = parseOptionalRunId(runId)
     await this.database.write(
       {
@@ -351,7 +386,7 @@ export class Neo4jFactRepository {
       async (transaction) => {
         const result = await transaction.run(
           `MATCH (n {application_id: $applicationId, stable_key: $stableKey})
-           RETURN n LIMIT 1`,
+           RETURN n ORDER BY n.graph_revision DESC LIMIT 1`,
           { applicationId, stableKey }
         )
         const record = result.records[0]

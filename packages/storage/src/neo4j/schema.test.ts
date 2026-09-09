@@ -6,9 +6,13 @@ import { describe, expect, it } from "vitest"
 
 import {
   constraintStatements,
+  legacyConstraintDropStatements,
+  legacyRelationshipConstraintDropStatements,
   nodeLabelByKind,
+  nodeRevisionIndexStatements,
   relationshipConstraintStatements,
   relationshipEndpointKinds,
+  relationshipRevisionIndexStatements,
   resolveNodeLabel,
   resolveRelationshipType,
 } from "./schema.ts"
@@ -21,8 +25,16 @@ describe("Neo4j schema allowlists", () => {
     expect(constraintStatements).toEqual(
       expect.arrayContaining([
         expect.stringContaining("FOR (n:Application)"),
-        expect.stringContaining("(n.application_id, n.stable_key) IS UNIQUE"),
+        expect.stringContaining(
+          "(n.application_id, n.stable_key, n.graph_revision) IS UNIQUE"
+        ),
       ])
+    )
+    expect(legacyConstraintDropStatements).toHaveLength(
+      entityKindSchema.options.length
+    )
+    expect(nodeRevisionIndexStatements).toHaveLength(
+      entityKindSchema.options.length
     )
   })
 
@@ -31,6 +43,12 @@ describe("Neo4j schema allowlists", () => {
       evidenceRelationshipSchema.options
     )
     expect(relationshipConstraintStatements).toHaveLength(
+      evidenceRelationshipSchema.options.length
+    )
+    expect(legacyRelationshipConstraintDropStatements).toHaveLength(
+      evidenceRelationshipSchema.options.length
+    )
+    expect(relationshipRevisionIndexStatements).toHaveLength(
       evidenceRelationshipSchema.options.length
     )
   })

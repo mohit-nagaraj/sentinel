@@ -58,7 +58,7 @@ class RecordingGraphDatabase implements GraphDatabase {
       if (cypher.includes("deletedCount")) {
         return { records: [record({ deletedCount: 2 })] }
       }
-      if (cypher.includes("RETURN n LIMIT 1")) {
+      if (cypher.includes("RETURN n ORDER BY")) {
         return {
           records: [
             record({
