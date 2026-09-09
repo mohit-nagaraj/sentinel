@@ -4,6 +4,7 @@ export * from "./browser-runtime.ts"
 export * from "./blast-radius.ts"
 export * from "./code-explorer.ts"
 export * from "./documentation-explorer.ts"
+export * from "./deployment-verification.ts"
 export {
   loadEnvironment,
   type EnvironmentSource,
@@ -18,6 +19,7 @@ export * from "./graph-publication.ts"
 export { createHealthReport, type HealthReport } from "./health.ts"
 export * from "./identity.ts"
 export * from "./knowledge.ts"
+export * from "./knowledge-refresh.ts"
 export * from "./operations.ts"
 export * from "./parsers.ts"
 export * from "./primitives.ts"

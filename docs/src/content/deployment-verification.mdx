@@ -1,0 +1,120 @@
+# Trusted deployment verification
+
+Sentinel's assignment deployment mechanism is a Render Blueprint preview
+environment attached to the public `mohit-nagaraj/Hi.Events` fork. The fork owns
+only deployment configuration: a Blueprint and a Docker wrapper that builds the
+checked-out Hi.Events backend and frontend source. It must not use the upstream
+one-click image because that Dockerfile pulls a mutable `latest` image and cannot
+prove which Hi.Events commit is running.
+
+Render preview environments are a suitable bounded assignment mechanism because
+they create isolated services and datastores for a pull request, can initialize
+fresh data, track new commits, expire after inactivity, and are deleted when the
+PR closes. This is a selected demo adapter, not a claim that Sentinel provides a
+universal preview platform.
+
+Authoritative references:
+
+- [Render preview environments](https://render.com/docs/preview-environments)
+- [Render default Git identity variables](https://render.com/docs/environment-variables)
+- [Render deploy API](https://api-docs.render.com/reference/retrieve-deploy)
+- [GitHub Actions secure use](https://docs.github.com/en/actions/reference/security/secure-use)
+- [Hi.Events source deployment](https://github.com/HiEventsDev/Hi.Events)
+- [Hi.Events Render one-click wrapper](https://github.com/HiEventsDev/hi.events-render.com)
+
+## Preview configuration
+
+The fork Blueprint uses manual PR previews, omits an explicit service `branch`,
+and expires inactive previews after one day. Omitting `branch` matters: Render
+otherwise uses that fixed branch for every preview instead of the PR branch.
+The service builds the fork checkout, exposes a public HTTPS URL, uses a fresh
+preview database, runs migrations and deterministic fixture initialization, and
+has a bounded health endpoint. Automatic deploys are disabled for any fixed
+baseline service so a later branch commit cannot replace the registered SHA.
+
+The preview has only generated, disposable application keys and an isolated
+test database. It receives no Sentinel token, Render API key, GitHub App key,
+Supabase credential, production application credential, payment credential,
+mail credential, or reusable organizer credential. Payment and outbound mail
+remain disabled. Sentinel holds test authentication behind an opaque secret
+reference and releases it to its browser context only after validation.
+
+The public demo records the Render service ID, deploy ID, public URL, repository,
+full commit SHA, role (`baseline` or `pr_head`), health path, compatibility
+fingerprint, registration time, expiry, and cleanup deadline. A separate
+registration is required for each concurrent PR head.
+
+## Proof and validation order
+
+The authenticated Render API is the identity authority. Sentinel retrieves both
+the registered service and deploy. A self-reported endpoint or
+`RENDER_GIT_COMMIT` may help diagnostics, but neither can establish trust because
+the PR code controls the application response.
+
+Validation is fail closed and ordered:
+
+1. Reject expired or cleanup-overdue registrations.
+2. Require the deployment role implied by the operation. A baseline registration
+   can support baseline observation but never PR-head verification.
+3. Retrieve the exact registered Render service and deploy with the server-held
+   Render API key.
+4. Require a live deploy whose provider repository, full commit SHA, service ID,
+   deploy ID, and public origin match both the registration and assessment.
+5. Require the current application/authentication/test-data/browser-policy
+   compatibility fingerprint.
+6. Probe the registered health path through the bounded public-network client and
+   require it to remain on the approved origin.
+7. Authorize referenced test credentials. Only after this point may the caller
+   open a credential-bearing browser context.
+8. SNT-031 revalidates the identity immediately before browser execution to
+   close the mutable-deployment race.
+
+The validation result is also scoped to the pull-request and immutable
+assessment identities. Planning rejects a result from another PR, another head
+assessment of the same PR, or another application before producing executable
+missions.
+
+Mismatch, stale, unreachable, and unknown identities deny both credential and
+browser access. The planner returns `verification_unavailable` with an operator
+action and retains the static blast-radius assessment; it never manufactures a
+dynamic result.
+
+## Mission planning
+
+Only blast-radius scenarios with supplied deterministic checkpoint definitions
+become verification missions. Plans contain impacted finding/scenario/entity
+IDs, an entry path, setup, checkpoints, exclusions, and capped action/model/time
+budgets. If setup touches an impacted entity, it is classified inside the blast
+radius and must use the UI. Other setup may use the named trusted fixture/API.
+The planner selects at most one workflow absent from the impacted workflow set as
+a control. Missing definitions and the ten-mission cap remain explicit
+exclusions.
+
+## Threat model and response
+
+PR code is untrusted even when Render accurately identifies it. It can attempt
+to read environment variables, call arbitrary outbound hosts, consume CPU or
+storage, persist malicious data, spoof health, or interfere with cleanup. The
+preview therefore contains no durable privileged secret or production data,
+uses the smallest preview plans and instance counts, receives unique fixture
+identities, and is never reachable from Sentinel's private control plane. Browser
+HTTP and WebSocket traffic remains exact-origin allowlisted with destructive,
+payment, messaging, download, popup, and privilege-changing actions denied.
+
+Render provider proof establishes identity, not code safety. Health is checked
+only after identity and cannot elevate an untrusted deployment. Credentials are
+scoped to the disposable fixture and browser session, never injected into the
+preview service, model context, logs, report, or public artifact.
+
+Render deletes previews when PRs close and the Blueprint adds a one-day inactive
+expiry. Sentinel additionally rejects the explicit expiry and records a cleanup
+deadline. Cleanup removes the preview and isolated datastore, invalidates the
+registration, deletes fixture data, and expires private browser artifacts under
+their retention policy.
+
+On suspected compromise: stop verification, deny all registrations for the
+application/provider, delete the preview and datastore, revoke and replace the
+Render API key if exposed, rotate scoped test credentials, invalidate browser
+state and signed artifacts, preserve sanitized audit identifiers, and require a
+new service/deploy registration before resuming. Provider/API failure remains
+`verification_unavailable`; static assessment remains usable.
