@@ -70,8 +70,13 @@ durable run immediately. The supported routes are:
   `cursorId`; add `applicationId` to filter.
 - `GET /api/control/runs/:id` and `/events` - read an owned run and its ordered
   event page (`after`, `limit`).
-- `POST /api/control/runs/:id/cancel` and `/retry` - request cooperative stop or
-  create a linked attempt for a retryable terminal failure.
+- `GET /api/control/runs/:id/realtime` - obtain a four-minute owner JWT and its
+  private `run:<uuid>` Broadcast topic.
+- `GET /api/control/runs/:id/artifacts/:artifactId` - obtain a five-minute URL
+  for a PNG/JPEG screenshot belonging to the same owned run.
+- `POST /api/control/runs/:id/pause`, `/cancel`, and `/retry` - pause at the next
+  safe boundary, request cooperative stop, or create a linked attempt for a
+  retryable terminal failure.
 - `GET /api/control/runs/:id/interrupt` and
   `POST /api/control/runs/:id/interrupts/:decisionId/respond` - read and answer a
   bounded human decision exactly once.
@@ -82,9 +87,24 @@ Every route repeats operator authentication and storage ownership checks. API
 responses are private/no-store DTOs and never include request payloads,
 idempotency keys, leases, checkpoint state, or provider error details.
 
+The `/runs` workspace projects canonical Postgres events into independent
+Documentation, Code, and Application lanes plus Curator reconciliation. Private
+Supabase Broadcast messages contain only the run ID and, for event wakes, its
+sequence; lifecycle wakes contain no event content. They wake a serialized
+catch-up loop and run snapshot refresh rather than acting as storage. Reload and
+reconnect merge ordered pages by sequence, reject gaps or conflicting duplicates,
+and refresh run/interrupt state. The workspace distinguishes decisions, policy,
+tools, browser actions, requests, evidence, budgets, interrupts, failures, and
+completion without rendering prompt text, hidden reasoning, selectors, full DOM,
+or executable markup.
+
 Production control-plane access requires the existing server-only
-`SUPABASE_DB_URL`, optional read-only `GITHUB_TOKEN`, and a server-derived
-`SENTINEL_OPERATOR_ID` UUID. `SENTINEL_OPERATOR_TOKEN` must contain at least 32
+`SUPABASE_DB_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, private artifact
+S3 settings, optional read-only `GITHUB_TOKEN`, and a server-derived
+`SENTINEL_OPERATOR_ID` UUID. Configure `SUPABASE_REALTIME_SIGNING_JWK` with an
+ES256/RS256 private JWK matching the project signing key. `SUPABASE_JWT_SECRET`
+is a legacy HS256 fallback for local Supabase development only.
+`SENTINEL_OPERATOR_TOKEN` must contain at least 32
 characters; the Proxy challenges browsers with HTTP Basic and every Server Action
 independently accepts only that Basic credential or an exact Bearer token.
 `SENTINEL_CONTROL_PLANE_FIXTURE=1` exists only for the isolated Playwright suite

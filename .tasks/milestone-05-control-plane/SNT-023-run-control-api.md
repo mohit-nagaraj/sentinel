@@ -3,7 +3,7 @@
 | Field          | Value                                               |
 | -------------- | --------------------------------------------------- |
 | Milestone      | M5 — Onboarding and observable control plane        |
-| Status         | `not-started`                                       |
+| Status         | `done`                                              |
 | Depends on     | SNT-006, SNT-022                                    |
 | Blocks         | Activity UI, knowledge UI, GitHub App               |
 | PRD references | §7.4–7.5, §8.4, §13.1–13.2, FR-016, NFR-005/NFR-008 |

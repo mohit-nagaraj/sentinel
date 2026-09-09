@@ -1256,6 +1256,15 @@ export function createApplicationExplorerSpecialistToolDefinitions<
           summary,
           evidenceIds: [observation.evidenceId],
           references: compactReferences(observation),
+          activity: {
+            category: "coverage",
+            coverageDelta: 1,
+            ...(observation.screenshotArtifactId === undefined
+              ? {}
+              : {
+                  screenshotArtifactId: observation.screenshotArtifactId,
+                }),
+          },
           usage: usage(summary),
         })
       }
@@ -1361,6 +1370,13 @@ export function createApplicationExplorerSpecialistToolDefinitions<
         summary,
         evidenceIds: [observation.evidenceId],
         references: compactReferences(observation),
+        activity: {
+          category: "coverage",
+          coverageDelta: 1,
+          ...(observation.screenshotArtifactId === undefined
+            ? {}
+            : { screenshotArtifactId: observation.screenshotArtifactId }),
+        },
         usage: actualUsage,
       })
     },
@@ -1476,6 +1492,34 @@ export function createApplicationExplorerSpecialistToolDefinitions<
                   },
                 ]),
           ],
+          activity: {
+            category: "action",
+            detail: summary,
+            action: {
+              kind: transition.action.kind,
+              label:
+                transition.action.name ??
+                transition.action.kind.replaceAll("_", " "),
+              status: "completed",
+            },
+            ...(transition.network[0] === undefined
+              ? {}
+              : {
+                  request: {
+                    method: transition.network[0].method,
+                    route: transition.network[0].normalizedPath,
+                    ...(transition.network[0].status === undefined
+                      ? {}
+                      : { status: transition.network[0].status }),
+                  },
+                }),
+            coverageDelta: 3,
+            ...(transition.after.screenshotArtifactId === undefined
+              ? {}
+              : {
+                  screenshotArtifactId: transition.after.screenshotArtifactId,
+                }),
+          },
           usage: actualUsage,
         })
       },

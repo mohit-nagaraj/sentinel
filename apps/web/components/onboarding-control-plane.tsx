@@ -9,6 +9,7 @@ import {
   useState,
 } from "react"
 import {
+  Activity,
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
@@ -28,6 +29,7 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react"
+import Link from "next/link"
 
 import type {
   CompatibilityEvidence,
@@ -1216,9 +1218,18 @@ export function OnboardingControlPlane({
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <ShieldCheck className="size-4 text-primary" aria-hidden="true" />
-          Read-only target access
+        <div className="flex items-center gap-3">
+          <Link
+            href="/runs"
+            className="flex min-h-11 items-center gap-2 rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+          >
+            <Activity className="size-4" aria-hidden="true" />
+            Activity
+          </Link>
+          <div className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
+            <ShieldCheck className="size-4 text-primary" aria-hidden="true" />
+            Read-only target access
+          </div>
         </div>
       </header>
 

@@ -20,7 +20,7 @@ export interface WorkerRunStore {
   controlState(
     runId: string,
     owner: string
-  ): Promise<"active" | "cancelled" | "lease_lost">
+  ): Promise<"active" | "pause_requested" | "cancelled" | "lease_lost">
   getResumeDecision(
     runId: string,
     owner: string
@@ -64,6 +64,9 @@ class WorkerCancelledError extends Error {
 }
 class WorkerLeaseLostError extends Error {
   override name = "LeaseOwnershipError"
+}
+class WorkerPauseRequestedError extends Error {
+  override name = "PauseRequestedOrchestrationError"
 }
 class WorkerShutdownError extends Error {
   override name = "WorkerShutdownError"
@@ -151,6 +154,9 @@ export function createWorker(options: WorkerOptions): WorkerProcess {
         if (state === "cancelled") {
           execution.abort(new WorkerCancelledError())
           throw abortError(execution.signal)
+        }
+        if (state === "pause_requested") {
+          throw new WorkerPauseRequestedError()
         }
       },
       registerCleanup: (cleanup: () => Promise<void>) => cleanups.push(cleanup),
@@ -241,6 +247,15 @@ export function createWorker(options: WorkerOptions): WorkerProcess {
       repositoryErrorCode(cause) === "storage_unavailable" ||
       repositoryErrorCode(cause) === "lease_lost"
     ) {
+      return true
+    }
+    if (errorName(cause) === "PauseRequestedOrchestrationError") {
+      await options.store.recordInterrupt({
+        runId: run.id,
+        owner: options.owner,
+        decisionId: "resume_run",
+        prompt: "Run paused by operator",
+      })
       return true
     }
     if (

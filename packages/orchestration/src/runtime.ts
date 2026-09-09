@@ -5,6 +5,7 @@ import {
   missionIdSchema,
   persistedTextSchema,
   reasonCodeSchema,
+  runActivityDisplaySchema,
   runIdSchema,
 } from "@sentinel/contracts"
 import { isGraphInterrupt } from "@langchain/langgraph"
@@ -68,6 +69,7 @@ export interface OrchestrationEvent {
   readonly retryable?: boolean
   readonly errorCategory?:
     "authorization" | "cancelled" | "provider" | "storage" | "unknown"
+  readonly activity?: z.infer<typeof runActivityDisplaySchema>
 }
 
 export interface OrchestrationEventSink {
@@ -136,6 +138,13 @@ export class LeaseOwnershipError extends Error {
   constructor() {
     super("Orchestration lease ownership was lost")
     this.name = "LeaseOwnershipError"
+  }
+}
+
+export class PauseRequestedOrchestrationError extends Error {
+  constructor() {
+    super("Orchestration pause was requested")
+    this.name = "PauseRequestedOrchestrationError"
   }
 }
 
@@ -214,6 +223,9 @@ function safeEvent(input: OrchestrationEvent): OrchestrationEvent {
       : { budget: orchestrationBudgetSchema.parse(input.budget) }),
     summary: persistedTextSchema.parse(input.summary),
     reasonCode: reasonCodeSchema.parse(input.reasonCode),
+    ...(input.activity === undefined
+      ? {}
+      : { activity: runActivityDisplaySchema.parse(input.activity) }),
     occurredAt: z.iso.datetime({ offset: true }).parse(input.occurredAt),
   }
 }
@@ -255,6 +267,7 @@ export interface NodeRuntime {
     readonly toolName: string
     readonly phase: "started" | "completed"
     readonly idempotencyKey?: string
+    readonly activity?: OrchestrationEvent["activity"]
   }): Promise<void>
   emit(
     input: Omit<
@@ -301,12 +314,21 @@ function isSafeRuntimeError(error: unknown): error is Error {
     error instanceof TransientOrchestrationError ||
     error instanceof CancelledOrchestrationError ||
     error instanceof LeaseOwnershipError ||
+    isPauseRequestedError(error) ||
     error instanceof ResumeAuthorizationError ||
     error instanceof ResumeConflictError ||
     error instanceof BudgetExhaustedError ||
     error instanceof CheckpointStateError ||
     error instanceof EventPersistenceError ||
     error instanceof SanitizedNodeError
+  )
+}
+
+function isPauseRequestedError(error: unknown): error is Error {
+  return (
+    error instanceof PauseRequestedOrchestrationError ||
+    (error instanceof Error &&
+      error.name === "PauseRequestedOrchestrationError")
   )
 }
 
@@ -377,8 +399,12 @@ export function wrapNode<State, Update extends Record<string, unknown>>(
     const runtime: NodeRuntime = {
       signal: abortController.signal,
       checkActive,
-      emitTool: async ({ toolName, phase, idempotencyKey }) => {
+      emitTool: async ({ toolName, phase, idempotencyKey, activity }) => {
         await checkActive()
+        const parsedToolName = reasonCodeSchema.parse(toolName)
+        const toolLabel = persistedTextSchema
+          .max(512)
+          .parse(parsedToolName.replaceAll("_", " "))
         await emit(
           dependencies,
           {
@@ -386,7 +412,7 @@ export function wrapNode<State, Update extends Record<string, unknown>>(
             graphName: runtimeState.graphName,
             nodeName: lifecycleNodeName,
             ...eventContext,
-            toolName: reasonCodeSchema.parse(toolName),
+            toolName: parsedToolName,
             kind: phase === "started" ? "tool_started" : "tool_completed",
             status: phase,
             summary:
@@ -394,6 +420,14 @@ export function wrapNode<State, Update extends Record<string, unknown>>(
                 ? "Tool execution started"
                 : "Tool execution completed",
             reasonCode: phase === "started" ? "tool_started" : "tool_completed",
+            activity: activity ?? {
+              category: "tool",
+              action: {
+                kind: parsedToolName,
+                label: toolLabel,
+                status: phase === "started" ? "selected" : "completed",
+              },
+            },
           },
           idempotencyKey === undefined ? undefined : { idempotencyKey }
         )
@@ -474,7 +508,9 @@ export function wrapNode<State, Update extends Record<string, unknown>>(
     } catch (caught) {
       const error =
         executionSignal?.aborted === true ? externalControlError() : caught
-      if (isGraphInterrupt(error)) throw error
+      if (isGraphInterrupt(error) || isPauseRequestedError(error)) {
+        throw error
+      }
       const retryable = error instanceof TransientOrchestrationError
       const safeError = isSafeRuntimeError(error)
         ? error

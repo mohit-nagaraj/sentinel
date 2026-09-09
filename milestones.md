@@ -126,8 +126,8 @@ SNT-014 now provides the common specialist lifecycle and reviewed Code/Applicati
 | ID      | Issue                                                                                                                                            | Depends on                                  | Status      |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- | ----------- |
 | SNT-022 | [Application onboarding, compatibility, auth, and safety configuration](./.tasks/milestone-05-control-plane/SNT-022-onboarding-control-plane.md) | SNT-003, SNT-007, SNT-012                   | done        |
-| SNT-023 | [Run APIs, worker control, cancellation, and recovery](./.tasks/milestone-05-control-plane/SNT-023-run-control-api.md)                           | SNT-006, SNT-022                            | not-started |
-| SNT-024 | [Realtime specialist activity and screenshot storyboard](./.tasks/milestone-05-control-plane/SNT-024-agent-activity-ux.md)                       | SNT-006, SNT-017, SNT-023                   | not-started |
+| SNT-023 | [Run APIs, worker control, cancellation, and recovery](./.tasks/milestone-05-control-plane/SNT-023-run-control-api.md)                           | SNT-006, SNT-022                            | done        |
+| SNT-024 | [Realtime specialist activity and screenshot storyboard](./.tasks/milestone-05-control-plane/SNT-024-agent-activity-ux.md)                       | SNT-006, SNT-017, SNT-023                   | done        |
 | SNT-025 | [Knowledge, coverage, evidence-path, and review UI](./.tasks/milestone-05-control-plane/SNT-025-knowledge-review-ui.md)                          | SNT-019, SNT-020, SNT-021, SNT-023, SNT-024 | not-started |
 
 ---
@@ -199,7 +199,7 @@ SNT-014 now provides the common specialist lifecycle and reviewed Code/Applicati
 
 - SNT-014 is done with implementation, QA, P0/P1 review, and PR CI complete; merge remains.
 - SNT-015 is the next specialist issue after SNT-014 merges.
-- SNT-023 is the next ready control-plane issue after SNT-022 merges.
+- SNT-025 is the next control-plane issue after SNT-024 merges.
 - External preparation can proceed without implementation ownership conflicts:
   - GitHub App registration inputs for SNT-026;
   - public baseline/head deployment decision for SNT-030.

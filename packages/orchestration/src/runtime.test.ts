@@ -77,6 +77,37 @@ describe("orchestration runtime boundaries", () => {
     ])
   })
 
+  it("propagates a cooperative pause without recording a node failure", async () => {
+    const events: OrchestrationEvent[] = []
+    const sideEffect = vi.fn()
+    const pause = new Error("Pause requested by worker control")
+    pause.name = "PauseRequestedOrchestrationError"
+    const dependencies: RuntimeDependencies = {
+      owner: "worker-a",
+      control: {
+        assertActive: async () => {
+          throw pause
+        },
+      },
+      events: { append: async (event) => void events.push(event) },
+      effects: { execute: sideEffect },
+      resumeAuthorization: { authorize: async () => true },
+      resumeCoordinator: new InMemoryResumeCoordinator(),
+    }
+    const node = wrapNode(
+      "pause_boundary",
+      dependencies,
+      parseSyntheticState,
+      async () => {
+        await sideEffect()
+        return {}
+      }
+    )
+    await expect(node(state)).rejects.toBe(pause)
+    expect(sideEffect).not.toHaveBeenCalled()
+    expect(events).toEqual([])
+  })
+
   it("projects typed lifecycle events without hidden details", async () => {
     const persisted: unknown[] = []
     const idempotencyKeys: (string | undefined)[] = []
@@ -124,6 +155,10 @@ describe("orchestration runtime boundaries", () => {
       reasonCode: "model_budget_updated",
       evidenceIds: [],
       budget: { consumed: 1, limit: 4, unit: "model_calls" },
+      activity: {
+        category: "decision",
+        coverageDelta: 1,
+      },
       occurredAt: "2026-09-07T00:00:02.000Z",
     })
 
@@ -139,6 +174,12 @@ describe("orchestration runtime boundaries", () => {
       agent: "code",
       missionId,
       sequence: 2,
+    })
+    expect(persisted[2]).toMatchObject({
+      activity: {
+        category: "decision",
+        coverageDelta: 1,
+      },
     })
     expect(persisted[2]).toMatchObject({
       kind: "budget_updated",
@@ -453,10 +494,18 @@ describe("orchestration runtime boundaries", () => {
             nodeName: "model_tool",
             toolName: "synthetic_tool",
             phase: "completed",
+            activity: {
+              category: "tool",
+              detail: "Symbol lookup completed",
+            },
           },
         },
         context
       )
-    ).toMatchObject({ kind: "tool_completed", toolName: "synthetic_tool" })
+    ).toMatchObject({
+      kind: "tool_completed",
+      toolName: "synthetic_tool",
+      activity: { category: "tool" },
+    })
   })
 })

@@ -30,6 +30,13 @@ const githubAppMigration = readFileSync(
   ),
   "utf8"
 )
+const realtimeActivityMigration = readFileSync(
+  new URL(
+    "../../../supabase/migrations/20260908000500_realtime_activity.sql",
+    import.meta.url
+  ),
+  "utf8"
+)
 
 describe("operational migration", () => {
   it("defines every compact operational table and private checkpoint schema", () => {
@@ -179,6 +186,48 @@ describe("GitHub App assessment migration", () => {
     expect(githubAppMigration).toContain("to service_role")
     expect(githubAppMigration).not.toMatch(
       /grant execute[\s\S]*to (?:anon|authenticated)/i
+    )
+  })
+})
+
+describe("realtime activity migration", () => {
+  it("broadcasts cursor-only run hints to private owner-authorized topics", () => {
+    expect(realtimeActivityMigration).toContain("can_receive_run_broadcast")
+    expect(realtimeActivityMigration).toContain("sentinel_owned_run_broadcasts")
+    expect(realtimeActivityMigration).toContain(
+      "realtime.messages.extension = 'broadcast'"
+    )
+    expect(realtimeActivityMigration).toContain("'runId', new.run_id")
+    expect(realtimeActivityMigration).toContain("'sequence', new.sequence")
+    expect(realtimeActivityMigration).not.toContain("new.event")
+    expect(realtimeActivityMigration).toContain("run_state")
+    expect(realtimeActivityMigration).toContain("runs_broadcast_state")
+    expect(realtimeActivityMigration).toContain(
+      "run_interrupts_broadcast_state"
+    )
+    expect(realtimeActivityMigration).not.toMatch(
+      /for insert\s+to authenticated/i
+    )
+  })
+
+  it("requests pause without aborting running work and clears it on resume", () => {
+    expect(realtimeActivityMigration).toContain("pause_requested_at")
+    expect(realtimeActivityMigration).toContain("pause_control_run")
+    expect(realtimeActivityMigration).toContain(
+      "resume_decision_id = 'resume_run'"
+    )
+    expect(realtimeActivityMigration).toContain("old.status = 'interrupted'")
+    expect(realtimeActivityMigration).toContain("next_pause_decision_id")
+    expect(realtimeActivityMigration).toContain("v_decision_id")
+  })
+
+  it("associates content-addressed artifacts with every owning run", () => {
+    expect(realtimeActivityMigration).toContain("sentinel.run_artifacts")
+    expect(realtimeActivityMigration).toContain(
+      "primary key (run_id, artifact_id)"
+    )
+    expect(realtimeActivityMigration).toContain(
+      "alter table sentinel.run_artifacts enable row level security"
     )
   })
 })

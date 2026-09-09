@@ -11,23 +11,32 @@ import {
 import { z } from "zod"
 
 import {
+  isControlPlaneFixture,
   isOperatorAuthConfigured,
   isOperatorRequestAuthorized,
   type OperatorAuthEnvironment,
 } from "@/lib/operator-auth"
-import { getRunControlService, type RunControlService } from "@/lib/run-control"
+import { getActivityFixtureRunControlService } from "@/lib/run-activity-fixture"
+import {
+  RunActivityConfigurationError,
+  getRunControlService,
+  type RunControlService,
+} from "@/lib/run-control"
 
 export const dynamic = "force-dynamic"
 
 type ControlService = Pick<
   RunControlService,
   | "cancel"
+  | "artifact"
   | "command"
   | "events"
   | "get"
   | "list"
+  | "pause"
   | "pendingInterrupt"
   | "readiness"
+  | "realtime"
   | "respond"
   | "retry"
 >
@@ -182,6 +191,11 @@ const repositoryErrors: Record<
     "configuration",
     "Application onboarding is not confirmed.",
   ],
+  pause_not_allowed: [
+    409,
+    "validation",
+    "This run cannot be paused in its current state.",
+  ],
   publication_conflict: [
     409,
     "configuration",
@@ -213,6 +227,17 @@ function mapFailure(error: unknown): Response {
         error.code,
         message,
         error.code === "storage_unavailable"
+      )
+    )
+  }
+  if (error instanceof RunActivityConfigurationError) {
+    return publicError(
+      new ControlHttpError(
+        503,
+        "configuration",
+        "run_activity_unavailable",
+        "Live run activity is unavailable.",
+        true
       )
     )
   }
@@ -282,8 +307,12 @@ export async function handleControlRequest(
       const origin = request.headers.get("origin")
       const fetchSite = request.headers.get("sec-fetch-site")
       if (
-        (origin !== null && origin !== new URL(request.url).origin) ||
-        fetchSite === "cross-site"
+        (fetchSite !== null &&
+          fetchSite !== "same-origin" &&
+          fetchSite !== "none") ||
+        (fetchSite === null &&
+          origin !== null &&
+          origin !== new URL(request.url).origin)
       ) {
         throw new ControlHttpError(
           403,
@@ -292,10 +321,12 @@ export async function handleControlRequest(
           "Cross-origin control mutations are not allowed."
         )
       }
-      const bodylessCancel =
-        path.length === 3 && path[0] === "runs" && path[2] === "cancel"
+      const bodylessControl =
+        path.length === 3 &&
+        path[0] === "runs" &&
+        new Set(["cancel", "pause"]).has(path[2] ?? "")
       if (
-        !bodylessCancel &&
+        !bodylessControl &&
         !request.headers
           .get("content-type")
           ?.toLowerCase()
@@ -378,6 +409,22 @@ export async function handleControlRequest(
           : { schemaVersion: 1, ...page }
       )
     }
+    if (method === "GET" && path.length === 3 && path[2] === "realtime") {
+      const bootstrap = await service.realtime(runId)
+      return response(bootstrap ?? notFound("run_not_found"))
+    }
+    if (method === "GET" && path.length === 4 && path[2] === "artifacts") {
+      const artifact = await service.artifact(runId, path[3] ?? "")
+      if (artifact === null) {
+        throw new ControlHttpError(
+          404,
+          "validation",
+          "artifact_not_found",
+          "The run screenshot was not found."
+        )
+      }
+      return response(artifact)
+    }
     if (method === "GET" && path.length === 3 && path[2] === "interrupt") {
       const interrupt = await service.pendingInterrupt(runId)
       return response(interrupt ?? notFound("interrupt_not_found"))
@@ -388,6 +435,10 @@ export async function handleControlRequest(
         run === null ? notFound("run_not_found") : { schemaVersion: 1, run },
         202
       )
+    }
+    if (method === "POST" && path.length === 3 && path[2] === "pause") {
+      const run = await service.pause(runId)
+      return response({ schemaVersion: 1, run }, 202)
     }
     if (method === "POST" && path.length === 3 && path[2] === "retry") {
       const result = await service.retry(runId, await readJson(request))
@@ -438,7 +489,9 @@ async function dispatch(request: Request, context: ControlRouteContext) {
   return handleControlRequest(
     request,
     path,
-    getRunControlService(),
+    isControlPlaneFixture(process.env)
+      ? (getActivityFixtureRunControlService() as unknown as RunControlService)
+      : getRunControlService(),
     process.env
   )
 }

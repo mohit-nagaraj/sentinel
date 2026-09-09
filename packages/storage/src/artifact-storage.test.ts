@@ -18,6 +18,7 @@ class FakeObjects implements PrivateObjectStore {
   readonly stored = new Map<string, Uint8Array>()
   readonly deleted: string[] = []
   readonly deletedBuckets: string[] = []
+  readonly signed: string[] = []
   failDelete = false
 
   async assertPrivateBucket() {}
@@ -34,6 +35,7 @@ class FakeObjects implements PrivateObjectStore {
     key: string,
     expiresInSeconds: number
   ) {
+    this.signed.push(key)
     return `https://signed.example/${bucket}/${key}?expires=${expiresInSeconds}`
   }
   async delete(bucket: string, key: string) {
@@ -48,6 +50,8 @@ class FakeMetadata implements ArtifactMetadataStore {
   record: ArtifactMetadata | null = null
   failCreate = false
   restored = false
+  privateBucket = true
+  readonly runLinks = new Set<string>()
 
   async create(input: ArtifactMetadata) {
     if (this.failCreate) throw new Error("metadata failed")
@@ -60,6 +64,20 @@ class FakeMetadata implements ArtifactMetadataStore {
   async find() {
     return this.record
   }
+  async findForRun(_applicationId: string, runId: string) {
+    return this.record !== null &&
+      this.runLinks.has(`${runId}:${this.record.databaseId}`)
+      ? this.record
+      : null
+  }
+  async associateWithRun(
+    _applicationId: string,
+    runId: string,
+    artifactDatabaseId: string
+  ) {
+    this.runLinks.add(`${runId}:${artifactDatabaseId}`)
+    return true
+  }
   async markDeleted() {
     if (this.record === null || this.record.referenceCount > 0) return false
     return true
@@ -68,7 +86,9 @@ class FakeMetadata implements ArtifactMetadataStore {
     this.restored = true
   }
   async assertPrivateBucket(bucket: string) {
-    if (bucket !== "sentinel-artifacts") throw new Error("not private")
+    if (!this.privateBucket || bucket !== "sentinel-artifacts") {
+      throw new Error("not private")
+    }
   }
   async ensurePrivateBucket() {}
   async assertApplicationIdentity(
@@ -165,5 +185,101 @@ describe("artifact service", () => {
       "delete failed"
     )
     expect(metadata.restored).toBe(true)
+  })
+
+  it("signs screenshots only when they belong to the requested run", async () => {
+    const objects = new FakeObjects()
+    const metadata = new FakeMetadata()
+    const service = new ArtifactService("sentinel-artifacts", objects, metadata)
+    const runId = "22222222-2222-4222-8222-222222222222"
+    const saved = await service.persist({
+      applicationId,
+      applicationStableId,
+      runId,
+      artifactType: "screenshot",
+      mimeType: "image/png",
+      body: new Uint8Array([1, 2, 3]),
+      retainUntil: null,
+    })
+    await expect(
+      service.signedRunDownloadUrl(applicationId, runId, saved.id, 300)
+    ).resolves.toContain("expires=300")
+    await expect(
+      service.signedRunDownloadUrl(
+        applicationId,
+        "33333333-3333-4333-8333-333333333333",
+        saved.id,
+        300
+      )
+    ).resolves.toBeNull()
+  })
+
+  it("does not sign non-screenshot run artifacts", async () => {
+    const objects = new FakeObjects()
+    const metadata = new FakeMetadata()
+    const service = new ArtifactService("private-artifacts", objects, metadata)
+    const runId = "22222222-2222-4222-8222-222222222222"
+    const saved = await service.persist({
+      applicationId,
+      applicationStableId,
+      runId,
+      artifactType: "browser_trace",
+      mimeType: "application/zip",
+      body: new Uint8Array([1, 2, 3]),
+      retainUntil: null,
+    })
+
+    await expect(
+      service.signedRunDownloadUrl(applicationId, runId, saved.id, 300)
+    ).resolves.toBeNull()
+    expect(objects.signed).toHaveLength(0)
+  })
+
+  it("keeps identical screenshots associated with every capturing run", async () => {
+    const objects = new FakeObjects()
+    const metadata = new FakeMetadata()
+    const service = new ArtifactService("sentinel-artifacts", objects, metadata)
+    const firstRun = "22222222-2222-4222-8222-222222222222"
+    const secondRun = "33333333-3333-4333-8333-333333333333"
+    const input = {
+      applicationId,
+      applicationStableId,
+      artifactType: "screenshot",
+      mimeType: "image/png",
+      body: new Uint8Array([1, 2, 3]),
+      retainUntil: null,
+    } as const
+    const first = await service.persist({ ...input, runId: firstRun })
+    const duplicate = await service.persist({ ...input, runId: secondRun })
+
+    expect(duplicate.id).toBe(first.id)
+    await expect(
+      service.signedRunDownloadUrl(applicationId, firstRun, first.id, 300)
+    ).resolves.toContain("expires=300")
+    await expect(
+      service.signedRunDownloadUrl(applicationId, secondRun, first.id, 300)
+    ).resolves.toContain("expires=300")
+  })
+
+  it("refuses to sign a screenshot when its persisted bucket is public", async () => {
+    const objects = new FakeObjects()
+    const metadata = new FakeMetadata()
+    const service = new ArtifactService("sentinel-artifacts", objects, metadata)
+    const runId = "22222222-2222-4222-8222-222222222222"
+    const saved = await service.persist({
+      applicationId,
+      applicationStableId,
+      runId,
+      artifactType: "screenshot",
+      mimeType: "image/png",
+      body: new Uint8Array([1, 2, 3]),
+      retainUntil: null,
+    })
+    metadata.privateBucket = false
+
+    await expect(
+      service.signedRunDownloadUrl(applicationId, runId, saved.id, 300)
+    ).rejects.toThrow("not private")
+    expect(objects.signed).toHaveLength(0)
   })
 })

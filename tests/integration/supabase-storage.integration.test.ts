@@ -9,23 +9,27 @@ import {
   createPostgresDatabase,
   loadIntegrationEnvironment,
   loadStorageEnvironment,
+  RunRepository,
   S3PrivateObjectStore,
   type ArtifactMetadata,
   type DatabaseClient,
 } from "@sentinel/storage"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
-import { createOperationalTestApplication } from "../fixtures/operational.ts"
+import {
+  createOperationalTestApplication,
+  operationalTestBudget,
+} from "../fixtures/operational.ts"
 
 const enabled = process.env["RUN_SUPABASE_STORAGE_TESTS"] === "1"
 const describeIntegration = enabled ? describe : describe.skip
-const migration = readFileSync(
-  new URL(
-    "../../supabase/migrations/20260907000100_operational_state.sql",
-    import.meta.url
-  ),
-  "utf8"
-)
+const migrations = [
+  "../../supabase/migrations/20260907000100_operational_state.sql",
+  "../../supabase/migrations/20260908000100_onboarding_control_plane.sql",
+  "../../supabase/migrations/20260908000200_run_event_idempotency.sql",
+  "../../supabase/migrations/20260908000300_run_control.sql",
+  "../../supabase/migrations/20260908000500_realtime_activity.sql",
+].map((path) => readFileSync(new URL(path, import.meta.url), "utf8"))
 
 describeIntegration("Supabase private Storage", () => {
   let database: DatabaseClient
@@ -49,7 +53,9 @@ describeIntegration("Supabase private Storage", () => {
       integrationEnvironment.SENTINEL_TEST_DATABASE_URL,
       { maxConnections: 1 }
     )
-    await migrationDatabase.query(migration)
+    for (const migration of migrations) {
+      await migrationDatabase.query(migration)
+    }
     await migrationDatabase.close()
     database = createPostgresDatabase(
       integrationEnvironment.SENTINEL_TEST_DATABASE_URL
@@ -133,6 +139,53 @@ describeIntegration("Supabase private Storage", () => {
       service.signedDownloadUrl(applicationId, saved.id, 30)
     ).resolves.toMatch(/^http/)
     await expect(service.delete(applicationId, saved.id)).resolves.toBe(true)
+    saved = undefined
+  })
+
+  it("associates one content-addressed screenshot with both capturing runs", async () => {
+    const runs = new RunRepository(database)
+    const [firstRun, secondRun] = await Promise.all([
+      runs.enqueue({
+        applicationId,
+        runType: "run_eval",
+        idempotencyKey: `storage:first:${randomUUID()}`,
+        budget: operationalTestBudget,
+      }),
+      runs.enqueue({
+        applicationId,
+        runType: "run_eval",
+        idempotencyKey: `storage:second:${randomUUID()}`,
+        budget: operationalTestBudget,
+      }),
+    ])
+    const body = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1])
+    const first = await service.persist({
+      applicationId,
+      applicationStableId: applicationInput.stableKey,
+      runId: firstRun.id,
+      artifactType: "screenshot",
+      mimeType: "image/png",
+      body,
+      retainUntil: null,
+    })
+    saved = first
+    const second = await service.persist({
+      applicationId,
+      applicationStableId: applicationInput.stableKey,
+      runId: secondRun.id,
+      artifactType: "screenshot",
+      mimeType: "image/png",
+      body,
+      retainUntil: null,
+    })
+    expect(second.id).toBe(first.id)
+    await expect(
+      service.signedRunDownloadUrl(applicationId, firstRun.id, first.id, 30)
+    ).resolves.toMatch(/^http/)
+    await expect(
+      service.signedRunDownloadUrl(applicationId, secondRun.id, first.id, 30)
+    ).resolves.toMatch(/^http/)
+    await expect(service.delete(applicationId, first.id)).resolves.toBe(true)
     saved = undefined
   })
 })

@@ -59,6 +59,7 @@ const runRowSchema = z.object({
   lease_expires_at: z.coerce.date().nullable(),
   attempt_count: z.coerce.number().int().nonnegative(),
   cancel_requested_at: z.coerce.date().nullable(),
+  pause_requested_at: z.coerce.date().nullable(),
   error_category: publicErrorSchema.shape.category.nullable(),
   error_code: reasonCodeSchema.nullable(),
   error_retryable: z.boolean().nullable(),
@@ -93,6 +94,7 @@ const knownErrorCodes = [
   "knowledge_not_ready",
   "lease_lost",
   "onboarding_not_confirmed",
+  "pause_not_allowed",
   "publication_conflict",
   "retry_not_allowed",
   "run_not_found",
@@ -134,6 +136,7 @@ export interface RunRecord {
   readonly leaseExpiresAt: Date | null
   readonly attemptCount: number
   readonly cancelRequestedAt: Date | null
+  readonly pauseRequestedAt: Date | null
   readonly errorCategory: z.infer<typeof publicErrorSchema>["category"] | null
   readonly errorCode: string | null
   readonly errorRetryable: boolean | null
@@ -160,6 +163,7 @@ function mapRun(row: RunRow): RunRecord {
     leaseExpiresAt: parsed.lease_expires_at,
     attemptCount: parsed.attempt_count,
     cancelRequestedAt: parsed.cancel_requested_at,
+    pauseRequestedAt: parsed.pause_requested_at,
     errorCategory: parsed.error_category,
     errorCode: parsed.error_code,
     errorRetryable: parsed.error_retryable,
@@ -209,6 +213,9 @@ export function toPublicRun(run: RunRecord): PublicRun {
     ...(run.cancelRequestedAt === null
       ? {}
       : { cancelRequestedAt: run.cancelRequestedAt.toISOString() }),
+    ...(run.pauseRequestedAt === null
+      ? {}
+      : { pauseRequestedAt: run.pauseRequestedAt.toISOString() }),
     ...(error === undefined ? {} : { error }),
   })
 }
@@ -323,16 +330,18 @@ export class RunRepository {
   async controlState(
     runId: string,
     owner: string
-  ): Promise<"active" | "cancelled" | "lease_lost"> {
+  ): Promise<"active" | "pause_requested" | "cancelled" | "lease_lost"> {
     const leaseOwner = ownerSchema.parse(owner)
     const rows = await this.controlQuery<{
       status: z.infer<typeof runStatusSchema>
       lease_owner: string | null
       lease_valid: boolean
       cancel_requested: boolean
+      pause_requested: boolean
     }>(
       `select status, lease_owner, lease_expires_at > now() as lease_valid,
-              cancel_requested_at is not null as cancel_requested
+              cancel_requested_at is not null as cancel_requested,
+              pause_requested_at is not null as pause_requested
        from sentinel.runs where id = $1::uuid`,
       [databaseRunIdSchema.parse(runId)]
     )
@@ -346,7 +355,9 @@ export class RunRepository {
     }
     return row.cancel_requested || row.status === "cancelling"
       ? "cancelled"
-      : "active"
+      : row.pause_requested
+        ? "pause_requested"
+        : "active"
   }
 
   async finish(input: {
@@ -449,6 +460,23 @@ export class RunRepository {
         return null
       }
       return this.getOwned(operatorId, runId)
+    } catch (error) {
+      throwControlError(error)
+    }
+  }
+
+  async requestOwnedPause(
+    operatorId: string,
+    runId: string
+  ): Promise<PublicRun> {
+    try {
+      await this.database.query<{ pause_control_run: string }>(
+        "select sentinel.pause_control_run($1::uuid, $2::uuid) as pause_control_run",
+        [operatorIdSchema.parse(operatorId), databaseRunIdSchema.parse(runId)]
+      )
+      const run = await this.getOwned(operatorId, runId)
+      if (run === null) throw new Error("run_not_found")
+      return run
     } catch (error) {
       throwControlError(error)
     }

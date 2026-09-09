@@ -20,6 +20,7 @@ import {
   type ApplicationBrowserRuntime,
   type ApplicationExplorerPlannerGateway,
 } from "./application-explorer.ts"
+import { createSpecialistInitialState } from "./specialist/state.ts"
 
 const applicationId = `application:v1:${"a".repeat(64)}`
 const applicationRunId = "run:17171717-1717-4717-8717-171717171717"
@@ -82,6 +83,7 @@ function observation(runId = applicationRunId): BrowserObservation {
     selectedText: [],
     candidates: [],
     stateFingerprint: `sha256:${"d".repeat(64)}`,
+    screenshotArtifactId: `artifact:v1:${"e".repeat(64)}`,
     errors: [],
     observedAt: "2026-09-08T00:00:00.000Z",
   })
@@ -177,6 +179,49 @@ describe("Application Explorer specialist composition contracts", () => {
         selector: "#forbidden",
       })
     ).toThrow()
+  })
+
+  it("projects sanitized real browser observations into activity metadata", async () => {
+    const browser = new CountingBrowser()
+    const store = new InMemoryApplicationExplorerSpecialistStoreForTesting()
+    const selectedMission = mission()
+    const [observe] = createApplicationExplorerSpecialistToolDefinitions({
+      browser,
+      store,
+      resolveMissionContext: (input) => ({
+        browserOptions: {
+          applicationId: input.applicationId,
+          runId: input.runId,
+          entryUrl: "https://fixture.test/",
+          policy: { allowedOrigins: ["https://fixture.test"] },
+        },
+      }),
+      now: () => new Date("2026-09-08T00:00:00.000Z"),
+    })
+    expect(observe).toBeDefined()
+    const output = observe!.parseOutput(
+      await observe!.execute(
+        { intent: "start", expectedReplayActions: 0 },
+        {
+          state: createSpecialistInitialState(selectedMission, {
+            graphName: "application_explorer",
+            promptTemplateId: "application_prompt",
+            configurationFingerprint: `sha256:${"f".repeat(64)}`,
+            startedAtMs: Date.parse("2026-09-08T00:00:00.000Z"),
+          }),
+          mission: selectedMission,
+          callId: "observe_01",
+          decisionId: "decision_01",
+          requestHash: `sha256:${"1".repeat(64)}`,
+          signal: new AbortController().signal,
+        }
+      )
+    )
+    expect(output.activity).toEqual({
+      category: "coverage",
+      coverageDelta: 1,
+      screenshotArtifactId: `artifact:v1:${"e".repeat(64)}`,
+    })
   })
 
   it("keeps legacy tools application-only", async () => {
