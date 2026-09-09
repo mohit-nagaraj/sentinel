@@ -4,6 +4,7 @@ export * from "./browser-runtime.ts"
 export * from "./blast-radius.ts"
 export * from "./code-explorer.ts"
 export * from "./documentation-explorer.ts"
+export * from "./deployment-verification.ts"
 export {
   loadEnvironment,
   type EnvironmentSource,

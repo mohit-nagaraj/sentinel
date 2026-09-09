@@ -80,10 +80,12 @@ flowchart LR
 - SNT-029 report delivery is not implemented on the current base. This review
   covers existing assessment/check contracts but cannot claim final report prose
   or dashboard artifact delivery is hardened.
-- SNT-030 remains externally blocked, and SNT-031 trusted-head dynamic
-  verification plus SNT-032 incremental refresh are not implemented. The demo
-  must show `verification_unavailable`; it must not imply a baseline deployment
-  was verified against a PR head or that deployed knowledge refresh ran.
+- SNT-030 defines Render preview identity and bounded verification planning, but
+  no trusted PR-head deployment is registered for the assignment. SNT-031
+  dynamic verification and SNT-032 incremental refresh are not implemented. The
+  demo must show `verification_unavailable`; it must not imply a baseline
+  deployment was verified against a PR head or that deployed knowledge refresh
+  ran.
 - Arbitrary hostile code execution is out of scope. Sentinel parses supported
   source and Git metadata but does not build, boot, or execute target code.
 - Network egress controls are enforced in application adapters. A production
@@ -91,4 +93,3 @@ flowchart LR
   limits; this repository does not claim those platform controls.
 - The security suite is evidence for the reviewed narrow assignment slice, not a
   penetration test or production certification.
-

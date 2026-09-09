@@ -99,17 +99,22 @@ Formal penetration-test certification, production SOC controls, arbitrary hostil
   artifact drift. `.github/workflows/ci.yml` runs it with no live/paid credentials
   alongside the existing complete quality, build, unit, agent, graph, browser,
   and integration matrix.
-- Focused verification on 2026-09-09: 330 tests passed (225 boundary unit, 25
+- Focused verification on 2026-09-09: 349 tests passed (225 boundary unit, 25
   authenticated web route/proxy, 12 worker, 51 storage/migration/idempotency, 6
   real-browser Application Explorer integration, and 11 malicious/policy cases).
+  The 19 merged SNT-030 deployment-identity and verification-planning contract,
+  adapter, and orchestration tests also passed on the combined branch.
   Web, docs, and tools typechecks passed; all three security inventory gates and
   deterministic eval regeneration passed. Full CI remains pending GitHub Actions.
-- The base branch does not implement SNT-029 report delivery, SNT-031 trusted-head
-  verification, or SNT-032 incremental refresh. This issue hardens all currently
-  reachable surfaces but makes no claim for those absent paths. The demo must
-  report verification as unavailable and must not imply deployed refresh or final
-  report delivery occurred; those limitations are explicit in the threat model
-  for incorporation into the SNT-035 design document.
+- The combined base does not implement SNT-029 report delivery, SNT-031
+  trusted-head execution, or SNT-032 incremental refresh. SNT-030 now defines
+  Render preview identity and bounded verification planning, and its focused
+  security/identity tests join this issue's gate, but no trusted PR-head
+  deployment is registered. This issue hardens all currently reachable surfaces
+  but makes no claim for absent execution paths. The demo must report verification
+  as unavailable and must not imply deployed refresh or final report delivery
+  occurred; those limitations are explicit in the threat model for incorporation
+  into the SNT-035 design document.
 - The ystack `/review` found that the secret scanner missed current
   `github_pat_` fine-grained PATs and stateless `ghs_APPID_JWT` installation
   tokens. Detection now treats GitHub token bodies as opaque variable-length

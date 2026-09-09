@@ -21,7 +21,7 @@ This file records the architectural corrections and product decisions made durin
 - Treat AI-generated Hi.Events backend documentation as candidate context only and verify important implementation edges with source code, Laravel routes, OpenAPI, and browser-observed requests.
 - Require the fork to expose sufficient version-controlled product documentation; Sentinel ingests what the target supplies rather than hardcoding or inventing a Hi.Events documentation subset.
 - Treat the exact documentation content and target-owned seed/reset mechanism as prerequisites owned by the fork, not architecture questions Sentinel must answer in its PRD.
-- Leave the public baseline/PR-head sandbox mechanism unresolved until deployment options are evaluated; do not make local-only execution the final assignment architecture.
+- Use manual Render Blueprint preview environments on the public Hi.Events fork for the assignment baseline/PR-head demo. Build the fork commit from source, attest repository/SHA/service/deploy through Render's authenticated API, isolate preview data, withhold Sentinel and production secrets, and expire disposable environments; local-only execution and mutable prebuilt images are not trusted verification targets.
 
 ## Product experience
 

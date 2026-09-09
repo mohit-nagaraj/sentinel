@@ -157,7 +157,7 @@ graph LR
 
 | ID      | Issue                                                                                                                                           | Depends on                                                    | Status      |
 | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ----------- |
-| SNT-030 | [Trusted deployment identity and verification planning](./.tasks/milestone-07-verification-refresh/SNT-030-deployment-verification-planning.md) | SNT-022, SNT-027, SNT-028                                     | blocked     |
+| SNT-030 | [Trusted deployment identity and verification planning](./.tasks/milestone-07-verification-refresh/SNT-030-deployment-verification-planning.md) | SNT-022, SNT-027, SNT-028                                     | done        |
 | SNT-031 | [Agentic targeted verification and deterministic verdicts](./.tasks/milestone-07-verification-refresh/SNT-031-agentic-targeted-verification.md) | SNT-017, SNT-024, SNT-029, SNT-030                            | not-started |
 | SNT-032 | [Incremental post-deployment knowledge refresh](./.tasks/milestone-07-verification-refresh/SNT-032-incremental-knowledge-refresh.md)            | SNT-008, SNT-013, SNT-017, SNT-019, SNT-021, SNT-027, SNT-030 | not-started |
 
@@ -181,31 +181,31 @@ graph LR
 
 ## Global progress
 
-| Milestone                                |   Done |  Total | Status                         |
-| ---------------------------------------- | -----: | -----: | ------------------------------ |
-| M1 Foundation and durable execution      |      6 |      6 | done                           |
-| M2 Deterministic source evidence         |      7 |      7 | done                           |
-| M3 Specialist discovery agents           |      4 |      4 | done                           |
-| M4 Graph construction and reconciliation |      4 |      4 | done                           |
-| M5 Onboarding and control plane          |      4 |      4 | done                           |
-| M6 PR blast-radius loop                  |      1 |      4 | in-progress                    |
-| M7 Verification and refresh              |      0 |      3 | blocked on deployment decision |
-| M8 Evaluation and delivery               |      2 |      3 | in-progress                    |
-| **Overall**                              | **28** | **35** | **in-progress**                |
+| Milestone                                |   Done |  Total | Status          |
+| ---------------------------------------- | -----: | -----: | --------------- |
+| M1 Foundation and durable execution      |      6 |      6 | done            |
+| M2 Deterministic source evidence         |      7 |      7 | done            |
+| M3 Specialist discovery agents           |      4 |      4 | done            |
+| M4 Graph construction and reconciliation |      4 |      4 | done            |
+| M5 Onboarding and control plane          |      4 |      4 | done            |
+| M6 PR blast-radius loop                  |      1 |      4 | in-progress     |
+| M7 Verification and refresh              |      1 |      3 | in-progress     |
+| M8 Evaluation and delivery               |      2 |      3 | in-progress     |
+| **Overall**                              | **29** | **35** | **in-progress** |
 
 ## Active front
 
 - M1 through M5 are complete, including Documentation Explorer, graph publication, and the knowledge review UI.
 - SNT-026 is done; GitHub App credentials are configured, but the webhook URL still needs to be saved in GitHub.
 - SNT-027 is the next implementation issue: PR investigation against the published graph.
-- SNT-030 remains blocked on a trusted public baseline/PR-head deployment decision.
+- SNT-030 selects Render Blueprint previews and implements trusted deployment validation plus bounded verification planning.
 
 ## Next ready fronts after dependencies complete
 
 - **SNT-027** is `ready` now that SNT-013, SNT-016, SNT-019, SNT-021, and SNT-026 are done.
 - After **SNT-027**: SNT-028 (blast-radius scoring) can start.
 - After **SNT-028**: SNT-029 (report delivery) can start.
-- **SNT-030** stays blocked on the deployment decision; SNT-031 and SNT-032 wait on that plus later M6 work.
+- **SNT-031** can start after SNT-029 provides report delivery; SNT-032 can build on SNT-030's trusted deployment contract.
 - After **SNT-028**: SNT-033 (evaluation harness) can start; SNT-034 and SNT-035 remain last.
 
 ## Required regression gates
