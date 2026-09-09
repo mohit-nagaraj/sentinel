@@ -61,6 +61,14 @@ export default defineConfig({
       {
         extends: true,
         test: {
+          name: "security",
+          environment: "node",
+          include: ["tests/security/**/*.test.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
           name: "live",
           environment: "node",
           include: ["tests/live/**/*.test.ts"],

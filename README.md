@@ -208,6 +208,19 @@ the split, repetition, and 100-run scaling protocol and
 
 ## Quality Commands
 
+The deterministic security gate scans secrets/ignored files, validates production
+advisories and licenses against expiring exact policy entries, runs the malicious
+boundary matrix, and regenerates the 100-run evaluation baseline without live
+credentials:
+
+```sh
+pnpm security
+```
+
+See `docs/security/threat-model.md` for trust boundaries, fault recovery, and
+explicit demo limitations, and `docs/security/security-policy.md` for the
+dependency/license exception policy.
+
 ```sh
 pnpm format:check
 pnpm lint

@@ -9,6 +9,7 @@
 | Graph reconciliation | 4    | 4     | complete    |
 | PR impact            | 2    | 3     | in-progress |
 | Evaluation           | 1    | 1     | complete    |
+| Security hardening   | 1    | 1     | complete    |
 
 ## Ready Front
 
@@ -16,3 +17,4 @@ SNT-022, SNT-023, and SNT-026 provide verified onboarding, durable run control, 
 SNT-027 adds the checkpointed PR investigation workflow and unblocks deterministic blast-radius scoring in SNT-028.
 SNT-028 adds deterministic explainable blast-radius scoring and unblocks report delivery in SNT-029.
 SNT-033 adds the sanitized Hi.Events PR #1338 golden dataset, deterministic stage/trajectory metrics, 100-run harness, paid-run gate, and QA-lead report rubric.
+SNT-034 adds the threat/fault model, malicious boundary matrix, dependency remediation, and deterministic CI security policy gates.
