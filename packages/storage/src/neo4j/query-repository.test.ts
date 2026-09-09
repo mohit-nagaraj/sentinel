@@ -20,6 +20,7 @@ const requirementId = stableEntityIdSchema.parse(
 )
 const symbolId = stableEntityIdSchema.parse(`code-symbol:v1:${"c".repeat(64)}`)
 const evidenceId = `evidence:v1:${"d".repeat(64)}`
+const artifactId = `artifact:v1:${"e".repeat(64)}`
 const timestamp = "2026-09-09T00:00:00.000Z"
 
 function entity(id: string, kind: string, title: string) {
@@ -59,6 +60,8 @@ const evidencePath = {
           provenance: { sourceKind: "system", observedAt: timestamp },
         }),
       ],
+      sourceUri: "repository://src/order-service.ts",
+      artifactId,
       reviewState: "not_required",
       graphRevision: 3,
     },
@@ -202,6 +205,8 @@ describe("Neo4j graph query repository", () => {
             id: evidenceId,
             evidenceTier: "A",
             evidence: [{ evidenceId, provenance: { sourceKind: "system" } }],
+            sourceUri: "repository://src/order-service.ts",
+            artifactId,
           },
         ],
       },

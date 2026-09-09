@@ -1,0 +1,444 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`assessment report generation > renders the high golden Markdown report 1`] = `
+"# Sentinel assessment - PR #29
+
+## PR and baseline identity
+
+- Repository: sentinel/demo
+- Pull request: #29 - Update order creation
+- Base: \`1111111111111111111111111111111111111111\`
+- Head: \`2222222222222222222222222222222222222222\`
+- Graph commit: \`1111111111111111111111111111111111111111\`
+
+## Executive risk summary
+
+Predicted impact includes 1 high, 0 medium, 0 low, and 0 unknown finding\\. Review uncertainty and complete the recommended QA checkpoints before making a release decision\\.
+
+Overall predicted risk: **HIGH**
+Overall evidence strength: **A**
+
+## Affected product areas
+
+- UI/screens: 0
+- Workflows: 0
+- Requirements: 1
+- Unknown: 0
+
+## Affected UI, screens, and elements
+
+No UI impact path was established within scope.
+
+## Affected workflows
+
+No workflow impact path was established within scope.
+
+## Requirements at risk and coverage
+
+### HIGH - Attendee checkout and order creation
+
+This requirement is potentially affected through 1 inspectable evidence path\\. The result is a prediction and should guide focused retesting\\.
+
+- Evidence strength: A
+- Changed symbols: 1
+- Inspectable paths: 1
+
+Path \`sha256:de0e13c6908306e405762b1b5566cd1dcc131dbf80ba9fa5ce5687fdc3e926c5\`: OrderService\\.submit (code-symbol) -> Attendee checkout (workflow) -> Buyers create orders (requirement)
+Evidence: \`evidence:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\`
+Reference \`evidence:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\` (fixture\\_path)
+- Source: <https://docs.example.test/requirements/order-creation>
+- Source: \`repository://src/order-service.ts\`
+- Private artifact: \`artifact:v1:9999999999999999999999999999999999999999999999999999999999999999\`
+- Order confirmation was not observed within the explored checkout scope\\. (status: not_observed; scope: Checkout submission)
+
+## Why items were flagged
+
+### HIGH - Attendee checkout and order creation
+
+This requirement is potentially affected through 1 inspectable evidence path\\. The result is a prediction and should guide focused retesting\\.
+
+- Evidence strength: A
+- Changed symbols: 1
+- Inspectable paths: 1
+
+Path \`sha256:de0e13c6908306e405762b1b5566cd1dcc131dbf80ba9fa5ce5687fdc3e926c5\`: OrderService\\.submit (code-symbol) -> Attendee checkout (workflow) -> Buyers create orders (requirement)
+Evidence: \`evidence:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\`
+Reference \`evidence:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\` (fixture\\_path)
+- Source: <https://docs.example.test/requirements/order-creation>
+- Source: \`repository://src/order-service.ts\`
+- Private artifact: \`artifact:v1:9999999999999999999999999999999999999999999999999999999999999999\`
+
+## Recommended QA scenarios
+
+- requirement acceptance for Attendee checkout and order creation; checkpoints: \`workflow:v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\`, \`requirement:v1:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\`
+
+## Verification results
+
+Verification is unavailable because no trusted head deployment was configured\\. (status: verification_unavailable; version: 0)
+
+## Unknowns, exclusions, and stale or missing evidence
+
+- Excluded: Organizer reporting was outside the selected assessment scope\\.
+
+## Report generation
+
+- Generated at: 2026-09-09T10:00:00.000Z
+- Report ID: \`sha256:4773a596fcaf779dcfec811727bb561a4edb0ffa41e024ff73cce32e84ddfac7\`
+- Policy: \`blast-radius-policy-v1\`
+- Template: \`assessment-report-v1\`
+- Wording prompt: \`report-wording-v1\`
+- Wording mode: deterministic_fallback
+"
+`;
+
+exports[`assessment report generation > renders the low golden Markdown report 1`] = `
+"# Sentinel assessment - PR #29
+
+## PR and baseline identity
+
+- Repository: sentinel/demo
+- Pull request: #29 - Update order creation
+- Base: \`1111111111111111111111111111111111111111\`
+- Head: \`2222222222222222222222222222222222222222\`
+- Graph commit: \`1111111111111111111111111111111111111111\`
+
+## Executive risk summary
+
+Predicted impact includes 0 high, 0 medium, 1 low, and 0 unknown finding\\. Review uncertainty and complete the recommended QA checkpoints before making a release decision\\.
+
+Overall predicted risk: **LOW**
+Overall evidence strength: **A**
+
+## Affected product areas
+
+- UI/screens: 0
+- Workflows: 0
+- Requirements: 1
+- Unknown: 0
+
+## Affected UI, screens, and elements
+
+No UI impact path was established within scope.
+
+## Affected workflows
+
+No workflow impact path was established within scope.
+
+## Requirements at risk and coverage
+
+### LOW - Attendee checkout and order creation
+
+This requirement is potentially affected through 1 inspectable evidence path\\. The result is a prediction and should guide focused retesting\\.
+
+- Evidence strength: A
+- Changed symbols: 1
+- Inspectable paths: 1
+
+Path \`sha256:9fe32ec1e971cecfc6618f89417242e5d6fe6299bf7c6d3fed755d9f7a4950ee\`: OrderService\\.submit (code-symbol) -> Attendee checkout (workflow) -> Buyers create orders (requirement)
+Evidence: \`evidence:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\`
+Reference \`evidence:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\` (fixture\\_path)
+- Source: <https://docs.example.test/requirements/order-creation>
+- Source: \`repository://src/order-service.ts\`
+- Private artifact: \`artifact:v1:9999999999999999999999999999999999999999999999999999999999999999\`
+- Order confirmation was not observed within the explored checkout scope\\. (status: not_observed; scope: Checkout submission)
+
+## Why items were flagged
+
+### LOW - Attendee checkout and order creation
+
+This requirement is potentially affected through 1 inspectable evidence path\\. The result is a prediction and should guide focused retesting\\.
+
+- Evidence strength: A
+- Changed symbols: 1
+- Inspectable paths: 1
+
+Path \`sha256:9fe32ec1e971cecfc6618f89417242e5d6fe6299bf7c6d3fed755d9f7a4950ee\`: OrderService\\.submit (code-symbol) -> Attendee checkout (workflow) -> Buyers create orders (requirement)
+Evidence: \`evidence:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\`
+Reference \`evidence:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\` (fixture\\_path)
+- Source: <https://docs.example.test/requirements/order-creation>
+- Source: \`repository://src/order-service.ts\`
+- Private artifact: \`artifact:v1:9999999999999999999999999999999999999999999999999999999999999999\`
+
+## Recommended QA scenarios
+
+- requirement acceptance for Attendee checkout and order creation; checkpoints: \`workflow:v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\`, \`requirement:v1:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\`
+
+## Verification results
+
+Verification is unavailable because no trusted head deployment was configured\\. (status: verification_unavailable; version: 0)
+
+## Unknowns, exclusions, and stale or missing evidence
+
+- Excluded: Organizer reporting was outside the selected assessment scope\\.
+
+## Report generation
+
+- Generated at: 2026-09-09T10:00:00.000Z
+- Report ID: \`sha256:4773a596fcaf779dcfec811727bb561a4edb0ffa41e024ff73cce32e84ddfac7\`
+- Policy: \`blast-radius-policy-v1\`
+- Template: \`assessment-report-v1\`
+- Wording prompt: \`report-wording-v1\`
+- Wording mode: deterministic_fallback
+"
+`;
+
+exports[`assessment report generation > renders the medium golden Markdown report 1`] = `
+"# Sentinel assessment - PR #29
+
+## PR and baseline identity
+
+- Repository: sentinel/demo
+- Pull request: #29 - Update order creation
+- Base: \`1111111111111111111111111111111111111111\`
+- Head: \`2222222222222222222222222222222222222222\`
+- Graph commit: \`1111111111111111111111111111111111111111\`
+
+## Executive risk summary
+
+Predicted impact includes 0 high, 1 medium, 0 low, and 0 unknown finding\\. Review uncertainty and complete the recommended QA checkpoints before making a release decision\\.
+
+Overall predicted risk: **MEDIUM**
+Overall evidence strength: **B**
+
+## Affected product areas
+
+- UI/screens: 0
+- Workflows: 0
+- Requirements: 1
+- Unknown: 0
+
+## Affected UI, screens, and elements
+
+No UI impact path was established within scope.
+
+## Affected workflows
+
+No workflow impact path was established within scope.
+
+## Requirements at risk and coverage
+
+### MEDIUM - Attendee checkout and order creation
+
+This requirement is potentially affected through 1 inspectable evidence path\\. The result is a prediction and should guide focused retesting\\.
+
+- Evidence strength: B
+- Changed symbols: 1
+- Inspectable paths: 1
+
+Path \`sha256:555e712f9b7c7ff8a32de8c374860d3de0a97bbf2fcf9ec4eb7c64518bef5dbf\`: OrderService\\.submit (code-symbol) -> Attendee checkout (workflow) -> Buyers create orders (requirement)
+Evidence: \`evidence:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\`
+Reference \`evidence:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\` (fixture\\_path)
+- Source: <https://docs.example.test/requirements/order-creation>
+- Source: \`repository://src/order-service.ts\`
+- Private artifact: \`artifact:v1:9999999999999999999999999999999999999999999999999999999999999999\`
+- Order confirmation was not observed within the explored checkout scope\\. (status: not_observed; scope: Checkout submission)
+
+## Why items were flagged
+
+### MEDIUM - Attendee checkout and order creation
+
+This requirement is potentially affected through 1 inspectable evidence path\\. The result is a prediction and should guide focused retesting\\.
+
+- Evidence strength: B
+- Changed symbols: 1
+- Inspectable paths: 1
+
+Path \`sha256:555e712f9b7c7ff8a32de8c374860d3de0a97bbf2fcf9ec4eb7c64518bef5dbf\`: OrderService\\.submit (code-symbol) -> Attendee checkout (workflow) -> Buyers create orders (requirement)
+Evidence: \`evidence:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\`
+Reference \`evidence:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\` (fixture\\_path)
+- Source: <https://docs.example.test/requirements/order-creation>
+- Source: \`repository://src/order-service.ts\`
+- Private artifact: \`artifact:v1:9999999999999999999999999999999999999999999999999999999999999999\`
+
+## Recommended QA scenarios
+
+- requirement acceptance for Attendee checkout and order creation; checkpoints: \`workflow:v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\`, \`requirement:v1:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\`
+
+## Verification results
+
+Verification is unavailable because no trusted head deployment was configured\\. (status: verification_unavailable; version: 0)
+
+## Unknowns, exclusions, and stale or missing evidence
+
+- Excluded: Organizer reporting was outside the selected assessment scope\\.
+
+## Report generation
+
+- Generated at: 2026-09-09T10:00:00.000Z
+- Report ID: \`sha256:4773a596fcaf779dcfec811727bb561a4edb0ffa41e024ff73cce32e84ddfac7\`
+- Policy: \`blast-radius-policy-v1\`
+- Template: \`assessment-report-v1\`
+- Wording prompt: \`report-wording-v1\`
+- Wording mode: deterministic_fallback
+"
+`;
+
+exports[`assessment report generation > renders the mixed golden Markdown report 1`] = `
+"# Sentinel assessment - PR #29
+
+## PR and baseline identity
+
+- Repository: sentinel/demo
+- Pull request: #29 - Update order creation
+- Base: \`1111111111111111111111111111111111111111\`
+- Head: \`2222222222222222222222222222222222222222\`
+- Graph commit: \`1111111111111111111111111111111111111111\`
+
+## Executive risk summary
+
+Predicted impact includes 1 high, 0 medium, 0 low, and 1 unknown findings\\. Review uncertainty and complete the recommended QA checkpoints before making a release decision\\.
+
+Overall predicted risk: **HIGH**
+Overall evidence strength: **D**
+
+## Affected product areas
+
+- UI/screens: 0
+- Workflows: 0
+- Requirements: 1
+- Unknown: 1
+
+## Affected UI, screens, and elements
+
+No UI impact path was established within scope.
+
+## Affected workflows
+
+No workflow impact path was established within scope.
+
+## Requirements at risk and coverage
+
+### HIGH - Attendee checkout and order creation
+
+This requirement is potentially affected through 1 inspectable evidence path\\. The result is a prediction and should guide focused retesting\\.
+
+- Evidence strength: A
+- Changed symbols: 1
+- Inspectable paths: 1
+
+Path \`sha256:de0e13c6908306e405762b1b5566cd1dcc131dbf80ba9fa5ce5687fdc3e926c5\`: OrderService\\.submit (code-symbol) -> Attendee checkout (workflow) -> Buyers create orders (requirement)
+Evidence: \`evidence:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\`
+Reference \`evidence:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\` (fixture\\_path)
+- Source: <https://docs.example.test/requirements/order-creation>
+- Source: \`repository://src/order-service.ts\`
+- Private artifact: \`artifact:v1:9999999999999999999999999999999999999999999999999999999999999999\`
+- Order confirmation was not observed within the explored checkout scope\\. (status: not_observed; scope: Checkout submission)
+
+## Why items were flagged
+
+### HIGH - Attendee checkout and order creation
+
+This requirement is potentially affected through 1 inspectable evidence path\\. The result is a prediction and should guide focused retesting\\.
+
+- Evidence strength: A
+- Changed symbols: 1
+- Inspectable paths: 1
+
+Path \`sha256:de0e13c6908306e405762b1b5566cd1dcc131dbf80ba9fa5ce5687fdc3e926c5\`: OrderService\\.submit (code-symbol) -> Attendee checkout (workflow) -> Buyers create orders (requirement)
+Evidence: \`evidence:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\`
+Reference \`evidence:v1:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\` (fixture\\_path)
+- Source: <https://docs.example.test/requirements/order-creation>
+- Source: \`repository://src/order-service.ts\`
+- Private artifact: \`artifact:v1:9999999999999999999999999999999999999999999999999999999999999999\`
+### UNKNOWN - Configuration change
+
+Configuration change\\. Product impact remains unknown within the assessed scope; the assessment does not establish limited consequence\\.
+
+- Evidence strength: D
+- Changed symbols: 0
+- Inspectable paths: 0
+
+## Recommended QA scenarios
+
+- requirement acceptance for Attendee checkout and order creation; checkpoints: \`workflow:v1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\`, \`requirement:v1:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\`
+
+## Verification results
+
+Verification is unavailable because no trusted head deployment was configured\\. (status: verification_unavailable; version: 0)
+
+## Unknowns, exclusions, and stale or missing evidence
+
+- Configuration change\\. Product impact remains unknown within the assessed scope; the assessment does not establish limited consequence\\. [\`sha256:a25fd1024e1200ffab72873e5c09814527adc8c897563b440777c92309e402b5\`]
+- Excluded: Organizer reporting was outside the selected assessment scope\\.
+
+## Report generation
+
+- Generated at: 2026-09-09T10:00:00.000Z
+- Report ID: \`sha256:4773a596fcaf779dcfec811727bb561a4edb0ffa41e024ff73cce32e84ddfac7\`
+- Policy: \`blast-radius-policy-v1\`
+- Template: \`assessment-report-v1\`
+- Wording prompt: \`report-wording-v1\`
+- Wording mode: deterministic_fallback
+"
+`;
+
+exports[`assessment report generation > renders the unknown golden Markdown report 1`] = `
+"# Sentinel assessment - PR #29
+
+## PR and baseline identity
+
+- Repository: sentinel/demo
+- Pull request: #29 - Update order creation
+- Base: \`1111111111111111111111111111111111111111\`
+- Head: \`2222222222222222222222222222222222222222\`
+- Graph commit: \`1111111111111111111111111111111111111111\`
+
+## Executive risk summary
+
+Predicted impact includes 0 high, 0 medium, 0 low, and 1 unknown finding\\. Review uncertainty and complete the recommended QA checkpoints before making a release decision\\.
+
+Overall predicted risk: **UNKNOWN**
+Overall evidence strength: **D**
+
+## Affected product areas
+
+- UI/screens: 0
+- Workflows: 0
+- Requirements: 0
+- Unknown: 1
+
+## Affected UI, screens, and elements
+
+No UI impact path was established within scope.
+
+## Affected workflows
+
+No workflow impact path was established within scope.
+
+## Requirements at risk and coverage
+
+No requirement impact path was established within scope.
+- Order confirmation was not observed within the explored checkout scope\\. (status: not_observed; scope: Checkout submission)
+
+## Why items were flagged
+
+### UNKNOWN - Configuration change
+
+Configuration change\\. Product impact remains unknown within the assessed scope; the assessment does not establish limited consequence\\.
+
+- Evidence strength: D
+- Changed symbols: 0
+- Inspectable paths: 0
+
+## Recommended QA scenarios
+
+
+## Verification results
+
+Verification is unavailable because no trusted head deployment was configured\\. (status: verification_unavailable; version: 0)
+
+## Unknowns, exclusions, and stale or missing evidence
+
+- Configuration change\\. Product impact remains unknown within the assessed scope; the assessment does not establish limited consequence\\. [\`sha256:a25fd1024e1200ffab72873e5c09814527adc8c897563b440777c92309e402b5\`]
+- Excluded: Organizer reporting was outside the selected assessment scope\\.
+
+## Report generation
+
+- Generated at: 2026-09-09T10:00:00.000Z
+- Report ID: \`sha256:4773a596fcaf779dcfec811727bb561a4edb0ffa41e024ff73cce32e84ddfac7\`
+- Policy: \`blast-radius-policy-v1\`
+- Template: \`assessment-report-v1\`
+- Wording prompt: \`report-wording-v1\`
+- Wording mode: deterministic_fallback
+"
+`;
