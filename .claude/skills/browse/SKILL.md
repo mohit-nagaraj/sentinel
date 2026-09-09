@@ -272,6 +272,6 @@ If a ref from a snapshot doesn't work:
 ## What This Skill Does NOT Do
 
 - **Does not fix bugs.** That's `/qa`'s job. This skill only observes and reports.
-- **Does not run tests.** Use `pnpm test` for that. This skill is for interactive browser testing.
+- **Does not run tests.** Use a focused affected test through `/qa`. This skill is for interactive browser testing.
 - **Does not manage browser installation.** Playwright MCP handles its own Chromium.
 - **Does not store credentials.** Always asks the user for auth details.

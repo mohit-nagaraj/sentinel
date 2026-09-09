@@ -40,4 +40,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm test:integration
+      - run: pnpm test:agent
+      - run: pnpm test:graph
+      - run: pnpm test:browser
       - run: pnpm build

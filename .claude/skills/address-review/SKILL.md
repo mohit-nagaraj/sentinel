@@ -167,12 +167,17 @@ For each approved fix:
 2. **Make the fix.** Follow the same rules as `/go`:
    - Match existing code patterns
    - Minimal change — fix the issue, don't refactor surrounding code
-   - Run the linter after changes
+   - Lint or format only the changed files when supported
 
-3. **Verify the fix** — re-run the check that flagged it:
-   - If it was a typecheck error → `pnpm typecheck`
-   - If it was a logic bug → check the behavior
-   - If it was a style issue → `pnpm check`
+3. **Verify the fix** with the narrowest check that covers it:
+   - If it was a typecheck error → run the affected package's typecheck
+   - If it was a logic bug → run the affected test file or reproduce the behavior
+   - If it was a style issue → lint the changed files
+   - If it was a full-build or full-suite CI failure → run a focused reproduction,
+     push the fix, and rely on the rerun CI result
+
+   Do not run full-workspace builds or suites locally unless the user explicitly
+   requests it.
 
 4. **Commit.** Group related fixes into logical commits:
    - One commit for all "must fix" code fixes: `fix(<scope>): address review — <summary>`

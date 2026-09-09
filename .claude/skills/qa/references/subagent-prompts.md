@@ -27,7 +27,9 @@ These are the prompts the QA skill uses when dispatching work to sub-agents. Ada
 >
 > Follow the conventions in `<nearby existing test file>`.
 >
-> After writing, run the test suite (`<test-command>`) and report PASS/FAIL with the relevant output excerpt.
+> After writing, run only the affected test file or narrowest relevant project
+> filter (`<focused-test-command>`) and report PASS/FAIL with the relevant output
+> excerpt. Do not run the full workspace suite or build locally.
 
 ---
 

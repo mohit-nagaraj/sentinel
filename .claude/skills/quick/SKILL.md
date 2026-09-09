@@ -43,18 +43,21 @@ Write the code. Follow existing patterns in the files you're modifying.
 Rules:
 - Fix only what's asked. No drive-by refactors.
 - Match existing code style.
-- Run the linter if available: `pnpm fix` or equivalent.
+- Lint or format changed files only when supported.
 
 ## Step 3: Verify
 
-Run the appropriate checks:
+Run the narrowest checks that cover the change:
 
 ```bash
-pnpm typecheck 2>/dev/null
-pnpm check 2>/dev/null
+pnpm exec vitest run <affected-test-file>
+pnpm --filter <affected-package> typecheck
 ```
 
-For bug fixes, confirm the fix addresses the reported issue. A quick grep or read of the changed code is sufficient — no formal success criteria needed.
+Do not run `pnpm build`, the full `pnpm test` or `pnpm test:integration`
+suites, or other full-workspace checks locally. GitHub Actions owns those checks.
+For bug fixes, confirm the fix addresses the reported issue. A focused test,
+direct reproduction, or small code check is sufficient.
 
 ## Step 4: Commit
 
@@ -107,5 +110,4 @@ Don't silently turn a `/quick` into a multi-file feature implementation.
 
 - **Does not create plans.** No PLAN.md, no DECISIONS.md.
 - **Does not update progress files.** Quick changes aren't tracked features.
-- **Does not update docs.** If it needs docs, it's not a quick change.
-- **Does not skip verification.** Typecheck and lint still run.
+- **Does not skip verification.** It runs focused verification for the change.

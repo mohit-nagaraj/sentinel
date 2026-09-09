@@ -11,6 +11,7 @@
         "Plans and QA reports are optional context rather than blocking gates",
         "Only functional bugs with a realistic trigger and concrete impact are reported",
         "Speculative hardening, architecture, style, and generic coverage findings are omitted",
+        "Any local verification is focused; full builds and full-workspace suites are left to CI",
         "A clear MVP/demo verdict is provided"
       ]
     },
@@ -34,6 +35,7 @@
         "The skill activates from the natural-language request",
         "Exactly one general-purpose review agent is launched",
         "Deep security and production-readiness concerns are excluded unless concretely reachable",
+        "Any local verification is focused; full builds and full-workspace suites are left to CI",
         "Only HIGH and MEDIUM confirmed bugs are reported",
         "A clear PASS or NEEDS FIX verdict is provided"
       ]

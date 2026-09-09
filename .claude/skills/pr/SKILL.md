@@ -16,7 +16,8 @@ You are the final step of the ystack workflow. You verify everything is ready, t
 
 ## Phase 0: Pre-flight Checks
 
-Run all checks before creating the PR. If any fail, stop and report.
+Check existing focused verification before creating the PR. Do not duplicate the
+full CI pipeline locally.
 
 ### 1. Verification status
 
@@ -28,15 +29,12 @@ ls .context/*/PLAN.md 2>/dev/null
 If a PLAN.md exists, check whether all success criteria have been verified. If not:
 > Success criteria haven't been verified. Run `/review` first?
 
-### 2. Lint and typecheck
+### 2. Focused local verification
 
-```bash
-pnpm fix 2>/dev/null    # or the project's lint fix command
-pnpm typecheck 2>/dev/null
-pnpm check 2>/dev/null
-```
-
-If any fail, report the errors and offer to fix.
+Read the focused checks recorded in `SUMMARY.md` or `QA-REPORT.md`. If there is
+no evidence yet, run only the narrowest test or package check covering the changed
+behavior. Do not run `pnpm build`, the full `pnpm test` or
+`pnpm test:integration` suites, or other full-workspace checks locally.
 
 ### 3. Clean working tree
 
@@ -85,9 +83,9 @@ Create the PR directly:
 
    ## Test Plan
 
-   - [ ] `pnpm typecheck` passes
-   - [ ] `pnpm check` passes
-   - [ ] [Feature-specific manual test steps]
+   - [x] [Focused local checks that passed]
+   - [ ] GitHub Actions full verification
+   - [ ] [Feature-specific manual test steps, if any]
    ```
 
 4. **Ask about PR status:**
@@ -98,9 +96,22 @@ Create the PR directly:
    gh pr create --title "<title>" --body "<body>" [--draft]
    ```
 
-## Phase 2: Clean Up
+## Phase 2: Wait For CI
 
-After the PR is created:
+After the PR exists, use GitHub Actions as the complete verification gate:
+
+```bash
+gh pr checks --watch --fail-fast
+```
+
+Do not report the PR as ready while required CI is pending or failing. If CI
+fails, report the failing check and its log evidence. Reproduce and verify only
+the affected scope locally; do not rerun the complete CI command unless the user
+explicitly requests it.
+
+## Phase 3: Clean Up
+
+After CI is green:
 
 1. **Verify progress** — confirm all features in scope are checked in `.ystack/progress/<module>.md`.
 
@@ -118,6 +129,7 @@ After the PR is created:
    - Commits: N
    - Files changed: N
    - All criteria verified: yes
+   - Full CI: PASS
    ```
 
 ---
@@ -126,5 +138,6 @@ After the PR is created:
 
 - **Does not write code.** That's `/go`.
 - **Does not review code.** That's `/review`.
+- **Does not rerun the full CI pipeline locally.** GitHub Actions is the full verification gate.
 - **Does not force-push.** Ever.
 - **Does not merge.** Only creates the PR. Merging is a human decision.

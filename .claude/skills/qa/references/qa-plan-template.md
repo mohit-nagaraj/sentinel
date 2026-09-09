@@ -6,18 +6,18 @@ Use this full template when writing `QA.md` in Phase 1. Drop sections that don't
 # QA Plan: <Feature Name>
 
 **Detected runtime:** <node+pnpm | node+npm | go | python+uv | docs-only | ...>
-**CI commands in scope:** <list of actual commands found, or "none detected — Group A skipped">
+**Focused local checks:** <specific test files, projects, packages, or direct checks>
+**CI-owned checks:** <full commands from the workflow; status is pending locally>
 **Feature type:** <Backend | Frontend | Fullstack | Infrastructure | Docs-only>
 **Browser verification:** <will run via Playwright | skipped — Playwright unavailable | N/A>
 
 ## 1. Standards Compliance
 Checks that the change follows project conventions.
 
-- [ ] <convention from CLAUDE.md / AGENTS.md / docs>
+- [ ] <convention from CLAUDE.md / AGENTS.md>
 - [ ] <logging pattern check>
 - [ ] <file naming / directory placement>
 - [ ] <test file placement per project convention>
-- [ ] <doc updates present if required>
 
 ## 2. Feature Completeness
 For each success criterion in PLAN.md (or inferred from the diff if PLAN.md is absent AND you've confirmed scope with the user):
@@ -27,10 +27,8 @@ For each success criterion in PLAN.md (or inferred from the diff if PLAN.md is a
 ## 3. Agentic Self-Tests (First-Class)
 Things the agent verifies directly via CLI / curl / scripts / file inspection. Prefer these over browser testing.
 
-- [ ] CI: `<typecheck-command>` passes (or skip if not available)
-- [ ] CI: `<lint-command>` passes (or skip)
-- [ ] CI: `<build-command>` passes (or skip)
-- [ ] Existing tests: `<test-command>` passes (or skip)
+- [ ] Focused test: `<specific-test-command>` passes
+- [ ] Package check: `<package-scoped-command>` passes (or skip)
 - [ ] API endpoint responds: `curl -s -X POST <url> -d '<payload>'` returns expected shape
 - [ ] Schema check: grep / psql for expected table/column
 - [ ] Error paths: endpoint returns 400/401/404 with correct body for bad input
@@ -62,4 +60,7 @@ Items neither agents nor automation can verify. Listed, not blocking.
 - Dev server: `<command>` (required for API/browser checks)
 - Migrations: `<command>` (if schema changed)
 - Env vars: <list> (if new)
+
+## CI Pending
+- Format, lint, typecheck, build, and all non-live test suites run in GitHub Actions.
 ```

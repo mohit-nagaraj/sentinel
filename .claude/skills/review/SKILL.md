@@ -86,8 +86,10 @@ path. Keep this exception narrow.
 ## 4. Validate And Report
 
 After the single agent returns, validate each candidate against the code. Run only
-small, targeted commands or tests needed to confirm a finding. Do not run a full
-QA suite or launch more agents unless the user separately asks for deeper review.
+small, targeted commands or tests needed to confirm a finding. Do not run
+`pnpm build`, a full-workspace test suite, or full QA locally. GitHub Actions
+owns complete verification. Do not launch more agents unless the user separately
+asks for deeper review.
 
 Discard any finding that lacks a credible reproduction path or is merely a
 possible improvement.

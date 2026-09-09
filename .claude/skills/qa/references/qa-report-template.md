@@ -8,6 +8,7 @@ Use this template when writing `QA-REPORT.md` in Phase 3, and when updating it d
 **Status:** <IN_PROGRESS | PASSED | ISSUES_FOUND | FAILED | BLOCKED>
 **Iteration:** <N>
 **Date:** <YYYY-MM-DD>
+**Full CI:** <PENDING | PASSED | FAILED>
 
 ## Summary
 - Standards: <passed>/<total>
@@ -47,7 +48,7 @@ Use this template when writing `QA-REPORT.md` in Phase 3, and when updating it d
 ## Status transitions
 
 - `IN_PROGRESS`: plan executing or optional fix loop active
-- `PASSED`: all items passed, zero open issues, CI gauntlet green
+- `PASSED`: all focused local items passed and there are zero open issues; full CI may still be pending
 - `ISSUES_FOUND`: QA execution found open issues and remediation was not requested or not yet confirmed
 - `FAILED`: remediation was requested, but at least one open blocker/major issue remains after the fix loop exits
 - `BLOCKED`: an issue remained open after 3 fix attempts — needs human decision

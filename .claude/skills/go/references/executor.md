@@ -25,9 +25,12 @@ You will receive:
    - Follows the locked decisions
    - Does exactly what the task says — not more, not less
 
-6. **Lint.** Run the project linter if available (`pnpm fix` or equivalent).
+6. **Lint.** Lint or format only the changed files when supported.
 
-7. **Verify.** Run the `Verify` step. If it fails, fix and re-verify.
+7. **Verify.** Run the `Verify` step with the narrowest affected test file,
+   project, or package scope. Do not run a full build or full-workspace suite;
+   GitHub Actions owns those checks. If focused verification fails, fix and
+   re-verify.
 
 8. **Report.** When done, output:
    ```

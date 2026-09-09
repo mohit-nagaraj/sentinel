@@ -167,7 +167,7 @@ Create:
 
 ## Success Criteria
 
-What must be TRUE in the codebase when this feature is done. Each criterion is independently verifiable — a grep, a typecheck, a file existence check, or a test run.
+What must be TRUE in the codebase when this feature is done. Each criterion is independently verifiable with a focused check against the changed package or behavior.
 
 - [ ] [Criterion 1 — specific and checkable, e.g., "`refundReason` column exists on `transactions` table"]
 - [ ] [Criterion 2 — e.g., "POST /api/payments/refund accepts `reason` field and validates with Zod"]
@@ -179,7 +179,7 @@ What must be TRUE in the codebase when this feature is done. Each criterion is i
 ### task-1: <Short description>
 **Files:** [list of files to read and modify]
 **Do:** [What to implement — specific enough that a fresh agent with no prior context can do it]
-**Verify:** [How to check this task is done — e.g., "pnpm typecheck passes", "column exists in schema"]
+**Verify:** [Focused check for this task — e.g., "run the affected test file", "package typecheck passes", "column exists in schema"]
 
 ### task-2: <Short description>
 **Files:** [list of files]
@@ -213,7 +213,7 @@ What must be TRUE in the codebase when this feature is done. Each criterion is i
 
 3. **File targets are explicit.** Every task lists exactly which files to read and modify. A fresh agent with no prior context should know exactly where to look.
 
-4. **Verification is concrete.** Not "verify it works" — rather "run `pnpm typecheck` and confirm no errors" or "grep for `refundReason` in `schema.ts`".
+4. **Verification is concrete and focused.** Target the affected test file, Vitest project, package, endpoint, or schema. Do not put `pnpm build`, the full `pnpm test` suite, or other full-workspace CI commands in task verification; CI owns those checks.
 
 5. **Dependencies are explicit.** If task-3 needs types from task-1, say so. Tasks without dependencies can run in parallel.
 

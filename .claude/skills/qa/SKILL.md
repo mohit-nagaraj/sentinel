@@ -1,8 +1,8 @@
 ---
 name: qa
 description: >
-  Plan-driven QA testing with agentic self-testing as first-class, automated tests next,
-  browser testing last (and optional). Develops a QA plan covering project standards
+  Plan-driven QA with focused local tests, agentic self-testing, and optional browser
+  checks while the full build and repository-wide suites remain CI-owned. Develops a QA plan covering project standards
   compliance + feature completeness, spawns parallel sub-agents to execute it, reports
   issues to QA-REPORT.md, and optionally runs a bug-fixing loop when requested.
   Use this skill when the user says 'qa', '/qa', 'test it', 'run qa', 'check if it
@@ -85,7 +85,6 @@ Read the files that define what "correct" looks like in this project:
 - `CLAUDE.md` (root) — agent instructions / project conventions
 - `AGENTS.md` (root) — shared conventions
 - `<module>/AGENTS.md` / `<module>/CLAUDE.md` — per-module rules for changed modules
-- `docs/` — conventions pages (logging, error handling, API patterns)
 - `.ystack/config.json` — module boundaries (if present)
 
 If none of these exist, fall back to any top-level convention docs the repo provides (e.g., `PHILOSOPHY.md`, `CONTRIBUTING.md`, `LINTING.md`). Note which sources you used in the plan.
@@ -94,33 +93,44 @@ Extract:
 - **Conventions** (naming, imports, file organization)
 - **Logging patterns**
 - **Testing patterns** (framework, file naming, fixture location)
-- **Documentation requirements**
 
-### Step 3: Detect the actual CI commands
+### Step 3: Separate focused local checks from CI-owned checks
 
-Do NOT assume `pnpm typecheck && pnpm check && pnpm build` exists. Detect what the project actually has:
+Read the repository's CI workflow and package scripts. Record the complete commands
+that CI owns, but do not run the full CI pipeline locally.
 
 ```bash
-# Node-ish repos
-cat package.json | python3 -c 'import json,sys; d=json.load(sys.stdin); print("\n".join(d.get("scripts",{})))'
-# Go
-[ -f go.mod ] && echo "go"
-# Python
-[ -f pyproject.toml ] || [ -f setup.py ] && echo "python"
+cat package.json
+ls .github/workflows
 ```
 
-Map what you find to the four CI categories:
+For Sentinel, GitHub Actions owns all full-workspace commands, including:
 
-| Category | Node | Go | Python |
-|---|---|---|---|
-| Typecheck | `tsc`, `typecheck`, `check:types` | `go vet ./...` | `mypy .` |
-| Lint | `lint`, `check`, `eslint`, `biome` | `gofmt -l .` | `ruff check` |
-| Build | `build`, `compile` | `go build ./...` | — |
-| Test | `test`, `vitest`, `jest` | `go test ./...` | `pytest` |
+- `pnpm format:check`
+- `pnpm lint`
+- `pnpm typecheck`
+- `pnpm test`
+- `pnpm test:integration`
+- `pnpm test:agent`
+- `pnpm test:graph`
+- `pnpm test:browser`
+- `pnpm build`
 
-If a category has no matching command, mark it **N/A — no command detected** in the QA plan. Do not invent one. If zero categories match (e.g., a docs-only repo), say so explicitly:
+Choose only focused local checks that cover the changed behavior:
 
-> No build/test infrastructure detected (no package.json scripts, no go.mod, no pyproject.toml). Skipping Group A (CI gauntlet). Focus will be standards compliance, doc linking, and structural checks.
+- a specific affected test file
+- the relevant Vitest project
+- a package-filtered test or typecheck
+- lint or formatting limited to changed files
+- a direct API, CLI, schema, or UI behavior check
+
+Do not run `pnpm build`, the full `pnpm test`, `pnpm test:integration`,
+`pnpm test:agent`, `pnpm test:graph`, or `pnpm test:browser` suites, or
+another full-workspace CI command locally. Run one only when the user explicitly
+requests it.
+
+If no focused automated check exists, use a direct behavior check or file
+inspection and mark full CI as pending.
 
 ### Step 4: Classify the feature type
 
@@ -132,7 +142,7 @@ From the diff and PLAN.md (or inferred scope), determine:
 - **Infrastructure / Docs-only** — configs, CI, tooling, markdown → mostly CLI verification, no browser
 
 Tell the user:
-> Feature type detected: **<type>**. CI commands detected: **<list or "none">**. Browser automation will be **<used | skipped>**.
+> Feature type detected: **<type>**. Focused local checks: **<list or "none">**. Full CI checks: **pending until PR/push**. Browser automation will be **<used | skipped>**.
 
 ### Step 5: Check Playwright availability (frontend only)
 
@@ -187,19 +197,22 @@ Dispatch work to sub-agents in parallel. This keeps the main context lean and pa
 ### Grouping rule
 
 Group tasks by dependency:
-- **Group A: CI gauntlet** — the detected typecheck/lint/build/test commands (sequential; gate for everything else). Skip entirely if Step 3 detected zero commands.
+- **Group A: Focused local checks** — only the affected tests, package checks, and direct behavior checks.
 - **Group B: Standards compliance + Agentic self-tests** — parallel sub-agents
 - **Group C: Automated tests** — one sub-agent per test file to write, parallel
 - **Group D: Browser verification** — single sub-agent (if applicable and URL pre-flight passed)
 
 ### Running Group A
 
-Run sequentially in the main context. Use the actual commands you detected, joined with `&&`. Example:
+Run focused commands in the main context. Examples:
 ```bash
-pnpm typecheck && pnpm lint && pnpm build && pnpm test
+pnpm exec vitest run packages/example/src/example.test.ts
+pnpm --filter @sentinel/example typecheck
 ```
 
-Capture output. If any command fails, do NOT spawn Groups B/C/D yet — proceed to Phase 3 to report CI failures first. Enter the bug-fixing loop only if `--fix` was provided or the user explicitly confirms remediation. Getting the CI gauntlet green is the fastest path to a useful signal.
+Capture output. If a focused command fails, proceed to Phase 3 and report it.
+Enter the bug-fixing loop only if `--fix` was provided or the user explicitly
+confirms remediation. Do not substitute the full CI suite for a missing focused check.
 
 ### Running Groups B, C, D in parallel
 
@@ -270,7 +283,8 @@ After each fix, replace the issue block per the "Resolved Issues" shape in `refe
 
 ### Re-run affected checks
 
-After a batch of fixes, re-run the CI gauntlet and any check whose output hinted at related issues. New failures → new open issues → continue the loop.
+After a batch of fixes, re-run only the affected focused checks. New failures →
+new open issues → continue the loop. Leave the complete suite to CI.
 
 ### Loop termination
 
@@ -285,7 +299,10 @@ After a batch of fixes, re-run the CI gauntlet and any check whose output hinted
 
 ### Final verification pass
 
-If there are no open issues, or if the optional fix loop ran, re-run the detected CI gauntlet one more time in the main context. All must pass for `PASSED`. If Group A was N/A in Step 3 (no commands detected), skip — but note it in the report.
+If there are no open issues, or if the optional fix loop ran, re-run the affected
+focused checks once. They must pass for local `PASSED`. Record the full CI status
+as `PENDING` until GitHub Actions runs; local `PASSED` does not claim the
+repository-wide build or suite passed.
 
 If `/qa` found issues and remediation was not authorized, do not claim `PASSED`; leave `QA-REPORT.md` as `ISSUES_FOUND`.
 
@@ -303,7 +320,8 @@ If `/qa` found issues and remediation was not authorized, do not claim `PASSED`;
 > QA complete.
 >
 > - Found <N> issues; fixed <X> across <M> commits (or: fix loop not run)
-> - All detected CI checks passing (or: no CI gauntlet — this repo has none)
+> - Focused local checks passing
+> - Full CI pending until PR/push
 > - <X> human-required items remain (not blockers): see QA-REPORT.md
 >
 > Ready for `/review` and `/pr`.
@@ -317,7 +335,7 @@ If human-required items exist, list them so the user can decide whether to addre
 If invoked with just a URL or no plan (`/qa http://localhost:3000`):
 
 1. Skip PLAN.md loading.
-2. Still run Step 3 (detect CI commands) and Step 5 (Playwright availability) — they apply even without a feature.
+2. Still run Step 3 (select focused checks and record CI-owned checks) and Step 5 (Playwright availability) — they apply even without a feature.
 3. Run Step 6 (URL pre-flight). If the URL is dead, stop and ask.
 4. Ask the user:
    > What should I focus on? (e.g., "all API endpoints", "the checkout flow", "smoke test the homepage")
@@ -333,6 +351,7 @@ If invoked with just a URL or no plan (`/qa http://localhost:3000`):
 - **Does not create PRs.** That's `/pr`.
 - **Does not require Playwright.** Browser automation is a nice-to-have for frontend features, not a dependency. Backend QA works fully without it.
 - **Does not require pnpm / npm / any specific toolchain.** CI commands are detected per-repo in Step 3.
+- **Does not run full builds or full-workspace suites locally.** CI owns them unless the user explicitly requests otherwise.
 - **Does not start long-running servers.** If a dev server is needed for API/browser checks, note it in the plan and ask the user to start it.
 - **Does not loop forever.** Max 3 fix attempts per issue, max 3 overall iterations. Escalates to user on repeated failure.
 - **Does not invent success criteria.** If PLAN.md is missing or the user's claim doesn't match the branch, asks the user — doesn't guess.

@@ -86,17 +86,21 @@ Rules:
 - Implement what the task says. Not more, not less.
 - Follow existing code patterns in the files you're modifying. Match style, naming, imports.
 - If the task references a doc page contract (e.g., "API shape defined in docs"), implement exactly what the docs specify.
-- Run the project linter if available (`pnpm fix`, `ultracite fix`, or equivalent) after making changes.
+- Format or lint changed files only when the tool supports file-level targeting.
 
 **Step 3: Verify**
 
-Run the task's `Verify:` step. Common verification patterns:
+Run the task's `Verify:` step using the narrowest relevant scope. Common verification patterns:
 
-- `pnpm typecheck` — types compile
-- `pnpm check` — lint passes
+- `pnpm --filter <package> typecheck` — affected package types compile
+- `pnpm exec eslint <changed-files>` — changed files pass lint
 - Grep for expected patterns — `grep -r "refundReason" packages/db/src/schema.ts`
 - File existence — `ls packages/shared/src/types/payments.ts`
-- Test execution — `pnpm test --filter=<package>`
+- Test execution — `pnpm exec vitest run <affected-test-file>`
+
+Do not run `pnpm build`, the full `pnpm test` or `pnpm test:integration`
+suites, or another full-workspace CI command locally. GitHub Actions owns the
+complete suite. Run one only when the user explicitly asks.
 
 If verification fails, fix the issue and re-verify. Do not skip verification.
 
@@ -196,8 +200,8 @@ After all tasks complete (or if execution stops due to a deviation), report:
 - task-3: Admin UI ✓ (commit: ghi9012)
 
 ### Verification
-- pnpm typecheck: PASS
-- pnpm check: PASS
+- <focused test or package check>: PASS
+- Full CI: PENDING
 
 ### Notes
 - [Any deviations, auto-fixes, or observations worth mentioning]
