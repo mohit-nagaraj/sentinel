@@ -10,8 +10,41 @@ permissions:
 
 jobs:
   verify:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: quality
+            command: pnpm format:check && pnpm lint && pnpm typecheck
+            php: false
+            playwright: false
+          - name: test
+            command: pnpm test
+            php: false
+            playwright: false
+          - name: test-integration
+            command: pnpm test:integration
+            php: true
+            playwright: true
+          - name: test-agent
+            command: pnpm test:agent
+            php: false
+            playwright: false
+          - name: test-graph
+            command: pnpm test:graph
+            php: false
+            playwright: false
+          - name: test-browser
+            command: pnpm test:browser
+            php: false
+            playwright: true
+          - name: build
+            command: pnpm build
+            php: false
+            playwright: false
     steps:
       - uses: actions/checkout@v4
 
@@ -26,21 +59,17 @@ jobs:
           cache: pnpm
 
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        if: ${{ matrix.php }}
         with:
           php-version: "8.3"
           tools: composer:2.10.3
           coverage: none
 
       - run: pnpm install --frozen-lockfile
-      - run: composer validate --strict --working-dir tools/php-indexer
-      - run: composer install --working-dir tools/php-indexer --no-interaction --no-plugins --no-scripts --prefer-dist
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm format:check
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm test:integration
-      - run: pnpm test:agent
-      - run: pnpm test:graph
-      - run: pnpm test:browser
-      - run: pnpm build
+      - if: ${{ matrix.php }}
+        run: composer validate --strict --working-dir tools/php-indexer
+      - if: ${{ matrix.php }}
+        run: composer install --working-dir tools/php-indexer --no-interaction --no-plugins --no-scripts --prefer-dist
+      - if: ${{ matrix.playwright }}
+        run: pnpm exec playwright install --with-deps chromium
+      - run: ${{ matrix.command }}
