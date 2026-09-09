@@ -13,6 +13,7 @@ export interface ApplicationExplorerFixtureRequest {
 export interface ApplicationExplorerFixtureApplication {
   readonly origin: string
   readonly requests: readonly ApplicationExplorerFixtureRequest[]
+  triggerStaleMutation(): void
   close(): Promise<void>
 }
 
@@ -117,19 +118,43 @@ function stalePage(): string {
      <p data-sentinel-evidence>The visible action changes after observation.</p>
      <button type="button" id="stale-action">View stable details</button>`,
     `
-      setTimeout(() => {
+      fetch("/api/wait-mutation/stale").then(async (response) => {
+        if (!response.ok) return;
         document.querySelector("#stale-action").textContent = "View changed details";
-      }, 250);
+        await new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve))
+        );
+        await fetch("/api/mutation-ready/stale");
+      });
     `
   )
 }
 
 export async function startApplicationExplorerFixture(): Promise<ApplicationExplorerFixtureApplication> {
   const requests: ApplicationExplorerFixtureRequest[] = []
+  const pendingStaleWaiters: ServerResponse[] = []
+  let staleTriggered = false
+
   const server = createServer(
     (request: IncomingMessage, response: ServerResponse) => {
       const url = new URL(request.url ?? "/", "http://127.0.0.1")
       requests.push({ method: request.method ?? "GET", path: url.pathname })
+
+      if (url.pathname === "/api/wait-mutation/stale") {
+        if (staleTriggered) {
+          staleTriggered = false
+          response.writeHead(204)
+          response.end()
+          return
+        }
+        pendingStaleWaiters.push(response)
+        return
+      }
+      if (url.pathname === "/api/mutation-ready/stale") {
+        response.writeHead(204)
+        response.end()
+        return
+      }
 
       switch (url.pathname) {
         case "/":
@@ -204,7 +229,23 @@ export async function startApplicationExplorerFixture(): Promise<ApplicationExpl
   return {
     origin: `http://127.0.0.1:${address.port}`,
     requests,
+    triggerStaleMutation() {
+      if (pendingStaleWaiters.length === 0) {
+        staleTriggered = true
+        return
+      }
+      for (const waiter of pendingStaleWaiters) {
+        waiter.writeHead(204)
+        waiter.end()
+      }
+      pendingStaleWaiters.length = 0
+    },
     async close() {
+      for (const waiter of pendingStaleWaiters) {
+        waiter.writeHead(410)
+        waiter.end()
+      }
+      pendingStaleWaiters.length = 0
       server.close()
       await once(server, "close")
     },

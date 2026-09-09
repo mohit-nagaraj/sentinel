@@ -405,6 +405,15 @@ function productIds(output: ApplicationExplorerMissionOutput): string[] {
 describe("Application Explorer real browser missions", () => {
   let fixture: ApplicationExplorerFixtureApplication
 
+  async function waitForFixtureRequest(path: string): Promise<void> {
+    const deadline = Date.now() + 5_000
+    while (Date.now() < deadline) {
+      if (fixture.requests.some((request) => request.path === path)) return
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
+    throw new Error(`Fixture request ${path} was not observed`)
+  }
+
   beforeAll(async () => {
     fixture = await startApplicationExplorerFixture()
   }, 30_000)
@@ -593,9 +602,13 @@ describe("Application Explorer real browser missions", () => {
     const stale = staleObservation.candidates.find(
       (candidate) => candidate.name === "View stable details"
     )
-    await new Promise((resolve) => setTimeout(resolve, 350))
+    if (stale === undefined) {
+      throw new Error("Stale action candidate was not observed")
+    }
+    fixture.triggerStaleMutation()
+    await waitForFixtureRequest("/api/mutation-ready/stale")
     await expect(
-      staleRuntime.performAction(staleMission.runId, stale?.actionId ?? "")
+      staleRuntime.performAction(staleMission.runId, stale.actionId)
     ).rejects.toSatisfy(
       (error: unknown) =>
         error instanceof BrowserRuntimeError &&
@@ -611,9 +624,12 @@ describe("Application Explorer real browser missions", () => {
     const refresh = usedObservation.candidates.find(
       (candidate) => candidate.name === "Refresh state"
     )
-    await usedRuntime.performAction(usedMission.runId, refresh?.actionId ?? "")
+    if (refresh === undefined) {
+      throw new Error("Refresh action candidate was not observed")
+    }
+    await usedRuntime.performAction(usedMission.runId, refresh.actionId)
     await expect(
-      usedRuntime.performAction(usedMission.runId, refresh?.actionId ?? "")
+      usedRuntime.performAction(usedMission.runId, refresh.actionId)
     ).rejects.toSatisfy(
       (error: unknown) =>
         error instanceof BrowserRuntimeError &&
