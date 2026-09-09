@@ -84,6 +84,12 @@ describe("repository security policy", () => {
         {
           MIT: [{ name: "known", versions: ["1.0.0"] }],
           Unknown: [{ name: "khroma", versions: ["2.1.0"] }],
+          "LGPL-3.0-or-later": [
+            {
+              name: "@img/sharp-libvips-linux-x64",
+              versions: ["1.3.3"],
+            },
+          ],
         },
         policy,
         reviewDate
@@ -96,6 +102,17 @@ describe("repository security policy", () => {
         reviewDate
       )
     ).toEqual(["new-package@1.0.0: Unknown"])
+    expect(
+      findLicenseViolations(
+        {
+          "LGPL-3.0-or-later": [
+            { name: "unexpected-copyleft", versions: ["1.0.0"] },
+          ],
+        },
+        policy,
+        reviewDate
+      )
+    ).toEqual(["unexpected-copyleft@1.0.0: LGPL-3.0-or-later"])
   })
 
   it("keeps live and paid credentials out of default CI", () => {

@@ -18,7 +18,7 @@ export const securityPolicySchema = z.strictObject({
     z.strictObject({
       package: z.string().trim().min(1),
       version: z.string().trim().min(1),
-      reportedLicense: z.literal("Unknown"),
+      reportedLicense: z.string().trim().min(1),
       source: z.url({ protocol: /^https$/ }),
       ...exceptionFields,
     })

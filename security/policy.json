@@ -19,6 +19,14 @@
   ],
   "licenseExceptions": [
     {
+      "package": "@img/sharp-libvips-linux-x64",
+      "version": "1.3.3",
+      "reportedLicense": "LGPL-3.0-or-later",
+      "source": "https://github.com/lovell/sharp-libvips",
+      "rationale": "Unmodified platform-specific libvips binary dynamically loaded by Sharp for Next.js image processing. Keep LGPL outside the general allowlist and re-review on Sharp upgrades.",
+      "expiresOn": "2026-10-09"
+    },
+    {
       "package": "khroma",
       "version": "2.1.0",
       "reportedLicense": "Unknown",

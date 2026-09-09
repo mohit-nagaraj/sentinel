@@ -52,10 +52,12 @@ or resolved by an upstream update.
 ## License policy
 
 `pnpm licenses list --prod --json` must contain only the permissive/attribution
-licenses in `security/policy.json`. Unknown metadata fails unless the exact
-package/version is documented with source, rationale, and expiry. Current exact
-exceptions cover `khroma@2.1.0` and `map-stream@0.1.0`; both are unmodified
-transitive packages and must be re-reviewed by 2026-10-09.
+licenses in `security/policy.json`. Unknown or otherwise unapproved metadata
+fails unless the exact package/version is documented with source, rationale, and
+expiry. Current exceptions cover `khroma@2.1.0`, `map-stream@0.1.0`, and Linux
+Sharp's unmodified, dynamically loaded
+`@img/sharp-libvips-linux-x64@1.3.3` artifact. LGPL remains outside the general
+allowlist, and all three must be re-reviewed by 2026-10-09.
 
 This is an assignment-appropriate inventory review, not legal advice. Any new
 copyleft, proprietary, unlicensed, or unknown dependency requires explicit human

@@ -120,3 +120,7 @@ Formal penetration-test certification, production SOC controls, arbitrary hostil
   tokens. Detection now treats GitHub token bodies as opaque variable-length
   values using GitHub's current format guidance, and focused tests cover classic,
   fine-grained, and stateless formats without exposing matches in findings.
+- The first CI security run exposed Linux-only Sharp license metadata. The gate
+  now has an exact expiring exception for the unmodified dynamically loaded
+  `@img/sharp-libvips-linux-x64@1.3.3` artifact while keeping LGPL outside the
+  general allowlist; a regression proves unrelated LGPL packages still fail.
