@@ -19,6 +19,174 @@ No environment variables are required for default tests or builds. The durable
 worker requires its database, graph module, and health settings from
 `.env.example`; provider credentials remain optional until their workflows run.
 
+## Fastest reproducible review
+
+The repository has two review paths. The deterministic path is complete,
+credential-free, and appropriate for a clean clone. The external-service path is
+optional and proves individual provider adapters only when the reviewer supplies
+their own isolated resources.
+
+From a clean clone:
+
+```sh
+corepack enable
+pnpm install --frozen-lockfile
+pnpm delivery:check
+pnpm security
+pnpm demo:web
+```
+
+Open `http://localhost:3000`. `demo:web` sets only
+`SENTINEL_CONTROL_PLANE_FIXTURE=1`; outside production that flag enables the
+resettable, in-memory onboarding, run-activity, evidence-path, absence, and review
+fixtures without authentication or provider credentials. Stop and restart the
+command to reset fixture state.
+
+Use these review surfaces in order:
+
+1. `/` - inspect and confirm the bounded Hi.Events onboarding configuration.
+2. `/runs` - open the fixture run and inspect Documentation, Code, Application,
+   and Curator activity without hidden reasoning.
+3. `/knowledge` - open Hi.Events checkout coverage, a complete evidence path,
+   and the explicit promotion-code absence/ambiguity case.
+4. `/assessments/00000000-0000-4000-8000-000000000029` - inspect the product
+   report dashboard, evidence drill-down, unknowns, download, and print surface.
+5. [`docs/delivery/sample-report-hi-events-pr-1338.md`](docs/delivery/sample-report-hi-events-pr-1338.md)
+   - read product-rendered deterministic fallback Markdown for real PR #1338.
+6. [`DESIGN.md`](DESIGN.md) - review architecture, graph semantics, evaluation,
+   security, scope cuts, and next-week priorities.
+
+Current capability is deliberately narrow:
+
+| Surface                                                                                                                         | Status in this revision                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Deterministic source/browser adapters, specialist kernels, graph reconciliation, blast-radius scoring, eval, and security gates | Implemented and covered by CI                                                                      |
+| Resettable control-plane demo                                                                                                   | Implemented with deterministic in-memory fixtures                                                  |
+| Trusted Render deployment identity and verification planning                                                                    | Implemented; no assignment PR-head deployment is registered                                        |
+| Product report delivery/dashboard (SNT-029)                                                                                     | Implemented with grounded wording, private persistence, API/UI, GitHub summary, and print behavior |
+| Dynamic PR-head verification (SNT-031)                                                                                          | Not implemented; report status is `verification_unavailable`                                       |
+| Incremental post-deployment refresh (SNT-032)                                                                                   | Implemented with scoped reuse/invalidation and atomic publication                                  |
+
+The committed sample passes its structured data through the product report view
+contract and canonical renderer. Do not describe that deterministic fixture as a
+live model, persisted Neo4j assessment, or browser-verification result; the same
+pipeline supports persisted reports while this reproducible artifact keeps
+provider and private-service requirements out of the clean-clone path.
+
+## Optional external-service setup
+
+Copy `.env.example` to a local ignored environment file and fill only the
+services you intend to exercise. Never commit the populated file. Each provider
+adapter fails closed when its required configuration is absent.
+
+### Supabase and migrations
+
+Docker (or a compatible container runtime) is required for local Supabase. The
+repository already contains `supabase/config.toml` and ordered migrations, so do
+not run `supabase init` again.
+
+```sh
+pnpm dlx supabase@2.117.0 start
+pnpm dlx supabase@2.117.0 db reset
+pnpm dlx supabase@2.117.0 status
+```
+
+`db reset` destroys only the local Supabase database and reapplies every tracked
+migration; never add `--linked` for this review. Map the printed local values to
+`SUPABASE_DB_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and the S3 fields
+named in `.env.example`. `sentinel-artifacts` is declared private in
+`supabase/config.toml`.
+
+### Neo4j Aura
+
+Create a disposable Aura database and set `NEO4J_URI`, `NEO4J_USERNAME`,
+`NEO4J_PASSWORD`, and `NEO4J_DATABASE`. Integration cleanup is disabled unless
+both `RUN_NEO4J_INTEGRATION_TESTS=1` and a unique
+`SENTINEL_NEO4J_TEST_PREFIX=sentinel-test-<8-32 lowercase hex>` are present.
+Never point tests at a production graph.
+
+### Azure OpenAI
+
+Set `AZURE_OPENAI_ENDPOINT` to the Azure resource `/openai/v1/` base,
+`AZURE_OPENAI_API_KEY` to a server-only key, and `AZURE_OPENAI_DEPLOYMENT` to the
+deployment name. The default suites use scripted model gateways. The paid probe
+runs only when `RUN_AZURE_OPENAI_COMPATIBILITY=1` and caps output with
+`AZURE_OPENAI_COMPATIBILITY_MAX_TOKENS`.
+
+### GitHub App
+
+Install the App only on the selected repository with Contents read, Pull requests
+read, and Checks write. Subscribe only to `pull_request`, point the webhook to
+`https://<sentinel-origin>/api/github/webhooks`, and configure the six
+names `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_INSTALLATION_ID`,
+`GITHUB_APP_PRIVATE_KEY_PATH`, `GITHUB_APP_WEBHOOK_SECRET`, and
+`SENTINEL_PUBLIC_BASE_URL`. The private key path must reference an ignored regular
+PEM file outside the repository.
+
+### Worker and optional Render proof
+
+The worker requires `SUPABASE_DB_URL`, `SENTINEL_WORKER_ID`, and an injected
+`SENTINEL_WORKER_GRAPH_MODULE` exporting `createRunGraphs`. This repository does
+not ship the final production graph assembly, so the deterministic UI demo does
+not start the worker. Health endpoints can still be exercised package-locally.
+
+Render identity proof is opt-in. Supply a disposable preview and the
+`RENDER_*` values from `.env.example`; no Sentinel, GitHub App, Supabase,
+production application, payment, or mail credential may be injected into the
+untrusted PR service.
+
+## Safe, integration, and live checks
+
+Default-safe commands use no paid model, public target, or live credential:
+
+```sh
+pnpm delivery:check
+pnpm security
+pnpm exec vitest run --project unit --project web --project worker
+pnpm test:agent
+pnpm test:graph
+pnpm test:integration
+pnpm test:browser
+```
+
+Integration projects remain skipped unless their explicit disposable-service
+flags are set. Live commands require deliberate flags and trusted isolated
+resources:
+
+```sh
+RUN_LIVE_TESTS=1 pnpm test:live
+RUN_LIVE_TESTS=1 RUN_CODE_EXPLORER_HI_EVENTS=1 pnpm test:live -- tests/live/code-explorer-hi-events.live.test.ts
+RUN_LIVE_TESTS=1 RUN_RENDER_DEPLOYMENT_SMOKE=1 pnpm test:live -- tests/live/render-deployment-verification.live.test.ts
+```
+
+PowerShell users set environment variables with `$env:NAME = "value"` before
+running the command. The live umbrella alone does not enable the paid Azure,
+Hi.Events mission, or Render identity cases; their additional flags and required
+configuration must also be present.
+
+## Teardown and troubleshooting
+
+```sh
+pnpm dlx supabase@2.117.0 stop
+```
+
+Stop the web and worker with `Ctrl+C`. Delete disposable Aura/Render resources in
+their provider consoles and revoke temporary provider/test credentials. Do not
+use `supabase stop --no-backup`, delete a shared graph namespace, or close a
+preview before retaining any sanitized evidence needed for the demo.
+
+Common failures:
+
+| Symptom                            | Resolution                                                                                                     |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Control plane returns 503          | Use `pnpm demo:web`, or configure `SENTINEL_OPERATOR_TOKEN` and backend services for non-fixture mode.         |
+| Readiness is degraded              | Inspect `/api/control/readiness`; missing services remain explicit and do not become fabricated success.       |
+| Worker refuses to start            | Supply a real `SENTINEL_WORKER_GRAPH_MODULE`; it is intentionally absent from the deterministic demo.          |
+| Supabase integration tests skip    | Set the matching `RUN_SUPABASE_*` flag and a disposable `SENTINEL_TEST_DATABASE_URL`.                          |
+| Neo4j cleanup is denied            | Use a unique valid test prefix and matching generated application namespace.                                   |
+| Render verification is unavailable | Register an exact live deploy/head SHA, or keep the honest `verification_unavailable` result.                  |
+| Sample report changed              | Run `pnpm delivery:sample`, review the JSON source and regenerated Markdown, then rerun `pnpm delivery:check`. |
+
 ## Workspace
 
 - `apps/web` - Next.js control application based on shadcn preset `b7Br7G7Ci`
@@ -182,6 +350,37 @@ race test uses the existing disposable integration settings:
 pnpm exec vitest run packages/contracts/src/github-app.test.ts packages/adapters/src/source/github/github-app.test.ts apps/web/lib/github-assessments.test.ts "apps/web/app/api/github/[[...path]]/route.test.ts" --project unit --project web
 RUN_SUPABASE_INTEGRATION_TESTS=1 SENTINEL_TEST_DATABASE_URL=postgresql://... pnpm exec vitest run tests/integration/github-app-assessment.integration.test.ts --project integration --maxWorkers=1
 ```
+
+## Assessment reports and incremental refresh
+
+SNT-029 turns blast-radius results into a strict `AssessmentReportView` with
+mandatory identity, product-area, UI, workflow, requirement, evidence, QA,
+verification, unknown/exclusion, and generation sections. Model wording may only
+select exact supplied choices and complete citation sets; invalid or unavailable
+wording falls back to the deterministic renderer. Markdown is stored privately,
+current-head finalization is compare-and-set/idempotent, and verification can be
+appended only as a versioned enrichment.
+
+The authenticated dashboard is `/assessments/:assessmentId`. Its API returns the
+owner-scoped view, a five-minute signed Markdown download, and bounded private
+artifact excerpts. The fixture report is available in `demo:web` at:
+
+```text
+http://localhost:3000/assessments/00000000-0000-4000-8000-000000000029
+```
+
+The committed PR #1338 sample uses the same view schema and canonical renderer:
+
+```sh
+pnpm delivery:sample
+```
+
+SNT-032 implements post-deployment refresh as a separate checkpointed graph. It
+validates trusted deployed commit ancestry, plans changed document/TS/PHP/OpenAPI
+and affected workflow scope, reuses unchanged stable facts, invalidates
+incompatible reviewed links, reassesses coverage, retains immutable assessment
+artifacts, and atomically activates a validated pending revision. Failed or
+cancelled refresh leaves the prior active graph and indexed commit untouched.
 
 ## Evaluation harness
 

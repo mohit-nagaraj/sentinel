@@ -8,6 +8,9 @@ _pagefind/
 output/
 .playwright-cli/
 .tmp-shadcn/
-docs/
+docs/*
+!docs/delivery/
+!docs/delivery/**
+docs/delivery/sample-report-hi-events-pr-1338.md
 pnpm-lock.yaml
 **/next-env.d.ts

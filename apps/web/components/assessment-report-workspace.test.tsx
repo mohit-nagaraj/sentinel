@@ -38,7 +38,7 @@ describe("assessment report workspace", () => {
     expect(
       screen.getByRole("heading", {
         level: 1,
-        name: "Rework UTM attribution tracking and admin report",
+        name: "Rework UTM attribution tracking and admin attribution report",
       })
     ).toBeInTheDocument()
     for (const heading of [
@@ -86,7 +86,7 @@ describe("assessment report workspace", () => {
     )
     expect(
       screen.getByRole("link", {
-        name: /github.com\/HiEventsDev\/hi.events\/blob/,
+        name: /github.com\/HiEventsDev\/Hi.Events\/blob\/.+\/frontend\/src\/components\/routes\/admin\/Attribution\/index\.tsx/,
       })
     ).toHaveAttribute("rel", "noreferrer")
   })

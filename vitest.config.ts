@@ -61,6 +61,14 @@ export default defineConfig({
       {
         extends: true,
         test: {
+          name: "delivery",
+          environment: "jsdom",
+          include: ["tests/delivery/**/*.test.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
           name: "security",
           environment: "node",
           include: ["tests/security/**/*.test.ts"],

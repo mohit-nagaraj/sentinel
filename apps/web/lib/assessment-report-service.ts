@@ -91,7 +91,7 @@ function fixtureView(): AssessmentReportView {
         id: checkoutEvidenceId,
         extractionMethod: "playwright_accessibility_snapshot",
         sourceUris: [
-          "https://github.com/HiEventsDev/hi.events/blob/develop/frontend/src/pages/checkout/index.tsx",
+          "https://github.com/HiEventsDev/Hi.Events/blob/f68df0dabd18d04df5e6c7e873aac2b5e5201584/frontend/src/components/routes/admin/Attribution/index.tsx",
         ],
         artifactIds: [REPORT_FIXTURE_EVIDENCE_ARTIFACT_ID],
       },
@@ -122,7 +122,9 @@ function fixtureView(): AssessmentReportView {
       {
         id: workflowEvidenceId,
         extractionMethod: "repository_documentation",
-        sourceUris: ["repository://docs/attendee-reporting.md"],
+        sourceUris: [
+          "https://github.com/HiEventsDev/Hi.Events/blob/f68df0dabd18d04df5e6c7e873aac2b5e5201584/backend/app/Repository/Eloquent/AccountAttributionRepository.php",
+        ],
         artifactIds: [],
       },
     ],
@@ -219,10 +221,11 @@ function fixtureView(): AssessmentReportView {
     },
     pullRequestId: `pull-request:v1:${"b".repeat(64)}`,
     pullRequestNumber: 1338,
-    pullRequestTitle: "Rework UTM attribution tracking and admin report",
-    baseSha: "1".repeat(40),
-    headSha: "2".repeat(40),
-    graphCommitSha: "1".repeat(40),
+    pullRequestTitle:
+      "Rework UTM attribution tracking and admin attribution report",
+    baseSha: "2064f88ff7590e93c738efb8becaa7d732063619",
+    headSha: "f68df0dabd18d04df5e6c7e873aac2b5e5201584",
+    graphCommitSha: "2064f88ff7590e93c738efb8becaa7d732063619",
     graphRevision: 3,
     policyVersion: "blast-radius-policy-v1",
     templateVersion: REPORT_TEMPLATE_VERSION,

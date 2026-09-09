@@ -19,7 +19,7 @@ test("delivers an accessible operational report and a complete print document", 
   await expect(
     page.getByRole("heading", {
       level: 1,
-      name: "Rework UTM attribution tracking and admin report",
+      name: "Rework UTM attribution tracking and admin attribution report",
     })
   ).toBeVisible()
   await expect(
