@@ -5,6 +5,7 @@ import {
   deploymentValidationResultSchema,
   verificationMissionEvidenceSchema,
   verificationMissionPlanSchema,
+  verificationPlanSchema,
   verificationSetupReceiptSchema,
   type VerificationCheckpoint,
   type VerificationCheckpointObservation,
@@ -296,6 +297,9 @@ describe("mission verdicts", () => {
       status: "failed",
       failureCategory: "product_regression",
       assertions: [{ reasonCode: "request_status_not_observed" }],
+      requests: [
+        { method: "POST", normalizedPath: "/api/orders", status: 500 },
+      ],
     })
   })
 
@@ -485,6 +489,28 @@ describe("aggregate verdict precedence", () => {
       status: "verification_unavailable",
       missionResults: [],
       predictedFindingIds: plan.missions[0]!.findingIds,
+    })
+  })
+
+  it("preserves a trusted planner's verification-unavailable classification", () => {
+    const planned = fixturePlan()
+    const plan = verificationPlanSchema.parse({
+      ...planned,
+      status: "verification_unavailable",
+      missions: [],
+      actionRequired: "Link an impacted scenario to an executable workflow",
+    })
+    const result = buildTargetedVerificationResult({
+      plan,
+      headValidation: fixtureValidation(),
+      missionResults: [],
+      budgetUsed: fixtureBudget,
+    })
+
+    expect(result).toMatchObject({
+      status: "verification_unavailable",
+      missionResults: [],
+      actionRequired: "Link an impacted scenario to an executable workflow",
     })
   })
 })

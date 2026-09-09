@@ -75,10 +75,10 @@ export const reportVerificationSchema = z
     const statuses = new Set(value.results.map(({ status }) => status))
     const expected = statuses.has("failed")
       ? "failed"
-      : statuses.has("behavior_changed")
-        ? "behavior_changed"
-        : statuses.has("blocked")
-          ? "blocked"
+      : statuses.has("blocked")
+        ? "blocked"
+        : statuses.has("behavior_changed")
+          ? "behavior_changed"
           : "passed"
     if (value.status !== expected) {
       context.addIssue({

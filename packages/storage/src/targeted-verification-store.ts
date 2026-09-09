@@ -149,7 +149,7 @@ export class PostgresTargetedVerificationStore {
        join sentinel.runs run
          on run.id = $3::uuid and run.application_id = app.id
        join sentinel.pr_assessments assessment
-         on assessment.id = $5::uuid and assessment.application_id = app.id
+         on assessment.id = $4::uuid and assessment.application_id = app.id
        where app.id = $1::uuid and app.stable_key = $2
          and run.id = $3::uuid
        on conflict (application_id, run_id, stable_key) do nothing`,

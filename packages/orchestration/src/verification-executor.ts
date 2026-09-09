@@ -93,13 +93,17 @@ export class ApplicationExplorerVerificationExecutor implements TargetedVerifica
     }
     const cached = await this.cache.get(input.idempotencyKey)
     if (cached !== null) {
-      const evidence = verificationMissionEvidenceSchema.parse(cached)
-      if (!sameExecution(evidence, plan, input.phase)) {
-        throw new Error(
-          "Verification execution cache contains a conflicting mission"
-        )
+      try {
+        const evidence = verificationMissionEvidenceSchema.parse(cached)
+        if (!sameExecution(evidence, plan, input.phase)) {
+          throw new Error(
+            "Verification execution cache contains a conflicting mission"
+          )
+        }
+        return evidence
+      } finally {
+        await this.session.close({ idempotencyKey: input.idempotencyKey })
       }
-      return evidence
     }
 
     const publicUrl = new URL(deployment.proof!.publicUrl!)

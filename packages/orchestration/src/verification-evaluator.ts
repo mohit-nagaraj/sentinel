@@ -33,6 +33,37 @@ function compareStrings(left: string, right: string): number {
   return left < right ? -1 : 1
 }
 
+function reportRequests(evidence: VerificationMissionEvidence) {
+  const requests = evidence.checkpointObservations.flatMap((observation) =>
+    observation.kind === "request_status"
+      ? observation.requests.flatMap((request) =>
+          request.outcome === "response" && request.status !== undefined
+            ? [
+                {
+                  method: request.method,
+                  normalizedPath: request.normalizedPath,
+                  status: request.status,
+                },
+              ]
+            : []
+        )
+      : []
+  )
+  return [
+    ...new Map(
+      requests.map((request) => [
+        `${request.method}:${request.normalizedPath}:${request.status}`,
+        request,
+      ])
+    ).values(),
+  ].sort((left, right) =>
+    compareStrings(
+      `${left.method}:${left.normalizedPath}:${left.status}`,
+      `${right.method}:${right.normalizedPath}:${right.status}`
+    )
+  )
+}
+
 function addSeconds(value: Date, seconds: number): string {
   return new Date(value.getTime() + seconds * 1_000).toISOString()
 }
@@ -456,6 +487,7 @@ export function evaluateVerificationMission(input: {
     policy: input.artifactPolicy,
     now,
   })
+  const requests = reportRequests(head)
   const deterministicSummary =
     status === "passed"
       ? "Every deterministic checkpoint passed"
@@ -481,6 +513,7 @@ export function evaluateVerificationMission(input: {
         reasonCode,
       })
     ),
+    requests,
     comparison,
     version: 1,
   }
@@ -493,6 +526,7 @@ export function evaluateVerificationMission(input: {
     failureCategory,
     setup,
     assertions,
+    requests,
     comparison,
     evidenceIds,
     artifacts,
@@ -546,6 +580,7 @@ export function buildBlockedSetupVerificationMission(input: {
     failureCategory: "setup_failure",
     setup,
     assertions: [],
+    requests: [],
     comparison,
     evidenceIds: setup.evidenceIds,
     artifacts,
@@ -586,6 +621,7 @@ export function buildNotRunVerificationMission(input: {
     failureCategory: "none",
     setup,
     assertions: [],
+    requests: [],
     comparison: {
       status: "not_available",
       changedCheckpointIds: [],
@@ -597,17 +633,10 @@ export function buildNotRunVerificationMission(input: {
   })
 }
 
-function aggregateStatus(input: {
-  readonly results: readonly VerificationMissionResult[]
-  readonly control?: VerificationMissionResult
-}): TargetedVerificationResult["status"] {
-  if (
-    input.control !== undefined &&
-    (input.control.status === "failed" || input.control.status === "blocked")
-  ) {
-    return "blocked"
-  }
-  const followup = input.results.find(({ kind }) => kind === "followup")
+export function effectiveVerificationMissionResults(
+  results: readonly VerificationMissionResult[]
+): VerificationMissionResult[] {
+  const followup = results.find(({ kind }) => kind === "followup")
   const resolvedGapIds = new Set(
     followup !== undefined &&
       (followup.status === "passed" || followup.status === "behavior_changed")
@@ -616,7 +645,7 @@ function aggregateStatus(input: {
           .map(({ checkpoint }) => checkpoint.id)
       : []
   )
-  const effectiveResults = input.results.filter((result) => {
+  return results.filter((result) => {
     if (
       result.kind === "followup" ||
       result.status !== "blocked" ||
@@ -632,6 +661,19 @@ function aggregateStatus(input: {
       blockedCheckpointIds.some((id) => !resolvedGapIds.has(id))
     )
   })
+}
+
+function aggregateStatus(input: {
+  readonly results: readonly VerificationMissionResult[]
+  readonly control?: VerificationMissionResult
+}): TargetedVerificationResult["status"] {
+  if (
+    input.control !== undefined &&
+    (input.control.status === "failed" || input.control.status === "blocked")
+  ) {
+    return "blocked"
+  }
+  const effectiveResults = effectiveVerificationMissionResults(input.results)
   if (effectiveResults.some(({ status }) => status === "failed"))
     return "failed"
   if (effectiveResults.some(({ status }) => status === "blocked"))
@@ -690,7 +732,8 @@ export function buildTargetedVerificationResult(input: {
     input.headValidation.expectedCommitSha ===
       input.plan.deployment.expectedCommitSha &&
     input.headValidation.browserAccessAllowed
-  const status = trustedHead
+  const executableHead = trustedHead && input.plan.status === "planned"
+  const status = executableHead
     ? aggregateStatus({
         results: input.missionResults,
         ...(input.controlResult === undefined
@@ -720,11 +763,11 @@ export function buildTargetedVerificationResult(input: {
       ? {}
       : { baselineValidation: input.baselineValidation }),
     predictedFindingIds,
-    missionResults: trustedHead ? [...input.missionResults] : [],
-    ...(trustedHead && input.controlResult !== undefined
+    missionResults: executableHead ? [...input.missionResults] : [],
+    ...(executableHead && input.controlResult !== undefined
       ? { controlResult: input.controlResult }
       : {}),
-    ...(trustedHead && input.followup !== undefined
+    ...(executableHead && input.followup !== undefined
       ? { followup: input.followup }
       : {}),
     budgetUsed: input.budgetUsed,
@@ -733,6 +776,7 @@ export function buildTargetedVerificationResult(input: {
     ...(["blocked", "verification_unavailable"].includes(status)
       ? {
           actionRequired:
+            input.plan.actionRequired ??
             input.headValidation.actionRequired ??
             "Inspect setup, control, or environment evidence before retrying verification",
         }

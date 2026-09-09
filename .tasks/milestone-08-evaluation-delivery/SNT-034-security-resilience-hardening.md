@@ -113,8 +113,9 @@ Formal penetration-test certification, production SOC controls, arbitrary hostil
   deployment is registered. This issue hardens all currently reachable surfaces
   but makes no claim for absent execution paths. The demo must report verification
   as unavailable and must not imply deployed refresh occurred. Subsequent
-  SNT-029 and SNT-032 delivery updates supersede the report and refresh portions
-  of this historical limitation; the current threat model remains authoritative.
+  SNT-029, SNT-031, and SNT-032 delivery updates supersede the report,
+  verification, and refresh portions of this historical limitation; the current
+  threat model remains authoritative.
 - The ystack `/review` found that the secret scanner missed current
   `github_pat_` fine-grained PATs and stateless `ghs_APPID_JWT` installation
   tokens. Detection now treats GitHub token bodies as opaque variable-length

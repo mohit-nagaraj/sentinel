@@ -14,8 +14,11 @@ import {
   fixtureValidation,
 } from "./verification-test-fixtures.ts"
 
-function harness(input: { readonly fail?: boolean } = {}) {
+function harness(
+  input: { readonly fail?: boolean; readonly closeFailures?: number } = {}
+) {
   const calls: string[] = []
+  let closeFailures = input.closeFailures ?? 0
   const values = new Map<string, ReturnType<typeof fixtureMissionEvidence>>()
   const session: ApplicationExplorerVerificationSession = {
     run: async (request) => {
@@ -36,6 +39,10 @@ function harness(input: { readonly fail?: boolean } = {}) {
     },
     close: async ({ idempotencyKey }) => {
       calls.push(`close:${idempotencyKey}`)
+      if (closeFailures > 0) {
+        closeFailures -= 1
+        throw new Error("browser close failed")
+      }
     },
   }
   const cache: VerificationExecutionCache = {
@@ -83,7 +90,28 @@ describe("ApplicationExplorerVerificationExecutor", () => {
     expect(second).toEqual(first)
     expect(test.calls.filter((call) => call.startsWith("run:"))).toHaveLength(1)
     expect(test.calls.filter((call) => call.startsWith("close:"))).toHaveLength(
-      1
+      2
+    )
+  })
+
+  it("retries cleanup after evidence was cached but browser close failed", async () => {
+    const test = harness({ closeFailures: 1 })
+    const request = {
+      plan: fixtureMissionPlan(),
+      deployment: fixtureValidation(),
+      phase: "head" as const,
+      idempotencyKey: "execute-close-retry",
+    }
+
+    await expect(test.executor.execute(request)).rejects.toThrow(
+      "browser close failed"
+    )
+    await expect(test.executor.execute(request)).resolves.toMatchObject({
+      missionId: request.plan.mission.id,
+    })
+    expect(test.calls.filter((call) => call.startsWith("run:"))).toHaveLength(1)
+    expect(test.calls.filter((call) => call.startsWith("close:"))).toHaveLength(
+      2
     )
   })
 

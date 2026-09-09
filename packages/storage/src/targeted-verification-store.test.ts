@@ -119,6 +119,8 @@ describe("PostgresTargetedVerificationStore", () => {
     expect(database.statements[0]).toContain(
       "join sentinel.pr_assessments assessment"
     )
+    expect(database.statements[0]).toContain("assessment.id = $4::uuid")
+    expect(database.statements[0]).not.toContain("assessment.id = $5::uuid")
     expect(database.statements[0]).toContain(
       "on conflict (application_id, run_id, stable_key) do nothing"
     )

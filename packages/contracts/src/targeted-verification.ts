@@ -2,6 +2,7 @@ import { z } from "zod"
 
 import { hashCanonical } from "./identity.ts"
 import { applicationExplorerMissionOutputSchema } from "./application-explorer.ts"
+import { verificationRequestSchema } from "./assessment.ts"
 import {
   browserNetworkEvidenceSchema,
   browserRuntimeErrorEvidenceSchema,
@@ -304,6 +305,7 @@ export const verificationMissionResultSchema = z
     failureCategory: verificationFailureCategorySchema,
     setup: verificationSetupReceiptSchema,
     assertions: z.array(deterministicVerificationAssertionSchema).max(20),
+    requests: z.array(verificationRequestSchema).max(500),
     comparison: verificationComparisonSchema,
     evidenceIds: unique(evidenceIdSchema, "Mission result evidence IDs").max(
       500

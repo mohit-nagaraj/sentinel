@@ -25,6 +25,7 @@ import {
   type VerificationMissionEvidence,
   type VerificationMissionPlan,
   type VerificationMissionResult,
+  type VerificationPlan,
   type VerificationSetupReceipt,
 } from "@sentinel/contracts"
 import {
@@ -291,6 +292,7 @@ export interface TargetedVerificationPublisherPort {
     input: {
       readonly assessmentId: string
       readonly headSha: string
+      readonly plan: VerificationPlan
       readonly result: TargetedVerificationResult
       readonly idempotencyKey: string
     },
@@ -1083,6 +1085,7 @@ export function buildTargetedVerificationGraph(
         {
           assessmentId: source.plan.assessmentId,
           headSha: source.headValidation.expectedCommitSha,
+          plan: source.plan,
           result,
           idempotencyKey: hashCanonical({
             kind: "targeted-verification-publication",

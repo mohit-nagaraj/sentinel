@@ -3,8 +3,11 @@ import {
   artifactIdSchema,
   commitShaSchema,
   contentHashSchema,
+  reportVerificationSchema,
   reportVerificationEnrichmentSchema,
+  timestampSchema,
   type AssessmentReportView,
+  type ReportVerification,
   type ReportVerificationEnrichment,
 } from "@sentinel/contracts"
 import { z } from "zod"
@@ -18,6 +21,12 @@ const finalizeRowSchema = z.object({
 })
 
 const currentHeadRowSchema = z.object({ current: z.boolean() })
+
+const appendCurrentRowSchema = z.object({
+  disposition: z.enum(["published", "existing", "superseded"]),
+  version: z.number().int().positive().nullable(),
+  report_id: contentHashSchema.nullable(),
+})
 
 const ownedRowSchema = z.object({
   assessment_id: z.uuid(),
@@ -192,5 +201,47 @@ export class AssessmentReportRepository {
       ]
     )
     return rows[0]?.appended === true
+  }
+
+  async appendCurrent(input: {
+    readonly assessmentId: string
+    readonly headSha: string
+    readonly resultId: string
+    readonly verification: Omit<ReportVerification, "version">
+    readonly appendedAt: string
+    readonly idempotencyKey: string
+  }): Promise<{
+    readonly disposition: "published" | "existing" | "superseded"
+    readonly version?: number
+  }> {
+    const parsed = reportVerificationSchema.parse({
+      ...input.verification,
+      version: 1,
+    })
+    const { version: _version, ...verification } = parsed
+    void _version
+    const rows = await this.database.query(
+      `select * from sentinel.append_current_report_verification(
+         $1::uuid, $2, $3, $4, $5::text::jsonb, $6::timestamptz
+       )`,
+      [
+        z.uuid().parse(input.assessmentId),
+        commitShaSchema.parse(input.headSha),
+        contentHashSchema.parse(input.resultId),
+        contentHashSchema.parse(input.idempotencyKey),
+        JSON.stringify(verification),
+        new Date(timestampSchema.parse(input.appendedAt)),
+      ]
+    )
+    const row = appendCurrentRowSchema.parse(rows[0])
+    if (row.disposition === "superseded") {
+      return { disposition: "superseded" }
+    }
+    if (row.version === null || row.report_id === null) {
+      throw new Error(
+        "Verification enrichment append returned incomplete state"
+      )
+    }
+    return { disposition: row.disposition, version: row.version }
   }
 }

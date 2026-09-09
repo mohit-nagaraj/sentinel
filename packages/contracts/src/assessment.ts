@@ -742,7 +742,7 @@ const verificationAssertionSchema = z.strictObject({
   evidenceIds: z.array(evidenceIdSchema).min(1).max(100),
 })
 
-const verificationRequestSchema = z.strictObject({
+export const verificationRequestSchema = z.strictObject({
   method: httpMethodSchema,
   normalizedPath: normalizedPathSchema,
   status: z.number().int().min(100).max(599),
@@ -765,7 +765,7 @@ function executedVerificationVariant(
     ...verificationBase,
     status: z.literal(status),
     deploymentUrl: publicHttpUrlSchema,
-    requirementIds: z.array(requirementIdSchema).min(1).max(100),
+    requirementIds: z.array(requirementIdSchema).max(100),
     assertions: z.array(verificationAssertionSchema).min(1).max(100),
     requests: z.array(verificationRequestSchema).max(500),
   })

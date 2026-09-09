@@ -263,7 +263,10 @@ export function createVerificationPlan(
     input.scenarios.map((definition) => [definition.scenario.id, definition])
   )
   const eligible = [...sourceScenarios.values()]
-    .filter((scenario) => definitions.has(scenario.id))
+    .filter(
+      (scenario) =>
+        definitions.has(scenario.id) && scenario.workflowId !== undefined
+    )
     .sort(
       (left, right) =>
         riskOrder[scenarioPriority.get(left.id)!] -
@@ -275,15 +278,24 @@ export function createVerificationPlan(
   const missingDefinitions = [...sourceScenarios.values()].filter(
     (scenario) => !definitions.has(scenario.id)
   )
-  const omissions = missingDefinitions
-    .slice(0, MAX_PLAN_EXCLUSIONS - 1)
-    .map(
+  const missingWorkflowLinks = [...sourceScenarios.values()].filter(
+    (scenario) =>
+      definitions.has(scenario.id) && scenario.workflowId === undefined
+  )
+  const omissionMessages = [
+    ...missingDefinitions.map(
       ({ id }) =>
         `Scenario ${id} was excluded because no deterministic checkpoint definition was supplied`
-    )
-  if (missingDefinitions.length > omissions.length) {
+    ),
+    ...missingWorkflowLinks.map(
+      ({ id }) =>
+        `Scenario ${id} was excluded because it is not linked to a workflow`
+    ),
+  ]
+  const omissions = omissionMessages.slice(0, MAX_PLAN_EXCLUSIONS - 1)
+  if (omissionMessages.length > omissions.length) {
     omissions.push(
-      `${missingDefinitions.length - omissions.length} additional scenarios lacked deterministic checkpoint definitions`
+      `${omissionMessages.length - omissions.length} additional scenarios lacked executable workflow-linked definitions`
     )
   }
   if (eligible.length === 0) {
@@ -309,7 +321,14 @@ export function createVerificationPlan(
       priority: scenarioPriority.get(scenario.id)!,
       findingIds: scenarioToFindings.get(scenario.id) ?? [],
       scenarioIds: [scenario.id],
-      targetIds: [scenario.targetId, ...scenario.checkpointEntityIds],
+      targetIds: [
+        scenario.targetId,
+        scenario.workflowId!,
+        ...(scenario.requirementId === undefined
+          ? []
+          : [scenario.requirementId]),
+        ...scenario.checkpointEntityIds,
+      ],
       impactedIds,
     })
   )
