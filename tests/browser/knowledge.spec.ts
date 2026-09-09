@@ -36,12 +36,11 @@ test("drills through a cited path and resumes a review interrupt once", async ({
           ).data
           let colored = 0
           for (let index = 0; index < pixels.length; index += 4) {
-            if (
-              pixels[index + 3] > 0 &&
-              (pixels[index] < 235 ||
-                pixels[index + 1] < 235 ||
-                pixels[index + 2] < 235)
-            ) {
+            const red = pixels[index] ?? 255
+            const green = pixels[index + 1] ?? 255
+            const blue = pixels[index + 2] ?? 255
+            const alpha = pixels[index + 3] ?? 0
+            if (alpha > 0 && (red < 235 || green < 235 || blue < 235)) {
               colored += 1
             }
           }
