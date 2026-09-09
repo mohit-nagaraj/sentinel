@@ -9,6 +9,7 @@ export {
   type SentinelEnvironment,
 } from "./environment.ts"
 export * from "./events.ts"
+export * from "./evidence-linking.ts"
 export * from "./facts.ts"
 export * from "./github-app.ts"
 export { createHealthReport, type HealthReport } from "./health.ts"
