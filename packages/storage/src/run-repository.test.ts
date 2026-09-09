@@ -1,5 +1,9 @@
 import runEventFixture from "../../../tests/fixtures/contracts/run-event.json" with { type: "json" }
-import type { MissionBudget } from "@sentinel/contracts"
+import {
+  commitShaSchema,
+  contentHashSchema,
+  type MissionBudget,
+} from "@sentinel/contracts"
 import { describe, expect, it, vi } from "vitest"
 
 import type { DatabaseExecutor } from "./database.ts"
@@ -128,6 +132,60 @@ describe("run repository", () => {
         errorCode: "provider_timeout",
       })
     ).resolves.toBe(true)
+  })
+
+  it("activates knowledge publications idempotently across ambiguous retries", async () => {
+    const publication = {
+      kind: "knowledge" as const,
+      inputFingerprint: contentHashSchema.parse(
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ),
+      expectedGraphRevision: 2,
+      indexedCommitSha: commitShaSchema.parse("b".repeat(40)),
+    }
+    const activatedQuery = vi
+      .fn()
+      .mockResolvedValueOnce([{ finish_control_run: true }])
+    await expect(
+      new RunRepository({
+        query: activatedQuery as DatabaseExecutor["query"],
+      }).activateKnowledgePublication({
+        runId,
+        owner: "worker-a",
+        publication,
+      })
+    ).resolves.toBe("activated")
+
+    const replayQuery = vi
+      .fn()
+      .mockResolvedValueOnce([{ finish_control_run: false }])
+      .mockResolvedValueOnce([{ active: true }])
+    await expect(
+      new RunRepository({
+        query: replayQuery as DatabaseExecutor["query"],
+      }).activateKnowledgePublication({
+        runId,
+        owner: "worker-a",
+        publication,
+      })
+    ).resolves.toBe("already_active")
+    expect(replayQuery.mock.calls[1]?.[0]).toContain(
+      "application.graph_revision = $2 + 1"
+    )
+
+    const rejectedQuery = vi
+      .fn()
+      .mockResolvedValueOnce([{ finish_control_run: false }])
+      .mockResolvedValueOnce([{ active: false }])
+    await expect(
+      new RunRepository({
+        query: rejectedQuery as DatabaseExecutor["query"],
+      }).activateKnowledgePublication({
+        runId,
+        owner: "worker-a",
+        publication,
+      })
+    ).resolves.toBe("rejected")
   })
 
   it("uses owner-scoped control functions and returns no internal request data", async () => {

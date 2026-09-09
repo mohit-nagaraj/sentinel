@@ -76,13 +76,38 @@ function toConstraintName(kind: EntityKind): string {
   return `sentinel_${kind.replaceAll("-", "_")}_identity`
 }
 
+export const legacyConstraintDropStatements = entityKindSchema.options.map(
+  (kind) => `DROP CONSTRAINT ${toConstraintName(kind)} IF EXISTS`
+)
+
 export const constraintStatements = entityKindSchema.options.map((kind) => {
   const label = resolveNodeLabel(kind)
-  return `CREATE CONSTRAINT ${toConstraintName(kind)} IF NOT EXISTS FOR (n:${label}) REQUIRE (n.application_id, n.stable_key) IS UNIQUE`
+  const name = `${toConstraintName(kind)}_revision`
+  return `CREATE CONSTRAINT ${name} IF NOT EXISTS FOR (n:${label}) REQUIRE (n.application_id, n.stable_key, n.graph_revision) IS UNIQUE`
 })
+
+export const nodeRevisionIndexStatements = entityKindSchema.options.map(
+  (kind) => {
+    const label = resolveNodeLabel(kind)
+    const name = `sentinel_${kind.replaceAll("-", "_")}_revision_lookup`
+    return `CREATE INDEX ${name} IF NOT EXISTS FOR (n:${label}) ON (n.application_id, n.graph_revision)`
+  }
+)
 
 export const relationshipConstraintStatements =
   evidenceRelationshipSchema.options.map((relationship) => {
+    const name = `sentinel_rel_${relationship.toLowerCase()}_identity_revision`
+    return `CREATE CONSTRAINT ${name} IF NOT EXISTS FOR ()-[r:${relationship}]-() REQUIRE (r.application_id, r.stable_key, r.graph_revision) IS UNIQUE`
+  })
+
+export const legacyRelationshipConstraintDropStatements =
+  evidenceRelationshipSchema.options.map((relationship) => {
     const name = `sentinel_rel_${relationship.toLowerCase()}_identity`
-    return `CREATE CONSTRAINT ${name} IF NOT EXISTS FOR ()-[r:${relationship}]-() REQUIRE (r.application_id, r.stable_key) IS UNIQUE`
+    return `DROP CONSTRAINT ${name} IF EXISTS`
+  })
+
+export const relationshipRevisionIndexStatements =
+  evidenceRelationshipSchema.options.map((relationship) => {
+    const name = `sentinel_rel_${relationship.toLowerCase()}_revision_lookup`
+    return `CREATE INDEX ${name} IF NOT EXISTS FOR ()-[r:${relationship}]-() ON (r.application_id, r.graph_revision)`
   })

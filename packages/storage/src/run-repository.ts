@@ -435,6 +435,78 @@ export class RunRepository {
     }
   }
 
+  private async isKnowledgePublicationActive(input: {
+    readonly runId: string
+    readonly expectedGraphRevision: number
+    readonly indexedCommitSha: string
+  }): Promise<boolean> {
+    const rows = await this.controlQuery<{ active: boolean }>(
+      `select exists (
+         select 1
+         from sentinel.runs run
+         join sentinel.applications application
+           on application.id = run.application_id
+         where run.id = $1::uuid
+           and run.status = 'succeeded'
+           and application.graph_revision = $2 + 1
+           and application.indexed_commit_sha = $3
+       ) as active`,
+      [
+        databaseRunIdSchema.parse(input.runId),
+        z.number().int().nonnegative().parse(input.expectedGraphRevision),
+        input.indexedCommitSha,
+      ]
+    )
+    return z.boolean().parse(rows[0]?.active ?? false)
+  }
+
+  async activateKnowledgePublication(input: {
+    readonly runId: string
+    readonly owner: string
+    readonly publication: Extract<
+      RunTerminalPublication,
+      { readonly kind: "knowledge" }
+    >
+  }): Promise<"activated" | "already_active" | "rejected"> {
+    const publication = runTerminalPublicationSchema.parse(input.publication)
+    if (publication.kind !== "knowledge") {
+      throw new Error("Knowledge activation requires a knowledge publication")
+    }
+    try {
+      const activated = await this.finish({
+        runId: input.runId,
+        owner: input.owner,
+        status: "succeeded",
+        publication,
+      })
+      if (activated) return "activated"
+    } catch (error) {
+      if (
+        await this.isKnowledgePublicationActive({
+          runId: input.runId,
+          expectedGraphRevision: publication.expectedGraphRevision,
+          indexedCommitSha: publication.indexedCommitSha,
+        })
+      ) {
+        return "already_active"
+      }
+      if (
+        error instanceof RunControlRepositoryError &&
+        error.code === "publication_conflict"
+      ) {
+        return "rejected"
+      }
+      throw error
+    }
+    return (await this.isKnowledgePublicationActive({
+      runId: input.runId,
+      expectedGraphRevision: publication.expectedGraphRevision,
+      indexedCommitSha: publication.indexedCommitSha,
+    }))
+      ? "already_active"
+      : "rejected"
+  }
+
   async requestCancellation(runId: string): Promise<string | null> {
     const rows = await this.database.query<{
       request_run_cancellation: string | null

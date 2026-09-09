@@ -37,6 +37,13 @@ const realtimeActivityMigration = readFileSync(
   ),
   "utf8"
 )
+const graphPublicationMigration = readFileSync(
+  new URL(
+    "../../../supabase/migrations/20260909000100_graph_publication_summaries.sql",
+    import.meta.url
+  ),
+  "utf8"
+)
 
 describe("operational migration", () => {
   it("defines every compact operational table and private checkpoint schema", () => {
@@ -228,6 +235,27 @@ describe("realtime activity migration", () => {
     )
     expect(realtimeActivityMigration).toContain(
       "alter table sentinel.run_artifacts enable row level security"
+    )
+  })
+})
+
+describe("graph publication summary migration", () => {
+  it("stores one compact server-only summary per application revision", () => {
+    expect(graphPublicationMigration).toContain(
+      "sentinel.knowledge_publications"
+    )
+    expect(graphPublicationMigration).toContain(
+      "primary key (application_id, graph_revision)"
+    )
+    expect(graphPublicationMigration).toContain("unique (run_id)")
+    expect(graphPublicationMigration).toContain(
+      "octet_length(summary::text) <= 65536"
+    )
+    expect(graphPublicationMigration).toContain(
+      "revoke all on sentinel.knowledge_publications from public"
+    )
+    expect(graphPublicationMigration).not.toMatch(
+      /grant\s+(?:insert|update|delete).*\s+to\s+(?:anon|authenticated)/i
     )
   })
 })
