@@ -69,7 +69,7 @@ const actionByReason: Record<
   deployment_service_mismatch:
     "Register the exact Render service and deploy pair intended for this run",
   deployment_commit_mismatch:
-    "Deploy the expected immutable PR-head commit and register its Render deploy identifier",
+    "Deploy the expected immutable commit and register its Render deploy identifier",
   deployment_repository_mismatch:
     "Register a deployment built from the assessed repository",
   deployment_url_mismatch:
