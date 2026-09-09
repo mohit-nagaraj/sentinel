@@ -1,3 +1,10 @@
+import {
+  coverageAssessmentSchema,
+  coverageAssessmentSummarySchema,
+  type CoverageAssessment,
+  type CoverageAssessmentSummary,
+} from "@sentinel/contracts"
+
 import type { ApplicationRecord } from "./application-repository.ts"
 import type { ArtifactMetadata } from "./artifact-storage.ts"
 import type { RunRecord } from "./run-repository.ts"
@@ -106,4 +113,32 @@ export function toPublicArtifactSummary(
     sizeBytes: artifact.sizeBytes,
     retainUntil: artifact.retainUntil?.toISOString() ?? null,
   }
+}
+
+export function toPublicCoverageAssessmentSummary(
+  assessmentInput: CoverageAssessment
+): CoverageAssessmentSummary {
+  const assessment = coverageAssessmentSchema.parse(assessmentInput)
+  return coverageAssessmentSummarySchema.parse({
+    id: assessment.id,
+    requirementId: assessment.requirementId,
+    status: assessment.status,
+    scope: assessment.scope.summary,
+    wording: assessment.wording,
+    reason: assessment.reason,
+    ...(assessment.attemptSummary === undefined
+      ? {}
+      : { attemptSummary: assessment.attemptSummary }),
+    possibleCauses: assessment.possibleCauses,
+    blockerKinds: assessment.blockers.map((blocker) => blocker.kind).sort(),
+    humanActions: [
+      ...new Set([
+        ...assessment.blockers.map((blocker) => blocker.humanAction),
+        ...assessment.ambiguities.map((ambiguity) => ambiguity.humanAction),
+      ]),
+    ].sort(),
+    evidenceCount: assessment.evidenceIds.length,
+    attemptEvidenceCount: assessment.attemptEvidenceIds.length,
+    evaluatedAt: assessment.evaluatedAt,
+  })
 }
