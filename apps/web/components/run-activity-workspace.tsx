@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   Code2,
   FileSearch,
+  FileText,
   Gauge,
   Globe2,
   ImageOff,
@@ -955,21 +956,34 @@ export function RunActivityWorkspace({
       {terminal ? (
         <div
           className={cn(
-            "flex items-center gap-2 border-b px-4 py-3 text-sm sm:px-6",
+            "flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 text-sm sm:px-6",
             statusTone(run.status)
           )}
-          role={run.status === "failed" ? "alert" : "status"}
         >
-          {run.status === "succeeded" ? (
-            <CheckCircle2 className="size-4" aria-hidden="true" />
-          ) : (
-            <XCircle className="size-4" aria-hidden="true" />
-          )}
-          {run.status === "succeeded"
-            ? "Run completed. The full activity record is available below."
-            : run.status === "cancelled"
-              ? "Run stopped. Completed activity remains available."
-              : "Run failed. Review the Curator record before retrying."}
+          <div
+            className="flex items-center gap-2"
+            role={run.status === "failed" ? "alert" : "status"}
+          >
+            {run.status === "succeeded" ? (
+              <CheckCircle2 className="size-4" aria-hidden="true" />
+            ) : (
+              <XCircle className="size-4" aria-hidden="true" />
+            )}
+            {run.status === "succeeded"
+              ? "Run completed. The full activity record is available below."
+              : run.status === "cancelled"
+                ? "Run stopped. Completed activity remains available."
+                : "Run failed. Review the Curator record before retrying."}
+          </div>
+          {run.status === "succeeded" && run.assessmentId !== undefined ? (
+            <Link
+              href={`/assessments/${run.assessmentId}`}
+              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-current/20 bg-background/70 px-3 text-sm font-medium text-foreground hover:bg-background focus-visible:outline-2 focus-visible:outline-primary"
+            >
+              <FileText className="size-4" aria-hidden="true" />
+              Open assessment report
+            </Link>
+          ) : null}
         </div>
       ) : null}
 
