@@ -1,7 +1,9 @@
 import {
   graphPublicationInputSchema,
   hashCanonical,
+  stableEntityIdSchema,
   type GraphPublicationInput,
+  type StableEntityId,
 } from "@sentinel/contracts"
 
 const timestamp = "2026-09-09T00:00:00.000Z"
@@ -13,6 +15,28 @@ function stableId(kind: string, applicationId: string, seed: string): string {
   )}`
 }
 
+function entityId(
+  kind: string,
+  applicationId: string,
+  seed: string
+): StableEntityId {
+  return stableEntityIdSchema.parse(stableId(kind, applicationId, seed))
+}
+
+type GraphPublicationFixtureIds = {
+  readonly source: StableEntityId
+  readonly page: StableEntityId
+  readonly section: StableEntityId
+  readonly requirement: StableEntityId
+  readonly capability: StableEntityId
+  readonly workflow: StableEntityId
+  readonly step: StableEntityId
+  readonly element: StableEntityId
+  readonly endpoint: StableEntityId
+  readonly symbol: StableEntityId
+  readonly coverage: StableEntityId
+}
+
 export function createGraphPublicationFixture(input: {
   readonly applicationId: string
   readonly graphRevision: number
@@ -22,22 +46,22 @@ export function createGraphPublicationFixture(input: {
   readonly omitCapability?: boolean
 }): {
   readonly publication: GraphPublicationInput
-  readonly ids: Readonly<Record<string, string>>
+  readonly ids: GraphPublicationFixtureIds
 } {
   const { applicationId, graphRevision } = input
   const runId = "run:11111111-1111-4111-8111-111111111111"
-  const ids = {
-    source: stableId("document-source", applicationId, "source"),
-    page: stableId("document-page", applicationId, "page"),
-    section: stableId("document-section", applicationId, "section"),
-    requirement: stableId("requirement", applicationId, "requirement"),
-    capability: stableId("capability", applicationId, "capability"),
-    workflow: stableId("workflow", applicationId, "workflow"),
-    step: stableId("flow-step", applicationId, "step"),
-    element: stableId("ui-element", applicationId, "element"),
-    endpoint: stableId("api-endpoint", applicationId, "endpoint"),
-    symbol: stableId("code-symbol", applicationId, "symbol"),
-    coverage: stableId("coverage-assessment", applicationId, "coverage"),
+  const ids: GraphPublicationFixtureIds = {
+    source: entityId("document-source", applicationId, "source"),
+    page: entityId("document-page", applicationId, "page"),
+    section: entityId("document-section", applicationId, "section"),
+    requirement: entityId("requirement", applicationId, "requirement"),
+    capability: entityId("capability", applicationId, "capability"),
+    workflow: entityId("workflow", applicationId, "workflow"),
+    step: entityId("flow-step", applicationId, "step"),
+    element: entityId("ui-element", applicationId, "element"),
+    endpoint: entityId("api-endpoint", applicationId, "endpoint"),
+    symbol: entityId("code-symbol", applicationId, "symbol"),
+    coverage: entityId("coverage-assessment", applicationId, "coverage"),
   }
   const provenance = { sourceKind: "system", observedAt: timestamp }
   const wrap = (kind: string, fact: Readonly<Record<string, unknown>>) => ({
@@ -118,7 +142,7 @@ export function createGraphPublicationFixture(input: {
     wrap("ui-element", {
       id: ids.element,
       applicationId,
-      screenId: stableId("screen", applicationId, "screen"),
+      screenId: entityId("screen", applicationId, "screen"),
       role: "button",
       accessibleName: "Submit order",
       contextFingerprint: `sha256:${"4".repeat(64)}`,
