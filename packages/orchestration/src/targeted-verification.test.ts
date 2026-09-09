@@ -409,6 +409,33 @@ describe("verifyPullRequestGraph", () => {
     expect(test.calls).toContain(`cleanup:${mission.mission.id}`)
   })
 
+  it("cleans trusted fixture setup when browser execution fails", async () => {
+    const original = fixtureMissionPlan()
+    const mission = verificationMissionPlanSchema.parse({
+      ...original,
+      setup: {
+        method: "trusted_fixture_api",
+        classification: "outside_blast_radius",
+        reference: "Create event fixture",
+        relatedEntityIds: [],
+        cleanupReference: "Delete event fixture",
+      },
+    })
+    const test = harness({
+      missionEvidence: () => {
+        throw new Error("browser execution failed")
+      },
+    })
+
+    await expect(
+      test.service.start(
+        fixtureStartInput(fixturePlan({ missions: [mission] }))
+      )
+    ).rejects.toThrow("Orchestration node failed")
+    expect(test.calls).toContain(`cleanup:${mission.mission.id}`)
+    expect(test.published).toHaveLength(0)
+  })
+
   it("uses a failed control to block environment attribution", async () => {
     const affected = fixtureMissionPlan()
     const control = fixtureMissionPlan({
