@@ -40,3 +40,20 @@
 | 2026-09-08 | Reclaim expired leases with the same run and LangGraph thread; only an operator retry of a retryable terminal failure creates a linked run.                  | Crash recovery continues a durable checkpoint, while explicit retries remain separately auditable.                   |
 | 2026-09-08 | Require a six-entry injected graph registry with start, continue, and resume operations instead of using the synthetic graph as a production implementation. | Domain root graphs arrive in later tickets; the worker must fail composition rather than execute a misleading stub.  |
 | 2026-09-08 | Store bounded interrupt prompts/responses and accept one owner-authorized response, with identical repeats idempotent and contradictory repeats conflicting. | Human review must survive restart without permitting a response to be changed after checkpoint resume is scheduled.  |
+
+## SNT-026 GitHub App Webhooks and Checks
+
+- [x] Define strict webhook, assessment trigger, check lifecycle, response, and least-privilege App contracts.
+- [x] Implement raw-body authentication, GitHub App token management, PR resolution, and Checks API operations.
+- [x] Enqueue deliveries, immutable-head assessments, runs, supersession, and check binding transactionally.
+- [x] Expose and verify shared signed-webhook and operator-authenticated manual assessment routes.
+
+SNT-026 implementation, QA, clean-database migration verification, and production builds are complete.
+
+| Date       | Decision                                                                                                          | Reason                                                                                                               |
+| ---------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| 2026-09-09 | Verify the exact bounded webhook bytes before parsing and use the GitHub delivery GUID as the durable replay key. | Authentication and idempotency must precede all assessment side effects.                                             |
+| 2026-09-09 | Cache repository-scoped installation tokens generated from short-lived RS256 App JWTs.                            | App automation needs only Contents read, Pull requests read, and Checks write, without personal tokens.              |
+| 2026-09-09 | Enqueue delivery, immutable head, supersession, cancellation, and worker run in one PostgreSQL function.          | Concurrent and out-of-order deliveries cannot rely on process locks or overwrite the current head.                   |
+| 2026-09-09 | Bind checks to assessment ID plus head SHA and recover partial creation through a short lease and external ID.    | GitHub side effects are not transactional with PostgreSQL, so retry must discover prior success without duplication. |
+| 2026-09-09 | Confirm signed webhook heads against current GitHub PR metadata before transactional enqueue.                     | Provider timestamps alone cannot totally order delayed deliveries that share timestamp resolution.                   |

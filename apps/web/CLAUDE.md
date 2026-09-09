@@ -15,6 +15,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - `lib/operator-auth.ts` - constant-time Basic/Bearer token verification.
 - `lib/run-control.ts` - owner-scoped run command/read service and readiness projection.
 - `app/api/control/[[...path]]/route.ts` - authenticated run control HTTP boundary.
+- `lib/github-assessments.ts` - shared signed-webhook/manual PR assessment and check synchronization service.
+- `app/api/github/[[...path]]/route.ts` - raw webhook and operator-authenticated manual PR HTTP boundary.
 
 ## Conventions
 
@@ -22,7 +24,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Treat every Server Action as a public endpoint and authorize it independently.
 - Treat every Route Handler operation as a public endpoint, authorize it independently, and return private/no-store public DTOs.
 - Keep fixture authorization bypass unavailable when `NODE_ENV=production`.
-- Import the focused `@sentinel/adapters/onboarding` server subpath, not the adapters root.
+- Import focused `@sentinel/adapters/onboarding` or `@sentinel/adapters/github-app` server subpaths, not the adapters root.
+- Verify webhook signatures over exact bounded bytes before parsing or invoking storage.
 - Return `OnboardingActionState`; never reflect credential or storage-state values.
 - Keep operational UI compact, responsive, keyboard accessible, and on existing theme tokens.
 - Colocate web tests and keep full browser flows under `tests/browser`.

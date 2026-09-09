@@ -3,6 +3,7 @@
 - `src/onboarding-repository.ts` - owner-scoped onboarding persistence and public projection.
 - `src/secret-service.ts` - Supabase Vault reference lifecycle.
 - `src/run-repository.ts` - owner-scoped run commands, leases, interrupts, and paginated history.
+- `src/github-assessment-repository.ts` - transactional delivery, immutable-head run, supersession, and check ownership state.
 - `src/database.ts` - server-only Postgres client and transaction port.
 - `src/source-repository.ts` - normalized source status persistence.
 - `src/run-repository.ts` - lease-safe runs and idempotent ordered events.
@@ -15,6 +16,7 @@
 - Store only opaque target-secret references in ordinary tables and DTOs.
 - Protect delayed inspection and confirmation with compare-and-set fingerprints.
 - Keep run idempotency, active mutation exclusion, retry linkage, interrupt response, typed terminal publication, and application status transitions inside database functions.
+- Keep webhook replay, PR-head supersession, run cancellation, and check compare-and-set ownership inside database functions.
 - Project fixed public failure messages; never return request JSON, idempotency keys, leases, or database/provider error text.
 - Preserve current graph identity on failed or stale configuration changes.
 - Use scripted database unit tests and opt-in disposable Supabase integration tests.
