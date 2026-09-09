@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "allowedLicenses": [
+    "(MIT OR Apache2)",
+    "(MIT OR CC0-1.0)",
+    "(MPL-2.0 OR Apache-2.0)",
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 AND LGPL-3.0-or-later",
+    "BlueOak-1.0.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC-BY-4.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "Python-2.0",
+    "Unlicense"
+  ],
+  "licenseExceptions": [
+    {
+      "package": "khroma",
+      "version": "2.1.0",
+      "reportedLicense": "Unknown",
+      "source": "https://github.com/fabiospampinato/khroma",
+      "rationale": "Transitive Mermaid color utility used only to render repository-authored diagrams; package metadata omits the repository's license declaration.",
+      "expiresOn": "2026-10-09"
+    },
+    {
+      "package": "map-stream",
+      "version": "0.1.0",
+      "reportedLicense": "Unknown",
+      "source": "https://github.com/dominictarr/map-stream",
+      "rationale": "Transitive Crawlee process-tree utility; Sentinel does not expose it as a library or distribute a modified copy. Replace when Crawlee removes the legacy dependency.",
+      "expiresOn": "2026-10-09"
+    }
+  ],
+  "dependencyExceptions": [
+    {
+      "advisory": "GHSA-vwc7-r8mq-g2x9",
+      "package": "adm-zip",
+      "severity": "moderate",
+      "source": "https://github.com/advisories/GHSA-vwc7-r8mq-g2x9",
+      "rationale": "No patched adm-zip release exists as of review. The package is transitive browser-header generation data; Sentinel never calls it to extract target repositories or uploaded archives, and target source is fetched as bounded Git objects.",
+      "expiresOn": "2026-10-09"
+    },
+    {
+      "advisory": "GHSA-528h-pc64-c93x",
+      "package": "stream-json",
+      "severity": "moderate",
+      "source": "https://github.com/advisories/GHSA-528h-pc64-c93x",
+      "rationale": "Crawlee 3.18.1 requires stream-json 1.x. Sentinel does not call the affected filter primitives on attacker-controlled nested JSON and independently caps documentation bytes/pages/time. A forced 3.x override would cross an unverified major API boundary.",
+      "expiresOn": "2026-10-09"
+    }
+  ],
+  "secretExceptions": [
+    {
+      "path": "packages/adapters/src/source/github/github-app.test.ts",
+      "fingerprint": "sha256:c7c3cccf7a84750fe1a5c2d02e05769c9ad2a38b0abe1cdf448742a78e2e0ef8",
+      "rationale": "Exact synthetic GitHub token used to verify installation-token redaction; it is not a valid credential.",
+      "expiresOn": "2026-10-09"
+    },
+    {
+      "path": "packages/adapters/src/source/github/github-app.test.ts",
+      "fingerprint": "sha256:bffdff569dc87a5b8ab8099e34976841f1b95550ba89462dd8bc6deb306a3597",
+      "rationale": "Exact synthetic token prefix used to generate deterministic token-refresh fixtures; it is not a valid credential.",
+      "expiresOn": "2026-10-09"
+    },
+    {
+      "path": "packages/adapters/src/source/github/metadata.test.ts",
+      "fingerprint": "sha256:ad54c87edc9d24b3ebd7f96c7a28b5655129b0484eb9cdbe9d9f0b07e606c60d",
+      "rationale": "Exact synthetic GitHub token used to test metadata error redaction; it is not a valid credential.",
+      "expiresOn": "2026-10-09"
+    },
+    {
+      "path": "packages/adapters/src/source/typescript/identity.test.ts",
+      "fingerprint": "sha256:6ca48be36f9404cdda6f2e7b216ce52f1f77e235a873f158a1d02531c15b36ac",
+      "rationale": "Exact synthetic GitHub token used to test source identity redaction; it is not a valid credential.",
+      "expiresOn": "2026-10-09"
+    },
+    {
+      "path": "packages/contracts/src/contracts.test.ts",
+      "fingerprint": "sha256:d54ed190cb754778e27cf4e45778079764574337551263a63645506daf8a5a91",
+      "rationale": "Private-key header without key material is a fixed redaction test vector, not a usable key.",
+      "expiresOn": "2026-10-09"
+    },
+    {
+      "path": "packages/contracts/src/contracts.test.ts",
+      "fingerprint": "sha256:f77216669d111a4a33ceb8463e4fad6613990e2d1e5f17b085d60dad2c016066",
+      "rationale": "OpenSSH private-key header without key material is a fixed redaction test vector, not a usable key.",
+      "expiresOn": "2026-10-09"
+    },
+    {
+      "path": "packages/contracts/src/contracts.test.ts",
+      "fingerprint": "sha256:359e8402649ebbc417f351b8d2be3604c942d63e392605d7a027fcca68a24dcc",
+      "rationale": "Exact AWS-shaped alphabetic test vector verifies redaction and is not a provisioned credential.",
+      "expiresOn": "2026-10-09"
+    }
+  ]
+}
