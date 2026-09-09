@@ -51,6 +51,10 @@ jobs:
             command: pnpm security
             php: false
             playwright: false
+          - name: delivery
+            command: pnpm delivery:check
+            php: false
+            playwright: false
     steps:
       - uses: actions/checkout@v4
 

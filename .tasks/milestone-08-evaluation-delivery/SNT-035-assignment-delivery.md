@@ -1,12 +1,12 @@
 # SNT-035 — README, design document, sample output, and Loom preparation
 
-| Field | Value |
-|---|---|
-| Milestone | M8 — Evaluation, hardening, and assignment delivery |
-| Status | `not-started` |
-| Depends on | SNT-029, SNT-033, SNT-034 |
-| Blocks | Submission |
-| PRD references | §22–§24, FR-020, assignment Deliverables |
+| Field          | Value                                               |
+| -------------- | --------------------------------------------------- |
+| Milestone      | M8 — Evaluation, hardening, and assignment delivery |
+| Status         | `done`                                              |
+| Depends on     | SNT-029, SNT-033, SNT-034                           |
+| Blocks         | Submission                                          |
+| PRD references | §22–§24, FR-020, assignment Deliverables            |
 
 ## Background
 
@@ -24,16 +24,16 @@ Code and design document are weighted equally. The final issue turns the verifie
 
 ## Implementation tasks
 
-- [ ] Write end-to-end README for web, worker, Supabase, Neo4j Aura, Azure, GitHub App, target sources, and optional preview.
-- [ ] Include exact default-safe versus opt-in live test commands.
-- [ ] Produce design document covering agent decomposition, graph schema/absence, ambiguity/confidence, eval, cuts, and next-week priorities.
-- [ ] Include architecture, specialist/reconciliation, graph schema, and PR sequence diagrams.
-- [ ] Generate and commit sanitized sample report for the chosen real PR.
-- [ ] Record actual evaluation results and limitations; remove placeholders/unsupported claims.
-- [ ] Prepare a 5–10 minute Loom sequence and fallback prerecorded evidence/screenshots if an external provider is temporarily unavailable.
-- [ ] Verify links, citations, commands, environment variable names, and no secrets.
-- [ ] Run clean-clone setup and full required checks.
-- [ ] Produce final submission checklist with repository/design/sample/Loom URLs.
+- [x] Write end-to-end README for web, worker, Supabase, Neo4j Aura, Azure, GitHub App, target sources, and optional preview.
+- [x] Include exact default-safe versus opt-in live test commands.
+- [x] Produce design document covering agent decomposition, graph schema/absence, ambiguity/confidence, eval, cuts, and next-week priorities.
+- [x] Include architecture, specialist/reconciliation, graph schema, and PR sequence diagrams.
+- [x] Generate and commit sanitized sample report for the chosen real PR.
+- [x] Record actual evaluation results and limitations; remove placeholders/unsupported claims.
+- [x] Prepare a 5–10 minute Loom sequence and fallback prerecorded evidence/screenshots if an external provider is temporarily unavailable.
+- [x] Verify links, citations, commands, environment variable names, and no secrets.
+- [x] Run clean-clone setup and full required checks.
+- [x] Produce final submission checklist with repository/design/sample/Loom URLs.
 
 ## Acceptance criteria
 
@@ -60,4 +60,45 @@ Marketing site, production operations handbook, fabricated performance/eval numb
 
 ## Implementation notes
 
-_Populate during implementation with final paths, commands, decisions, test evidence, and any explicitly deferred acceptance item._
+Completed on 2026-09-09.
+
+- Expanded `README.md` into the reproducible review path, provider setup and
+  teardown reference, safe/default versus opt-in live commands, and focused demo
+  navigation. Added the missing live configuration names to `.env.example`.
+- Added the assignment-length `DESIGN.md`, four source Mermaid diagrams, and the
+  accessible standalone `docs/delivery/diagrams.html`. The diagram artifact uses
+  the repository's white/ink/green/gray tokens and intentionally collapses
+  low-level parser, storage, and retry branches documented in prose.
+- Added a strict sanitized source fixture for public Hi.Events PR #1338 and a
+  generator that renders `docs/delivery/sample-report-hi-events-pr-1338.md`
+  through the production report renderer. The report uses the exact public
+  base/head identities and does not embed private artifacts or provider output.
+- Added `docs/delivery/loom-script.md`, four captured fixture screenshots,
+  attribution, and `docs/delivery/submission-checklist.md`. Recording, uploading,
+  and inserting the Loom share URL remain explicit human submission actions.
+- Reconciled the package after SNT-029, SNT-031, and SNT-032 merged. Report
+  delivery, trusted-head verification, and incremental refresh are implemented;
+  the sample remains `verification_unavailable` because no trusted external
+  PR-head deployment was registered or exercised.
+- Added the delivery Vitest project, real Mermaid parsing, local-link and command
+  checks, schema/renderer drift checks, screenshot validation, diagram
+  accessibility checks, and a CI delivery job.
+- Clean-copy proof of the committed delivery state: `pnpm install --frozen-lockfile`,
+  `pnpm delivery:check` (8 tests), `pnpm security` (11 tests plus dependency,
+  license, secret, and evaluation drift gates), orchestration/web/tools focused
+  type checks, and an isolated Supabase 2.117.0 start/reset through all 10
+  migrations passed. `pnpm demo:web` served `/`, `/runs`, `/knowledge`, and the
+  fixture assessment report with HTTP 200 on an isolated port.
+- Additional focused report API/component/activity coverage passed (15 tests),
+  the targeted Chromium report/print flow passed, the diagram self-check passed,
+  scoped ESLint passed, and `git diff --check` passed.
+  Full format, lint, build, unit, integration, agent, graph, browser, security,
+  and delivery matrices remain owned by `.github/workflows/ci.yml` and are
+  recorded after the final pull request completes.
+- The requested `/review` found that the report fixture still used synthetic
+  checkout findings and redirected Markdown to a reserved placeholder host.
+  Fixture mode now parses the canonical JSON through the sample-view builder,
+  serves its generated Markdown as a local attachment, and retains production
+  signed redirects as a distinct service result. Focused API/component coverage
+  was expanded and the report fallback screenshot was recaptured from the fixed
+  dashboard. The same reviewer rechecked both findings and returned `PASS`.

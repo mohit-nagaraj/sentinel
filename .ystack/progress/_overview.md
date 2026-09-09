@@ -2,22 +2,19 @@
 
 ## Module Status
 
-| Module               | Done | Total | Status      |
-| -------------------- | ---- | ----- | ----------- |
-| Control plane        | 3    | 3     | complete    |
-| Specialist agents    | 3    | 4     | in-progress |
-| Graph reconciliation | 4    | 4     | complete    |
-| PR impact            | 3    | 3     | complete    |
-| Dynamic verification | 3    | 3     | complete    |
-| Evaluation           | 1    | 1     | complete    |
-| Security hardening   | 1    | 1     | complete    |
+| Module               | Done | Total | Status   |
+| -------------------- | ---- | ----- | -------- |
+| Control plane        | 4    | 4     | complete |
+| Specialist agents    | 4    | 4     | complete |
+| Graph reconciliation | 4    | 4     | complete |
+| PR impact            | 4    | 4     | complete |
+| Dynamic verification | 3    | 3     | complete |
+| Evaluation           | 1    | 1     | complete |
+| Security hardening   | 1    | 1     | complete |
+| Assignment delivery  | 1    | 1     | complete |
 
-## Ready Front
+## Completion Summary
 
-SNT-022, SNT-023, and SNT-026 provide verified onboarding, durable run control, and GitHub pull-request triggering. SNT-018 through SNT-021 now provide validated evidence linking, bounded reconciliation, scoped absence semantics, and atomic current-graph publication with bounded evidence queries.
-SNT-027 adds the checkpointed PR investigation workflow and unblocks deterministic blast-radius scoring in SNT-028.
-SNT-028 adds deterministic explainable blast-radius scoring and unblocks report delivery in SNT-029.
-SNT-029 adds immutable evidence-grounded reports, private dashboard delivery, concise GitHub checks, and print-ready QA output.
-SNT-030 through SNT-032 add trusted deployment planning, deterministic targeted verification with report enrichment, and incremental graph refresh.
-SNT-033 adds the sanitized Hi.Events PR #1338 golden dataset, deterministic stage/trajectory metrics, 100-run harness, paid-run gate, and QA-lead report rubric.
-SNT-034 adds the threat/fault model, malicious boundary matrix, dependency remediation, and deterministic CI security policy gates.
+All 35 repository issues are complete. SNT-029 through SNT-032 provide grounded report delivery, trusted deployment planning, deterministic targeted verification, and incremental graph refresh. SNT-033 and SNT-034 provide the golden evaluation harness plus security and resilience gates. SNT-035 packages the clean-copy review path, design document, real-PR sample, diagrams, fallback screenshots, and Loom plan.
+
+The only remaining assignment actions are human: record and publish the Loom, add its URL to the submission checklist, verify public access, and send the submission. The committed sample remains `verification_unavailable` because no trusted PR-head deployment was registered for that run.

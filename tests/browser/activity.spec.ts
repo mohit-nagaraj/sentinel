@@ -139,7 +139,7 @@ test("streams a parallel run, resumes safely, and reconstructs its storyboard", 
   await expect(
     page.getByRole("heading", {
       level: 1,
-      name: "Rework UTM attribution tracking and admin report",
+      name: "Rework UTM attribution tracking and admin attribution report",
     })
   ).toBeVisible({ timeout: 20_000 })
   await page.goBack()

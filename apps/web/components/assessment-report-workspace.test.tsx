@@ -28,6 +28,14 @@ async function fixtureReport() {
   return report
 }
 
+async function fixtureReportWithArtifact() {
+  const report = structuredClone(await fixtureReport())
+  const reference = report.findings[0]?.evidencePaths[0]?.references[0]
+  if (reference === undefined) throw new Error("missing fixture evidence")
+  reference.artifactIds = [REPORT_FIXTURE_EVIDENCE_ARTIFACT_ID]
+  return report
+}
+
 beforeEach(() => vi.unstubAllGlobals())
 afterEach(() => cleanup())
 
@@ -38,7 +46,7 @@ describe("assessment report workspace", () => {
     expect(
       screen.getByRole("heading", {
         level: 1,
-        name: "Rework UTM attribution tracking and admin report",
+        name: "Rework UTM attribution tracking and admin attribution report",
       })
     ).toBeInTheDocument()
     for (const heading of [
@@ -85,9 +93,9 @@ describe("assessment report workspace", () => {
         document.body
     )
     expect(
-      screen.getByRole("link", {
-        name: /github.com\/HiEventsDev\/hi.events\/blob/,
-      })
+      screen.getAllByRole("link", {
+        name: /github.com\/HiEventsDev\/Hi.Events\/blob\/.+\/frontend\/src\/components\/routes\/admin\/Attribution\/index\.tsx/,
+      })[0]
     ).toHaveAttribute("rel", "noreferrer")
   })
 
@@ -107,7 +115,9 @@ describe("assessment report workspace", () => {
         )
       })
     )
-    render(<AssessmentReportWorkspace report={await fixtureReport()} />)
+    render(
+      <AssessmentReportWorkspace report={await fixtureReportWithArtifact()} />
+    )
 
     fireEvent.click(
       screen.getAllByText(/Evidence path/)[0]?.closest("summary") ??
@@ -121,7 +131,9 @@ describe("assessment report workspace", () => {
       name: "Private evidence excerpt",
     })
     expect(
-      within(dialog).getByText(/OrderService.submit validates attribution/)
+      within(dialog).getByText(
+        /AccountAttributionRepository groups attribution statistics/
+      )
     ).toBeInTheDocument()
     expect(dialog.querySelector("script")).toBeNull()
 
@@ -135,7 +147,9 @@ describe("assessment report workspace", () => {
       "fetch",
       vi.fn().mockResolvedValue(new Response(null, { status: 404 }))
     )
-    render(<AssessmentReportWorkspace report={await fixtureReport()} />)
+    render(
+      <AssessmentReportWorkspace report={await fixtureReportWithArtifact()} />
+    )
 
     fireEvent.click(
       screen.getAllByText(/Evidence path/)[0]?.closest("summary") ??

@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "reportKind": "reference_fixture",
+  "generatedAt": "2026-09-09T12:00:00.000Z",
+  "assessment": {
+    "repository": "HiEventsDev/Hi.Events",
+    "pullRequest": 1338,
+    "pullRequestUrl": "https://github.com/HiEventsDev/Hi.Events/pull/1338",
+    "title": "Rework UTM attribution tracking and admin attribution report",
+    "baseSha": "2064f88ff7590e93c738efb8becaa7d732063619",
+    "headSha": "f68df0dabd18d04df5e6c7e873aac2b5e5201584",
+    "changedFiles": 56,
+    "additions": 2232,
+    "deletions": 1238,
+    "graphRevision": 3,
+    "verificationStatus": "verification_unavailable"
+  },
+  "summary": {
+    "overallRisk": "high",
+    "headline": "Admin attribution analytics needs focused regression testing before release.",
+    "explanation": "The pull request changes the attribution screen, request parameters, validation, aggregation, classification, and revenue presentation across the React and Laravel stack. The reviewed evidence supports impact to the admin attribution workflow; it does not establish a production regression."
+  },
+  "affectedAreas": [
+    {
+      "id": "area:attribution-filters",
+      "title": "Date and grouping filters",
+      "audienceSummary": "Administrators may see missing, stale, or incorrectly grouped rows when switching date periods or attribution dimensions.",
+      "risk": "high",
+      "changedBehavior": "The screen adds preset and custom UTC date ranges and expands grouping from four to seven dimensions. The backend now validates those query values before aggregation.",
+      "evidenceIds": [
+        "evidence:pr-metadata",
+        "evidence:attribution-ui-diff",
+        "evidence:request-validation-diff",
+        "evidence:golden-fixture"
+      ],
+      "evidencePath": [
+        "PR #1338",
+        "Attribution React route",
+        "GET admin attribution endpoint",
+        "validated request",
+        "stats handler",
+        "admin attribution workflow",
+        "filter/group requirements"
+      ],
+      "recommendedTests": [
+        "Switch through 24 hours, 7 days, 30 days, 90 days, and all time; confirm results and page reset are consistent.",
+        "Choose a custom range at day boundaries and confirm the request uses the intended UTC start and end.",
+        "Exercise source, medium, campaign, content, term, CTA, and source type grouping; confirm each label and total.",
+        "Send an end date before the start date and unsupported grouping values; confirm a clear validation response and no stale table data."
+      ]
+    },
+    {
+      "id": "area:revenue-aggregation",
+      "title": "Revenue by currency",
+      "audienceSummary": "Revenue totals are no longer one assumed USD value; rows can show several currencies, so missing or merged currency totals would mislead administrators.",
+      "risk": "high",
+      "changedBehavior": "The API response changes from total_revenue to revenue_by_currency and the UI renders one formatted amount per returned currency.",
+      "evidenceIds": [
+        "evidence:admin-client-diff",
+        "evidence:attribution-ui-diff",
+        "evidence:repository-diff"
+      ],
+      "evidencePath": [
+        "PR #1338",
+        "account attribution repository",
+        "stats handler",
+        "admin API client",
+        "revenue cell"
+      ],
+      "recommendedTests": [
+        "Use fixture accounts with orders in two currencies and confirm each currency appears separately with the correct amount.",
+        "Confirm a row with no revenue displays an intentional empty state rather than USD zero.",
+        "Change grouping and pagination while multi-currency rows are visible; confirm totals do not move between attribution values."
+      ]
+    },
+    {
+      "id": "area:source-classification",
+      "title": "Paid, organic, referral, and unattributed classification",
+      "audienceSummary": "Account-source categories and summary cards may shift because classification and historical attribution data are reworked.",
+      "risk": "medium",
+      "changedBehavior": "The pull request introduces a source classifier, changes account creation attribution handling, and includes a data reclassification migration.",
+      "evidenceIds": [
+        "evidence:classifier-diff",
+        "evidence:repository-diff",
+        "evidence:pr-metadata"
+      ],
+      "evidencePath": [
+        "PR #1338",
+        "account creation handler",
+        "source classifier",
+        "attribution repository",
+        "summary cards"
+      ],
+      "recommendedTests": [
+        "Create representative paid, organic, referral, and unattributed accounts and confirm exactly one category per account.",
+        "Compare summary cards with the paginated table for the same date range.",
+        "Run the migration on a disposable copy and compare category totals before and after; retain the migration log privately."
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "id": "control:ticket-checkout",
+      "title": "Ticket checkout order creation",
+      "reason": "The reviewed attribution evidence path does not traverse the public order-creation workflow. Keep one checkout smoke as an environment control; this is not a claim that checkout has zero risk.",
+      "evidenceIds": ["evidence:golden-fixture"]
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "unknown:trusted-head-deployment",
+      "title": "PR-head runtime behavior was not verified",
+      "consequence": "No trusted Render deployment registration for the exact head SHA was supplied, so Sentinel cannot claim the changed filters or aggregation ran successfully in a browser.",
+      "operatorAction": "Register and attest a disposable PR-head deployment, then run the bounded affected scenarios and one checkout control."
+    },
+    {
+      "id": "unknown:published-graph",
+      "title": "This reference report is not an active graph publication",
+      "consequence": "The report is generated from the committed human-reviewed golden fixture and public diff metadata, not a persisted Neo4j assessment run.",
+      "operatorAction": "Use this artifact to review report shape; do not use its risk labels as production release evidence."
+    },
+    {
+      "id": "unknown:product-documentation",
+      "title": "Authoritative product requirements are limited",
+      "consequence": "The public PR diff describes implementation changes, but a separately approved product specification for every attribution behavior was not available.",
+      "operatorAction": "Have a product owner confirm the expected date, grouping, classification, and currency behavior before treating those statements as acceptance criteria."
+    }
+  ],
+  "evidence": [
+    {
+      "id": "evidence:pr-metadata",
+      "kind": "public_pr",
+      "uri": "https://github.com/HiEventsDev/Hi.Events/pull/1338",
+      "description": "Public pull-request identity, immutable base/head commits, file count, and change summary."
+    },
+    {
+      "id": "evidence:attribution-ui-diff",
+      "kind": "public_diff",
+      "uri": "https://github.com/HiEventsDev/Hi.Events/blob/f68df0dabd18d04df5e6c7e873aac2b5e5201584/frontend/src/components/routes/admin/Attribution/index.tsx",
+      "description": "React attribution screen with date periods, custom range, grouping controls, summary cards, and currency rendering."
+    },
+    {
+      "id": "evidence:admin-client-diff",
+      "kind": "public_diff",
+      "uri": "https://github.com/HiEventsDev/Hi.Events/blob/f68df0dabd18d04df5e6c7e873aac2b5e5201584/frontend/src/api/admin.client.ts",
+      "description": "Frontend response and grouping types for attribution stats."
+    },
+    {
+      "id": "evidence:request-validation-diff",
+      "kind": "public_diff",
+      "uri": "https://github.com/HiEventsDev/Hi.Events/blob/f68df0dabd18d04df5e6c7e873aac2b5e5201584/backend/app/Http/Request/Admin/GetUtmAttributionStatsRequest.php",
+      "description": "Laravel validation for grouping, date range, pagination, and page size."
+    },
+    {
+      "id": "evidence:repository-diff",
+      "kind": "public_diff",
+      "uri": "https://github.com/HiEventsDev/Hi.Events/blob/f68df0dabd18d04df5e6c7e873aac2b5e5201584/backend/app/Repository/Eloquent/AccountAttributionRepository.php",
+      "description": "Attribution statistics, summaries, grouping, and revenue aggregation."
+    },
+    {
+      "id": "evidence:classifier-diff",
+      "kind": "public_diff",
+      "uri": "https://github.com/HiEventsDev/Hi.Events/blob/f68df0dabd18d04df5e6c7e873aac2b5e5201584/backend/app/Services/Domain/Account/AttributionSourceClassifier.php",
+      "description": "Domain classification of attribution sources."
+    },
+    {
+      "id": "evidence:golden-fixture",
+      "kind": "golden_fixture",
+      "uri": "../../packages/evaluation/fixtures/hi-events-pr-1338.golden.json",
+      "description": "Sanitized human-reviewed labels for expected facts, links, paths, unknowns, controls, and trajectories."
+    }
+  ],
+  "limitations": [
+    "This is deterministic reference output from the SNT-033 golden fixture, not a live model, browser, database, or Neo4j run.",
+    "The product report pipeline and incremental refresh are implemented; this committed sample uses deterministic fallback wording rather than a persisted live assessment.",
+    "Targeted verification is implemented, but no trusted PR-head deployment was registered or exercised for this sample, so verification remains unavailable.",
+    "No private screenshot, trace, credential, signed artifact URL, or production data is embedded.",
+    "Risk labels prioritize the reviewed narrow slice and are not calibrated probabilities or a declaration that the pull request is unsafe."
+  ]
+}

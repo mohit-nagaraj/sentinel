@@ -13,6 +13,7 @@
   "include": [
     "playwright.config.ts",
     "tests/**/*.ts",
+    "tools/delivery/**/*.ts",
     "tools/security/**/*.ts",
     "vitest.config.ts"
   ]

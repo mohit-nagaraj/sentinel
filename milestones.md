@@ -171,41 +171,38 @@ graph LR
 
 **Exit gate:** Clean setup succeeds from the README; full CI/regression/eval suite passes; the selected PR report is reproducible; mandatory assignment questions are answered; remaining limitations and next-week priorities are explicit.
 
-| ID      | Issue                                                                                                                                    | Depends on                                  | Status      |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ----------- |
-| SNT-033 | [Golden dataset and stage/trajectory evaluation harness](./.tasks/milestone-08-evaluation-delivery/SNT-033-evaluation-harness.md)        | SNT-015, SNT-016, SNT-017, SNT-019, SNT-028 | done        |
-| SNT-034 | [Security, resilience, and regression hardening](./.tasks/milestone-08-evaluation-delivery/SNT-034-security-resilience-hardening.md)     | SNT-026, SNT-029, SNT-031, SNT-032, SNT-033 | done        |
-| SNT-035 | [README, design document, sample output, and Loom preparation](./.tasks/milestone-08-evaluation-delivery/SNT-035-assignment-delivery.md) | SNT-029, SNT-033, SNT-034                   | not-started |
+| ID      | Issue                                                                                                                                    | Depends on                                  | Status |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ------ |
+| SNT-033 | [Golden dataset and stage/trajectory evaluation harness](./.tasks/milestone-08-evaluation-delivery/SNT-033-evaluation-harness.md)        | SNT-015, SNT-016, SNT-017, SNT-019, SNT-028 | done   |
+| SNT-034 | [Security, resilience, and regression hardening](./.tasks/milestone-08-evaluation-delivery/SNT-034-security-resilience-hardening.md)     | SNT-026, SNT-029, SNT-031, SNT-032, SNT-033 | done   |
+| SNT-035 | [README, design document, sample output, and Loom preparation](./.tasks/milestone-08-evaluation-delivery/SNT-035-assignment-delivery.md) | SNT-029, SNT-033, SNT-034                   | done   |
 
 ---
 
 ## Global progress
 
-| Milestone                                |   Done |  Total | Status          |
-| ---------------------------------------- | -----: | -----: | --------------- |
-| M1 Foundation and durable execution      |      6 |      6 | done            |
-| M2 Deterministic source evidence         |      7 |      7 | done            |
-| M3 Specialist discovery agents           |      4 |      4 | done            |
-| M4 Graph construction and reconciliation |      4 |      4 | done            |
-| M5 Onboarding and control plane          |      4 |      4 | done            |
-| M6 PR blast-radius loop                  |      1 |      4 | in-progress     |
-| M7 Verification and refresh              |      2 |      3 | in-progress     |
-| M8 Evaluation and delivery               |      2 |      3 | in-progress     |
-| **Overall**                              | **30** | **35** | **in-progress** |
+| Milestone                                |   Done |  Total | Status   |
+| ---------------------------------------- | -----: | -----: | -------- |
+| M1 Foundation and durable execution      |      6 |      6 | done     |
+| M2 Deterministic source evidence         |      7 |      7 | done     |
+| M3 Specialist discovery agents           |      4 |      4 | done     |
+| M4 Graph construction and reconciliation |      4 |      4 | done     |
+| M5 Onboarding and control plane          |      4 |      4 | done     |
+| M6 PR blast-radius loop                  |      4 |      4 | done     |
+| M7 Verification and refresh              |      3 |      3 | done     |
+| M8 Evaluation and delivery               |      3 |      3 | done     |
+| **Overall**                              | **35** | **35** | **done** |
 
-## Active front
+## Completion summary
 
-- M1 through M5 are complete, including Documentation Explorer, graph publication, and the knowledge review UI.
-- SNT-026 is done; GitHub App credentials are configured, but the webhook URL still needs to be saved in GitHub.
-- SNT-027 is the next implementation issue: PR investigation against the published graph.
-- SNT-030 selects Render Blueprint previews and implements trusted deployment validation plus bounded verification planning.
+- M1 through M8 and all 35 implementation issues are complete.
+- The deterministic clean-copy demo, design document, real-PR sample report, evaluation evidence, security gates, and Loom recording plan are packaged for review.
+- Provider-backed tests remain opt-in. The sample truthfully reports `verification_unavailable` because no trusted PR-head deployment was registered for that run.
 
-## Next ready fronts after dependencies complete
+## Remaining human submission actions
 
-- **SNT-027** is `ready` now that SNT-013, SNT-016, SNT-019, SNT-021, and SNT-026 are done.
-- After **SNT-027**: SNT-028 (blast-radius scoring) can start.
-- M6 report delivery and all M7 verification/refresh issues are complete.
-- **SNT-035** is ready after SNT-029, SNT-033, and SNT-034; it remains the final assignment-delivery issue.
+- Record and upload the 5-10 minute Loom using `docs/delivery/loom-script.md`.
+- Add the public Loom URL to `docs/delivery/submission-checklist.md`, verify all final URLs signed out, and send the assignment submission.
 
 ## Required regression gates
 

@@ -19,7 +19,7 @@ test("delivers an accessible operational report and a complete print document", 
   await expect(
     page.getByRole("heading", {
       level: 1,
-      name: "Rework UTM attribution tracking and admin report",
+      name: "Rework UTM attribution tracking and admin attribution report",
     })
   ).toBeVisible()
   await expect(
@@ -35,19 +35,15 @@ test("delivers an accessible operational report and a complete print document", 
     .first()
   await firstEvidence.focus()
   await page.keyboard.press("Enter")
-  const artifactButton = page.getByRole("button", {
-    name: /View private artifact excerpt/,
-  })
-  await artifactButton.focus()
-  await page.keyboard.press("Enter")
-  const dialog = page.getByRole("dialog", { name: "Private evidence excerpt" })
-  await expect(dialog).toContainText(
-    "OrderService.submit validates attribution",
-    { timeout: 20_000 }
+  await expect(
+    page.getByRole("link", {
+      name: /github.com\/HiEventsDev\/Hi.Events\/blob\/.+\/frontend\/src\/components\/routes\/admin\/Attribution\/index\.tsx/,
+    })
+  ).toBeVisible()
+  await expect(page.getByRole("link", { name: "Markdown" })).toHaveAttribute(
+    "href",
+    `/api/assessments/${assessmentId}/download`
   )
-  await page.keyboard.press("Escape")
-  await expect(dialog).toBeHidden()
-  await expect(artifactButton).toBeFocused()
 
   const delivered = await page.content()
   expect(delivered).not.toContain("The PR is safe")
@@ -80,8 +76,10 @@ test("delivers an accessible operational report and a complete print document", 
   await page.emulateMedia({ media: "print", colorScheme: "light" })
   await page.evaluate(() => window.dispatchEvent(new Event("beforeprint")))
   await expect(page.locator(".report-screen-only").first()).toBeHidden()
-  await expect(page.getByText("OrderController.create").first()).toBeVisible()
-  await expect(page.getByText(/Evidence caveats/)).toBeVisible()
+  await expect(page.getByText("Attribution React route").first()).toBeVisible()
+  await expect(
+    page.getByText("Date and grouping filters").first()
+  ).toBeVisible()
   await page.screenshot({
     path: testInfo.outputPath("assessment-report-print.png"),
     fullPage: true,

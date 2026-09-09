@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./report": "./src/report.ts",
     "./run-dispatch": "./src/run-dispatch.ts"
   },
   "scripts": {
