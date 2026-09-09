@@ -117,21 +117,35 @@ export function createRunRequestFingerprint(input: unknown): string {
   })
 }
 
-export const publicRunSchema = z.strictObject({
-  schemaVersion: schemaVersionSchema,
-  id: databaseRunIdSchema,
-  applicationId: databaseApplicationIdSchema,
-  type: runTypeSchema,
-  status: runStatusSchema,
-  attemptCount: z.number().int().nonnegative(),
-  retryOf: databaseRunIdSchema.optional(),
-  createdAt: timestampSchema,
-  startedAt: timestampSchema.optional(),
-  finishedAt: timestampSchema.optional(),
-  cancelRequestedAt: timestampSchema.optional(),
-  pauseRequestedAt: timestampSchema.optional(),
-  error: publicErrorSchema.optional(),
-})
+export const publicRunSchema = z
+  .strictObject({
+    schemaVersion: schemaVersionSchema,
+    id: databaseRunIdSchema,
+    applicationId: databaseApplicationIdSchema,
+    type: runTypeSchema,
+    status: runStatusSchema,
+    attemptCount: z.number().int().nonnegative(),
+    retryOf: databaseRunIdSchema.optional(),
+    assessmentId: z.uuid().optional(),
+    createdAt: timestampSchema,
+    startedAt: timestampSchema.optional(),
+    finishedAt: timestampSchema.optional(),
+    cancelRequestedAt: timestampSchema.optional(),
+    pauseRequestedAt: timestampSchema.optional(),
+    error: publicErrorSchema.optional(),
+  })
+  .superRefine((run, context) => {
+    if (
+      run.assessmentId !== undefined &&
+      (run.type !== "assess_pr" || run.status !== "succeeded")
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["assessmentId"],
+        message: "Only succeeded assessment runs expose a report identity",
+      })
+    }
+  })
 
 export const runCursorSchema = z.strictObject({
   createdAt: timestampSchema,

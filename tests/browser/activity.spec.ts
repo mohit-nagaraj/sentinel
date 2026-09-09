@@ -83,6 +83,13 @@ test("streams a parallel run, resumes safely, and reconstructs its storyboard", 
   })
   await expect(completed).toBeOK()
   await expect(page.getByText("Run completed.", { exact: false })).toBeVisible()
+  const reportLink = page.getByRole("link", {
+    name: "Open assessment report",
+  })
+  await expect(reportLink).toHaveAttribute(
+    "href",
+    "/assessments/00000000-0000-4000-8000-000000000029"
+  )
   await expect(
     page.getByText("Checkout review behavior reconciled", { exact: true })
   ).toBeVisible()
@@ -121,6 +128,21 @@ test("streams a parallel run, resumes safely, and reconstructs its storyboard", 
     path: testInfo.outputPath("activity-parallel-desktop.png"),
     fullPage: true,
   })
+
+  await Promise.all([
+    page.waitForURL("/assessments/00000000-0000-4000-8000-000000000029", {
+      timeout: 20_000,
+    }),
+    reportLink.click(),
+  ])
+  await expect(
+    page.getByRole("heading", {
+      level: 1,
+      name: "Rework UTM attribution tracking and admin report",
+    })
+  ).toBeVisible({ timeout: 20_000 })
+  await page.goBack()
+  await expect(page.getByText("Run completed.", { exact: false })).toBeVisible()
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.reload()

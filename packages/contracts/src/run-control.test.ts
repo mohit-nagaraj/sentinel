@@ -124,6 +124,36 @@ describe("run control contracts", () => {
     ).toThrow()
   })
 
+  it("exposes assessment identity only for a succeeded assessment run", () => {
+    const assessmentId = "00000000-0000-4000-8000-000000000029"
+    const completed = {
+      schemaVersion: 1,
+      id: "00000000-0000-4000-8000-000000000024",
+      applicationId,
+      type: "assess_pr",
+      status: "succeeded",
+      attemptCount: 0,
+      assessmentId,
+      createdAt: "2026-09-08T00:00:00.000Z",
+      finishedAt: "2026-09-08T00:01:00.000Z",
+    }
+
+    expect(publicRunSchema.parse(completed).assessmentId).toBe(assessmentId)
+    expect(
+      publicRunSchema.safeParse({ ...completed, assessmentId: undefined })
+        .success
+    ).toBe(true)
+    expect(
+      publicRunSchema.safeParse({ ...completed, status: "running" }).success
+    ).toBe(false)
+    expect(
+      publicRunSchema.safeParse({
+        ...completed,
+        type: "initialize_knowledge",
+      }).success
+    ).toBe(false)
+  })
+
   it("binds inspection publications to one bounded report fingerprint", () => {
     const fingerprint = `sha256:${"a".repeat(64)}`
     const evidence = {
