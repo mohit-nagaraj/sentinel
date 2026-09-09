@@ -23,9 +23,11 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react"
+import Link from "next/link"
 
 import {
   publicRunSchema,
+  publicRunInterruptSchema,
   runEventPageSchema,
   signedRunArtifactSchema,
   type PublicRun,
@@ -290,19 +292,28 @@ function BudgetPanel({
 function ScreenshotFrame({
   runId,
   item,
+  fixture,
 }: {
   readonly runId: string
   readonly item: ActivityViewModel
+  readonly fixture: boolean
 }) {
   const artifactId = item.screenshotArtifactId
   const [state, setState] = useState<
     | { readonly status: "loading" }
     | { readonly status: "ready"; readonly url: string }
     | { readonly status: "unavailable" }
-  >({ status: "loading" })
+  >(() =>
+    fixture && artifactId !== undefined
+      ? {
+          status: "ready",
+          url: `/api/control/fixture/screenshots/${encodeURIComponent(artifactId)}`,
+        }
+      : { status: "loading" }
+  )
 
   useEffect(() => {
-    if (artifactId === undefined) return
+    if (artifactId === undefined || fixture) return
     const controller = new AbortController()
     void fetch(
       `/api/control/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactId)}`,
@@ -327,7 +338,7 @@ function ScreenshotFrame({
         }
       })
     return () => controller.abort()
-  }, [artifactId, runId])
+  }, [artifactId, fixture, runId])
 
   return (
     <figure className="grid gap-2 border-b border-border pb-4 last:border-b-0 last:pb-0">
@@ -359,7 +370,7 @@ function ScreenshotFrame({
       <figcaption className="grid gap-1">
         <span className="text-xs font-medium break-words">{item.summary}</span>
         <span className="font-mono text-[0.6875rem] text-muted-foreground">
-          Event {item.sequence} · {eventTime(item.occurredAt)}
+          Event {item.sequence} / {eventTime(item.occurredAt)}
         </span>
       </figcaption>
     </figure>
@@ -406,6 +417,7 @@ export interface RunActivityWorkspaceProps {
   readonly initialEventPage: unknown
   readonly initialInterrupt?: PublicRunInterrupt | null
   readonly live?: boolean
+  readonly transport?: "realtime" | "fixture-poll"
 }
 
 export function RunActivityWorkspace({
@@ -413,9 +425,14 @@ export function RunActivityWorkspace({
   initialEventPage,
   initialInterrupt = null,
   live = true,
+  transport = "realtime",
 }: RunActivityWorkspaceProps) {
   const [run, setRun] = useState(() => publicRunSchema.parse(initialRun))
-  const [interrupt, setInterrupt] = useState(initialInterrupt)
+  const [interrupt, setInterrupt] = useState(() =>
+    initialInterrupt === null
+      ? null
+      : publicRunInterruptSchema.parse(initialInterrupt)
+  )
   const [activeLane, setActiveLane] = useState<ActivityLane>("documentation")
   const [busy, setBusy] = useState<ControlAction | null>(null)
   const [confirmStop, setConfirmStop] = useState(false)
@@ -477,9 +494,58 @@ export function RunActivityWorkspace({
         }
       },
     })
+    const refreshSnapshot = async () => {
+      const [runResponse, interruptResponse] = await Promise.all([
+        fetch(`/api/control/runs/${encodeURIComponent(run.id)}`, {
+          cache: "no-store",
+          credentials: "same-origin",
+          headers: { accept: "application/json" },
+        }),
+        fetch(`/api/control/runs/${encodeURIComponent(run.id)}/interrupt`, {
+          cache: "no-store",
+          credentials: "same-origin",
+          headers: { accept: "application/json" },
+        }),
+      ])
+      if (!runResponse.ok) throw new Error("run_refresh_failed")
+      setRun(publicRunSchema.parse(await runResponse.json()))
+      if (interruptResponse.status === 404) setInterrupt(null)
+      else if (interruptResponse.ok) {
+        setInterrupt(
+          publicRunInterruptSchema.parse(await interruptResponse.json())
+        )
+      } else throw new Error("interrupt_refresh_failed")
+    }
+    const synchronize = async () => {
+      await controller.wake()
+      await refreshSnapshot()
+    }
+    if (transport === "fixture-poll") {
+      const poll = () => {
+        void synchronize()
+          .then(() => {
+            if (!disposed) {
+              writeFeed(
+                activityFeedReducer(feedRef.current, {
+                  type: "connection",
+                  connection: "live",
+                })
+              )
+            }
+          })
+          .catch(() => undefined)
+      }
+      poll()
+      const timer = window.setInterval(poll, 250)
+      return () => {
+        disposed = true
+        window.clearInterval(timer)
+        controller.stop()
+      }
+    }
     const realtime = createRunRealtimeSubscription({
       runId: run.id,
-      onWake: () => void controller.wake(),
+      onWake: () => void synchronize().catch(() => undefined),
       onStatus: (connection) => {
         if (disposed) return
         setSlow(false)
@@ -489,7 +555,7 @@ export function RunActivityWorkspace({
             connection,
           })
         )
-        if (connection === "live") void controller.wake()
+        if (connection === "live") void synchronize().catch(() => undefined)
       },
     })
     void realtime.start().catch(() => undefined)
@@ -499,7 +565,7 @@ export function RunActivityWorkspace({
       controller.stop()
       void realtime.stop()
     }
-  }, [live, run.id, writeFeed])
+  }, [live, run.id, transport, writeFeed])
 
   useEffect(() => {
     if (
@@ -644,6 +710,24 @@ export function RunActivityWorkspace({
             </p>
           </div>
         </div>
+        <nav
+          aria-label="Control plane"
+          className="flex items-center gap-1 text-xs"
+        >
+          <Link
+            href="/"
+            className="min-h-11 rounded-md px-3 leading-[2.75rem] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+          >
+            Applications
+          </Link>
+          <Link
+            href="/runs"
+            aria-current="page"
+            className="min-h-11 rounded-md bg-muted px-3 leading-[2.75rem] font-medium"
+          >
+            Activity
+          </Link>
+        </nav>
         <div className="flex items-center gap-3">
           <ConnectionStatus connection={feed.connection} slow={slow} />
           <span
@@ -661,7 +745,7 @@ export function RunActivityWorkspace({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
             <p className="font-mono text-[0.6875rem] text-muted-foreground uppercase">
-              {humanize(run.type)} · Attempt {run.attemptCount + 1}
+              {humanize(run.type)} / Attempt {run.attemptCount + 1}
             </p>
             <h2 className="mt-1 text-lg font-semibold">Specialist activity</h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
@@ -959,6 +1043,7 @@ export function RunActivityWorkspace({
                     key={item.sequence}
                     runId={run.id}
                     item={item}
+                    fixture={transport === "fixture-poll"}
                   />
                 ))}
               </div>

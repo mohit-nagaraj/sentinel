@@ -118,3 +118,24 @@ State changes commit before their lifecycle events. Event idempotency keys make
 decision, tool, evidence, budget, interrupt, and terminal history retry-safe.
 Mission continuation and authorized human resume remain on the same lease-guarded
 checkpoint thread without repeating completed tool effects.
+
+## Realtime specialist activity
+
+The authenticated `/runs` workspace reconstructs ordered Postgres events into
+Documentation, Code, and Application lanes with a separate Curator reconciliation
+feed. It shows bounded decision summaries, reason codes, tool and browser action
+status, query-free request routes, evidence gains, budgets, interrupts, and typed
+terminal states. React renders all persisted text inertly; prompts, hidden
+reasoning, selectors, arbitrary DOM, credentials, and unbounded provider details
+are outside the event projection.
+
+Each inserted event sends only its run UUID and sequence to a private Supabase
+Broadcast topic. A four-minute owner JWT authorizes the topic through
+`realtime.messages` RLS, while the client fetches canonical pages after its last
+durable cursor. Serialized catch-up rejects gaps and conflicting duplicates, so
+reload and reconnect produce the same visible order.
+
+Application screenshots remain in private Storage. The server verifies the
+owned application, run, screenshot type, and PNG/JPEG MIME before returning a URL
+that expires in at most five minutes. Pause waits for a worker safe boundary;
+stop, retry, and one-time interrupt responses reuse the durable run-control API.

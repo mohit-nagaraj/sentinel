@@ -320,6 +320,33 @@ describe("run control route", () => {
     )
     expect(cancelled.status).toBe(403)
 
+    const sameSite = request("POST", `runs/${runId}/cancel`)
+    sameSite.headers.set("sec-fetch-site", "same-site")
+    expect(
+      (
+        await handleControlRequest(
+          sameSite,
+          ["runs", runId, "cancel"],
+          service(),
+          environment
+        )
+      ).status
+    ).toBe(403)
+
+    const proxiedSameOrigin = request("POST", `runs/${runId}/cancel`)
+    proxiedSameOrigin.headers.set("origin", "https://control.example.test")
+    proxiedSameOrigin.headers.set("sec-fetch-site", "same-origin")
+    expect(
+      (
+        await handleControlRequest(
+          proxiedSameOrigin,
+          ["runs", runId, "cancel"],
+          service(),
+          environment
+        )
+      ).status
+    ).toBe(202)
+
     const decision = new Request(
       `http://sentinel.test/api/control/runs/${runId}/interrupts/approve_scope/respond`,
       {

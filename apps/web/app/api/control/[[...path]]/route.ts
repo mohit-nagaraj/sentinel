@@ -11,10 +11,12 @@ import {
 import { z } from "zod"
 
 import {
+  isControlPlaneFixture,
   isOperatorAuthConfigured,
   isOperatorRequestAuthorized,
   type OperatorAuthEnvironment,
 } from "@/lib/operator-auth"
+import { getActivityFixtureRunControlService } from "@/lib/run-activity-fixture"
 import {
   RunActivityConfigurationError,
   getRunControlService,
@@ -305,8 +307,12 @@ export async function handleControlRequest(
       const origin = request.headers.get("origin")
       const fetchSite = request.headers.get("sec-fetch-site")
       if (
-        (origin !== null && origin !== new URL(request.url).origin) ||
-        fetchSite === "cross-site"
+        (fetchSite !== null &&
+          fetchSite !== "same-origin" &&
+          fetchSite !== "none") ||
+        (fetchSite === null &&
+          origin !== null &&
+          origin !== new URL(request.url).origin)
       ) {
         throw new ControlHttpError(
           403,
@@ -483,7 +489,9 @@ async function dispatch(request: Request, context: ControlRouteContext) {
   return handleControlRequest(
     request,
     path,
-    getRunControlService(),
+    isControlPlaneFixture(process.env)
+      ? (getActivityFixtureRunControlService() as unknown as RunControlService)
+      : getRunControlService(),
     process.env
   )
 }

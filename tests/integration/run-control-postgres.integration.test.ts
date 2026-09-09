@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
 
-import { commitShaSchema, contentHashSchema } from "@sentinel/contracts"
+import {
+  commitShaSchema,
+  contentHashSchema,
+  createEventId,
+  runIdSchema,
+} from "@sentinel/contracts"
 import {
   ApplicationRepository,
   AssessmentRepository,
@@ -24,6 +29,7 @@ const migrations = [
   "../../supabase/migrations/20260907000100_operational_state.sql",
   "../../supabase/migrations/20260908000100_onboarding_control_plane.sql",
   "../../supabase/migrations/20260908000300_run_control.sql",
+  "../../supabase/migrations/20260908000400_realtime_activity.sql",
 ].map((path) => readFileSync(new URL(path, import.meta.url), "utf8"))
 
 describeIntegration("run control PostgreSQL state machine", () => {
@@ -528,6 +534,188 @@ describeIntegration("run control PostgreSQL state machine", () => {
     await expect(
       runs.listOwned({ operatorId: randomUUID(), limit: 100 })
     ).resolves.toEqual({ items: [] })
+  })
+
+  it("authorizes private run broadcasts only for the owning operator", async () => {
+    const ownerRun = await runs.enqueueControl(operatorId, {
+      schemaVersion: 1,
+      applicationId,
+      type: "run_eval",
+      idempotencyKey: "eval:private-broadcast-owner",
+      budget,
+      payload: { fixtureKey: "private_broadcast_owner" },
+    })
+    const topic = `run:${ownerRun.run.id}`
+    const otherOperatorId = randomUUID()
+    const otherApplication = await new ApplicationRepository(database).upsert({
+      ...createOperationalTestApplication(`broadcast-other-${randomUUID()}`),
+      status: "ready",
+    })
+    const fingerprint = `sha256:${"7".repeat(64)}`
+    await database.query(
+      `insert into sentinel.onboarding_configurations (
+         application_id, operator_id, configuration, input_fingerprint,
+         inspected_fingerprint, compatibility_report, confirmation_fingerprint,
+         confirmed_at
+       ) values (
+         $1::uuid, $2::uuid, '{}'::jsonb, $3, $3,
+         jsonb_build_object('inputFingerprint', $3::text, 'status', 'compatible'),
+         $3, now()
+       )`,
+      [otherApplication.id, otherOperatorId, fingerprint]
+    )
+
+    try {
+      const ownership = await database.query<{
+        owner_allowed: boolean
+        other_allowed: boolean
+        malformed_allowed: boolean
+      }>(
+        `select
+           sentinel.can_receive_run_broadcast($1, $2::uuid) as owner_allowed,
+           sentinel.can_receive_run_broadcast($1, $3::uuid) as other_allowed,
+           sentinel.can_receive_run_broadcast('run:not-a-run', $2::uuid)
+             as malformed_allowed`,
+        [topic, operatorId, otherOperatorId]
+      )
+      expect(ownership[0]).toEqual({
+        owner_allowed: true,
+        other_allowed: false,
+        malformed_allowed: false,
+      })
+
+      const contractRunId = runIdSchema.parse(`run:${ownerRun.run.id}`)
+      await runs.appendEvent(
+        {
+          schemaVersion: 1,
+          id: createEventId(contractRunId, 1),
+          runId: contractRunId,
+          sequence: 99,
+          occurredAt: "2026-09-09T00:00:00.000Z",
+          graphName: "run_eval",
+          kind: "run_status",
+          status: "running",
+          summary: "Run activity available",
+          reasonCode: "run_activity_available",
+          evidenceIds: [],
+        },
+        createEventId(contractRunId, 1)
+      )
+      const broadcasts = await database.query<{
+        event: string
+        extension: string
+        payload: { runId: string; sequence: number }
+        private: boolean
+        topic: string
+      }>(
+        `select event, extension, payload, private, topic
+         from realtime.messages
+         where topic = $1 and event = 'run_event'
+         order by inserted_at desc limit 1`,
+        [topic]
+      )
+      expect(broadcasts[0]).toMatchObject({
+        event: "run_event",
+        extension: "broadcast",
+        payload: { runId: ownerRun.run.id, sequence: 1 },
+        private: true,
+        topic,
+      })
+
+      const policy = await database.query<{ qual: string }>(
+        `select qual from pg_policies
+         where schemaname = 'realtime' and tablename = 'messages'
+           and policyname = 'sentinel_owned_run_broadcasts'`
+      )
+      expect(policy[0]?.qual).toContain("can_receive_run_broadcast")
+      expect(policy[0]?.qual).toContain("auth.uid")
+
+      const visibleMessages = async (actorId: string) =>
+        database.transaction(async (transaction) => {
+          await transaction.query(
+            `select set_config('request.jwt.claim.sub', $1, true),
+                    set_config('realtime.topic', $2, true)`,
+            [actorId, topic]
+          )
+          await transaction.query("set local role authenticated")
+          return transaction.query<{ count: number }>(
+            `select count(*)::int as count from realtime.messages
+             where topic = $1 and event = 'run_event'`,
+            [topic]
+          )
+        })
+      await expect(visibleMessages(operatorId)).resolves.toEqual([{ count: 1 }])
+      await expect(visibleMessages(otherOperatorId)).resolves.toEqual([
+        { count: 0 },
+      ])
+    } finally {
+      await database.query(
+        "delete from sentinel.applications where id = $1::uuid",
+        [otherApplication.id]
+      )
+    }
+  })
+
+  it("pauses queued runs immediately and running runs at the next safe boundary", async () => {
+    const queued = await runs.enqueueControl(operatorId, {
+      schemaVersion: 1,
+      applicationId,
+      type: "run_eval",
+      idempotencyKey: "eval:pause-queued",
+      budget,
+      payload: { fixtureKey: "pause_queued" },
+    })
+    await expect(
+      runs.requestOwnedPause(randomUUID(), queued.run.id)
+    ).rejects.toMatchObject({ code: "run_not_found" })
+    await expect(
+      runs.requestOwnedPause(operatorId, queued.run.id)
+    ).resolves.toMatchObject({
+      status: "interrupted",
+      pauseRequestedAt: expect.any(String),
+    })
+    await expect(
+      runs.getOwnedPendingInterrupt(operatorId, queued.run.id)
+    ).resolves.toMatchObject({ decisionId: "resume_run", status: "pending" })
+    await runs.respondInterrupt({
+      operatorId,
+      runId: queued.run.id,
+      decisionId: "resume_run",
+      response: { approved: true },
+    })
+    await expect(
+      runs.getOwned(operatorId, queued.run.id)
+    ).resolves.toMatchObject({
+      status: "queued",
+    })
+    expect(
+      (await runs.getOwned(operatorId, queued.run.id))?.pauseRequestedAt
+    ).toBeUndefined()
+
+    const running = await runs.enqueueControl(operatorId, {
+      schemaVersion: 1,
+      applicationId,
+      type: "run_eval",
+      idempotencyKey: "eval:pause-running",
+      budget,
+      payload: { fixtureKey: "pause_running" },
+    })
+    await database.query(
+      `update sentinel.runs
+       set status = 'running', lease_owner = 'pause-test-worker',
+           lease_expires_at = now() + interval '1 minute'
+       where id = $1::uuid`,
+      [running.run.id]
+    )
+    await expect(
+      runs.requestOwnedPause(operatorId, running.run.id)
+    ).resolves.toMatchObject({
+      status: "running",
+      pauseRequestedAt: expect.any(String),
+    })
+    await expect(
+      runs.controlState(running.run.id, "pause-test-worker")
+    ).resolves.toBe("pause_requested")
   })
 
   it("reconciles legacy overlapping mutations before adding the unique index", async () => {
