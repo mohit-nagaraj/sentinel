@@ -55,6 +55,9 @@ Use these review surfaces in order:
    - read product-rendered deterministic fallback Markdown for real PR #1338.
 6. [`DESIGN.md`](DESIGN.md) - review architecture, graph semantics, evaluation,
    security, scope cuts, and next-week priorities.
+7. [`deployment.md`](deployment.md) - live Hi.Events Railway + Supabase demo
+   (login, shared DB/S3, PR previews, local seed). Sentinel attestation is still
+   Render; this is the operator demo URL.
 
 Current capability is deliberately narrow:
 
