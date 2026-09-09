@@ -102,7 +102,10 @@ describe("AssessmentReportDeliveryService", () => {
 
   beforeEach(() => {
     repository = {
-      finalize: vi.fn().mockResolvedValue("published"),
+      finalize: vi.fn().mockResolvedValue({
+        disposition: "published",
+        artifactId: storedArtifact.id,
+      }),
       getOwned: vi.fn().mockResolvedValue(null),
     }
     artifacts = {
@@ -123,7 +126,10 @@ describe("AssessmentReportDeliveryService", () => {
   it.each(["published", "existing"] as const)(
     "returns an immutable artifact for a %s finalization",
     async (disposition) => {
-      vi.mocked(repository.finalize).mockResolvedValue(disposition)
+      vi.mocked(repository.finalize).mockResolvedValue({
+        disposition,
+        artifactId: storedArtifact.id,
+      })
       const service = new AssessmentReportDeliveryService(repository, artifacts)
 
       const result = await service.publish({
@@ -135,13 +141,7 @@ describe("AssessmentReportDeliveryService", () => {
 
       expect(result).toEqual({
         disposition,
-        artifact: {
-          reportId: view.id,
-          artifactId: storedArtifact.id,
-          contentHash: storedArtifact.contentHash,
-          mimeType: "text/markdown",
-          sizeBytes: storedArtifact.sizeBytes,
-        },
+        artifactId: storedArtifact.id,
       })
       expect(repository.finalize).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -176,7 +176,10 @@ describe("AssessmentReportDeliveryService", () => {
   })
 
   it("deletes an unreferenced artifact when the PR head is superseded", async () => {
-    vi.mocked(repository.finalize).mockResolvedValue("superseded")
+    vi.mocked(repository.finalize).mockResolvedValue({
+      disposition: "superseded",
+      artifactId: null,
+    })
     const service = new AssessmentReportDeliveryService(repository, artifacts)
 
     await expect(
@@ -190,6 +193,61 @@ describe("AssessmentReportDeliveryService", () => {
     expect(artifacts.delete).toHaveBeenCalledWith(
       applicationDatabaseId,
       storedArtifact.id
+    )
+  })
+
+  it("reuses the stored artifact and removes different retry output", async () => {
+    const retryArtifact = {
+      ...storedArtifact,
+      id: createArtifactId({
+        applicationId,
+        contentHash: hashCanonical("different retry wording"),
+        kind: "assessment_report_markdown",
+      }),
+      databaseId: "00000000-0000-4000-8000-000000000105",
+      contentHash: hashCanonical("different retry wording"),
+    }
+    vi.mocked(artifacts.persist).mockResolvedValue(retryArtifact)
+    vi.mocked(repository.finalize).mockResolvedValue({
+      disposition: "existing",
+      artifactId: storedArtifact.id,
+    })
+    const service = new AssessmentReportDeliveryService(repository, artifacts)
+
+    await expect(
+      service.publish({
+        applicationDatabaseId,
+        runDatabaseId,
+        view: {
+          ...view,
+          id: hashCanonical({ kind: "retry-report" }),
+          model: {
+            mode: "validated_model_wording",
+            modelId: "report-model-v1",
+          },
+        },
+        markdown: "# Different retry wording\n",
+      })
+    ).resolves.toEqual({
+      disposition: "existing",
+      artifactId: storedArtifact.id,
+    })
+    expect(artifacts.delete).toHaveBeenCalledWith(
+      applicationDatabaseId,
+      retryArtifact.id
+    )
+    expect(repository.finalize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        identityHash: hashCanonical({
+          repository: view.repository,
+          pullRequestNumber: view.pullRequestNumber,
+          headSha: view.headSha,
+          graphRevision: view.graphRevision,
+          policyVersion: view.policyVersion,
+          templateVersion: view.templateVersion,
+          wordingPromptVersion: view.wordingPromptVersion,
+        }),
+      })
     )
   })
 

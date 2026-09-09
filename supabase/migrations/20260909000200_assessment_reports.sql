@@ -56,7 +56,7 @@ create or replace function sentinel.finalize_assessment_report(
   p_view jsonb,
   p_generated_at timestamptz
 )
-returns table (disposition text, report_id text)
+returns table (disposition text, report_id text, report_artifact_id text)
 language plpgsql
 security definer
 set search_path = ''
@@ -64,6 +64,7 @@ as $$
 declare
   v_assessment sentinel.pr_assessments%rowtype;
   v_artifact sentinel.artifacts%rowtype;
+  v_existing_artifact_id text;
 begin
   if p_head_sha !~ '^[a-f0-9]{40}([a-f0-9]{24})?$'
      or p_report_id !~ '^sha256:[a-f0-9]{64}$'
@@ -87,7 +88,7 @@ begin
   if not found
      or v_assessment.head_sha <> p_head_sha
      or not v_assessment.is_current then
-    return query select 'superseded'::text, null::text;
+    return query select 'superseded'::text, null::text, null::text;
     return;
   end if;
 
@@ -107,10 +108,21 @@ begin
   end if;
 
   if v_assessment.report_id is not null then
-    if v_assessment.report_id = p_report_id
-       and v_assessment.report_identity_hash = p_identity_hash
-       and v_assessment.report_artifact_id = p_report_artifact_id then
-      return query select 'existing'::text, v_assessment.report_id;
+    if v_assessment.report_identity_hash = p_identity_hash then
+      select artifact.stable_key into v_existing_artifact_id
+      from sentinel.artifacts artifact
+      where artifact.id = v_assessment.report_artifact_id
+        and artifact.application_id = v_assessment.application_id
+        and artifact.artifact_type = 'assessment_report_markdown'
+        and artifact.mime_type = 'text/markdown'
+        and artifact.deleted_at is null;
+      if not found then
+        raise exception using errcode = 'P0001', message = 'report_state_invalid';
+      end if;
+      return query select
+        'existing'::text,
+        v_assessment.report_id,
+        v_existing_artifact_id;
       return;
     end if;
     raise exception using errcode = 'P0001', message = 'report_identity_conflict';
@@ -130,7 +142,7 @@ begin
   set reference_count = reference_count + 1
   where id = p_report_artifact_id;
 
-  return query select 'published'::text, p_report_id;
+  return query select 'published'::text, p_report_id, v_artifact.stable_key;
 end;
 $$;
 

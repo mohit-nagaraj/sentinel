@@ -221,20 +221,21 @@ export class GithubAssessmentService {
     readonly assessmentId: string
     readonly headSha: string
     readonly lifecycle: GithubCheckLifecycle | unknown
-  }): Promise<boolean> {
+  }): Promise<"published" | "sync_pending" | "superseded"> {
     const assessmentId = z.uuid().parse(input.assessmentId)
     const lifecycle = githubCheckLifecycleSchema.parse(input.lifecycle)
     let target = await this.store.getCurrentCheck(assessmentId, input.headSha)
-    if (target === null) return false
+    if (target === null) return "superseded"
     if (target.checkRunId === null) {
       const synchronized = await this.synchronizeQueuedCheck({
         assessmentId,
         headSha: target.headSha,
         checkRunId: null,
       })
-      if (synchronized === "sync_pending") return false
+      if (synchronized === "sync_pending") return "sync_pending"
       target = await this.store.getCurrentCheck(assessmentId, input.headSha)
-      if (target === null || target.checkRunId === null) return false
+      if (target === null) return "superseded"
+      if (target.checkRunId === null) return "sync_pending"
     }
     await this.provider.updateCheck(target, {
       schemaVersion: 1,
@@ -243,7 +244,7 @@ export class GithubAssessmentService {
       detailsUrl: this.provider.assessmentDetailsUrl(assessmentId),
       lifecycle,
     })
-    return true
+    return "published"
   }
 
   private async enqueue(

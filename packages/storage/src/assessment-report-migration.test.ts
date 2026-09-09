@@ -24,6 +24,10 @@ describe("assessment report migration", () => {
     )
     expect(sql).toContain("bucket.public = false")
     expect(sql).toContain("message = 'report_identity_conflict'")
+    expect(sql).toContain(
+      "if v_assessment.report_identity_hash = p_identity_hash"
+    )
+    expect(sql).toContain("v_existing_artifact_id")
     expect(sql).toContain("reference_count = reference_count + 1")
     expect(sql).toContain("(p_view ->> 'id') is distinct from p_report_id")
     expect(sql).toContain("(p_view ->> 'headSha') is distinct from p_head_sha")

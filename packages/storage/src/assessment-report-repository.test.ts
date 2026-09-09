@@ -92,6 +92,8 @@ class FakeDatabase implements DatabaseExecutor {
         {
           disposition: this.disposition,
           report_id: this.disposition === "superseded" ? null : reportId,
+          report_artifact_id:
+            this.disposition === "superseded" ? null : artifactId,
         } as unknown as Row,
       ]
     }
@@ -141,7 +143,7 @@ describe("assessment report repository", () => {
         identityHash: hashCanonical({ identity: reportId }),
         artifactDatabaseId,
       })
-    ).resolves.toBe("published")
+    ).resolves.toEqual({ disposition: "published", artifactId })
     expect(database.queries[0]?.statement).toContain(
       "finalize_assessment_report"
     )

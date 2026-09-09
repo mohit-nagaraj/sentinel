@@ -379,22 +379,21 @@ describe("assessment report generation", () => {
     }
   )
 
-  it("accepts model wording only with supplied citations", async () => {
+  it("accepts only supplied model wording choices with complete citations", async () => {
     const selected = source("high")
     const finding = selected.blastRadius.findings[0]!
     const wording = reportWordingOutputSchema.parse({
       executiveSummary:
-        "Order creation has a high predicted impact and needs focused retesting.",
+        "Predicted impact includes 1 high, 0 medium, 0 low, and 0 unknown finding. Review uncertainty and complete the recommended QA checkpoints before making a release decision.",
       findingIds: [finding.id],
       findings: [
         {
           findingId: finding.id,
-          title: "Order creation needs focused validation",
-          summary:
-            "The supplied evidence path connects the changed handler to checkout behavior.",
+          title: `${finding.title}: focused QA review`,
+          summary: `This ${finding.targetKind.replaceAll("-", " ")} is potentially affected through ${finding.evidencePathIds.length} inspectable evidence path${finding.evidencePathIds.length === 1 ? "" : "s"}. The result is a prediction and should guide focused retesting.`,
           evidencePathIds: finding.evidencePathIds,
           scenarioIds: finding.scenarios.map(({ id }) => id),
-          caveatIds: [],
+          caveatIds: finding.caveatIds,
         },
       ],
     })
@@ -439,7 +438,8 @@ describe("assessment report generation", () => {
     const selected = source("high")
     const finding = selected.blastRadius.findings[0]!
     const valid = reportWordingOutputSchema.parse({
-      executiveSummary: "Order creation needs focused retesting.",
+      executiveSummary:
+        "Predicted impact includes 1 high, 0 medium, 0 low, and 0 unknown finding. Review uncertainty and complete the recommended QA checkpoints before making a release decision.",
       findingIds: [finding.id],
       findings: [],
     })
@@ -482,7 +482,8 @@ describe("assessment report generation", () => {
       validateReportWording(
         selected,
         reportWordingOutputSchema.parse({
-          executiveSummary: "Order creation needs focused retesting.",
+          executiveSummary:
+            "Predicted impact includes 1 high, 0 medium, 0 low, and 0 unknown finding. Review uncertainty and complete the recommended QA checkpoints before making a release decision.",
           findingIds: [finding.id],
           findings: [
             {
@@ -496,14 +497,59 @@ describe("assessment report generation", () => {
           ],
         })
       )
-    ).toThrow("not a subset")
+    ).toThrow("must exactly match")
+  })
+
+  it("falls back when valid finding IDs accompany invented prose", async () => {
+    const selected = source("high")
+    const finding = selected.blastRadius.findings[0]!
+    const view = await generateAssessmentReport({
+      source: selected,
+      model: new FakeModel(
+        reportWordingOutputSchema.parse({
+          executiveSummary:
+            "Customer records are deleted when this change is deployed.",
+          findingIds: [finding.id],
+          findings: [
+            {
+              findingId: finding.id,
+              title: "Customer records are deleted",
+              summary: "This invented claim cites real evidence IDs.",
+              evidencePathIds: finding.evidencePathIds,
+              scenarioIds: finding.scenarios.map(({ id }) => id),
+              caveatIds: finding.caveatIds,
+            },
+          ],
+        })
+      ),
+    })
+
+    expect(view.model).toEqual({ mode: "deterministic_fallback" })
+  })
+
+  it("renders source names and URLs containing safe without treating them as assurance", async () => {
+    const selected = source("high")
+    const finding = selected.blastRadius.findings[0]!
+    const safeNamed = assessmentReportSourceSchema.parse({
+      ...selected,
+      pullRequest: { ...selected.pullRequest, title: "Safe checkout refresh" },
+      blastRadius: {
+        ...selected.blastRadius,
+        findings: selected.blastRadius.findings.map((item) =>
+          item.id === finding.id ? { ...item, title: "Safe checkout" } : item
+        ),
+      },
+    })
+
+    const view = await generateAssessmentReport({ source: safeNamed })
+    expect(renderAssessmentReportMarkdown(view)).toContain("Safe checkout")
   })
 })
 
 describe("GitHub report projection", () => {
   it("finalizes the report and its GitHub lifecycle as one run stage", async () => {
     const selected = source("low")
-    const publishCheck = vi.fn().mockResolvedValue(true)
+    const publishCheck = vi.fn().mockResolvedValue("published")
     const finalizer = createAssessmentReportRunFinalizer({
       source: { resolve: async () => selected },
       currentHead: { isCurrent: async () => true },
@@ -524,6 +570,25 @@ describe("GitHub report projection", () => {
       headSha: selected.pullRequest.headSha,
       lifecycle: expect.objectContaining({ state: "completed" }),
     })
+  })
+
+  it("retries a current report when GitHub check synchronization is pending", async () => {
+    const selected = source("low")
+    const finalizer = createAssessmentReportRunFinalizer({
+      source: { resolve: async () => selected },
+      currentHead: { isCurrent: async () => true },
+      publisher: {
+        publish: async () => ({
+          disposition: "existing",
+          artifactId: `artifact:v1:${"a".repeat(64)}`,
+        }),
+      },
+      checks: { publishCheck: async () => "sync_pending" },
+    })
+
+    await expect(
+      finalizer.finalize({ investigation: completedInvestigation(selected) })
+    ).rejects.toThrow("synchronization is pending")
   })
 
   it("keeps predicted high risk neutral through the existing outcome mapping", async () => {

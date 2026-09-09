@@ -33,7 +33,7 @@ const sections = [
 const riskOrder = { high: 0, medium: 1, low: 2, unknown: 3 } as const
 const tierOrder = { A: 0, B: 1, C: 2, D: 3 } as const
 const unsafeAssurance =
-  /\b(?:safe|no impact|zero impact|fully verified|no risk|risk[- ]free)\b/i
+  /\b(?:this (?:pull request|change|release|feature|workflow|screen|requirement) is safe|safe to (?:merge|deploy|release|ship)|no impact|zero impact|fully verified|no risk|risk[- ]free)\b/i
 const unsafeAbsence = /\b(?:does not exist|is absent|feature is missing)\b/i
 const factIdPattern =
   /(?:sha256:[a-f0-9]{64}|[a-z][a-z0-9]*(?:-[a-z0-9]+)*:v1:[a-f0-9]{64})/g
@@ -48,7 +48,11 @@ function sortedUnique(values: readonly string[]): string[] {
 }
 
 function safeReportText(value: string): string {
-  const parsed = z.string().trim().min(1).max(4_096).parse(value)
+  return z.string().trim().min(1).max(4_096).parse(value)
+}
+
+function assertGeneratedReportText(value: string): string {
+  const parsed = safeReportText(value)
   if (unsafeAssurance.test(parsed) || unsafeAbsence.test(parsed)) {
     throw new Error(
       "Report wording makes an unsupported assurance or absence claim"
@@ -92,6 +96,40 @@ function executiveSummary(source: AssessmentReportSource): string {
   )
 }
 
+function alternateExecutiveSummary(source: AssessmentReportSource): string {
+  const { high, low, medium, unknown } = source.blastRadius.summary
+  return safeReportText(
+    `Uncertainty remains explicit across ${high + medium + low + unknown} predicted finding${high + medium + low + unknown === 1 ? "" : "s"}: ${high} high, ${medium} medium, ${low} low, and ${unknown} unknown. Use the recommended QA checkpoints to investigate the supplied evidence before making a release decision.`
+  )
+}
+
+function findingTitleChoices(finding: BlastRadiusFinding): readonly string[] {
+  return [
+    safeReportText(finding.title),
+    safeReportText(`${finding.title}: focused QA review`),
+  ]
+}
+
+function findingSummaryChoices(finding: BlastRadiusFinding): readonly string[] {
+  return [
+    deterministicSummary(finding),
+    safeReportText(
+      finding.risk === "unknown"
+        ? `${finding.title}. The supplied assessment leaves product impact unknown; review the cited evidence and unresolved scope before making a release decision.`
+        : `${finding.title}. The supplied ${finding.evidencePathIds.length} evidence path${finding.evidencePathIds.length === 1 ? "" : "s"} predicts potential ${finding.targetKind.replaceAll("-", " ")} impact and identifies focused QA work; it does not establish release safety.`
+    ),
+  ]
+}
+
+function sameIds(left: readonly string[], right: readonly string[]): boolean {
+  const sortedLeft = [...left].sort(compareStrings)
+  const sortedRight = [...right].sort(compareStrings)
+  return (
+    sortedLeft.length === sortedRight.length &&
+    sortedLeft.every((id, index) => id === sortedRight[index])
+  )
+}
+
 function allowedFactIds(source: AssessmentReportSource): Set<string> {
   return new Set([
     ...source.blastRadius.findings.map(({ id }) => id),
@@ -119,18 +157,27 @@ export function validateReportWording(
 ): ReportWordingOutput {
   const source = assessmentReportSourceSchema.parse(sourceValue)
   const wording = reportWordingOutputSchema.parse(wordingValue)
+  const eligibleFindings = source.blastRadius.findings.slice(0, 30)
   const findingById = new Map(
-    source.blastRadius.findings.map((finding) => [finding.id, finding])
+    eligibleFindings.map((finding) => [finding.id, finding])
   )
   const allowed = allowedFactIds(source)
+  const eligibleFindingIds = eligibleFindings.map(({ id }) => id)
   const wordingFindingIds = wording.findings.map(({ findingId }) => findingId)
   if (new Set(wordingFindingIds).size !== wordingFindingIds.length) {
     throw new Error("Report wording contains duplicate finding entries")
   }
-  if (wording.findingIds.some((id) => !findingById.has(id))) {
-    throw new Error("Executive report wording cites an unknown finding")
+  if (!sameIds(wording.findingIds, eligibleFindingIds)) {
+    throw new Error("Executive report wording must cite every supplied finding")
   }
-  safeReportText(wording.executiveSummary)
+  assertGeneratedReportText(wording.executiveSummary)
+  if (
+    ![executiveSummary(source), alternateExecutiveSummary(source)].includes(
+      wording.executiveSummary
+    )
+  ) {
+    throw new Error("Executive report wording is not a supplied wording choice")
+  }
   for (const id of wording.executiveSummary.match(factIdPattern) ?? []) {
     if (!allowed.has(id))
       throw new Error("Executive report wording invents a fact ID")
@@ -144,16 +191,22 @@ export function validateReportWording(
     const scenarioIds = new Set(finding.scenarios.map(({ id }) => id))
     const caveatIds = new Set(finding.caveatIds)
     if (
-      entry.evidencePathIds.some((id) => !pathIds.has(id)) ||
-      entry.scenarioIds.some((id) => !scenarioIds.has(id)) ||
-      entry.caveatIds.some((id) => !caveatIds.has(id))
+      !sameIds(entry.evidencePathIds, [...pathIds]) ||
+      !sameIds(entry.scenarioIds, [...scenarioIds]) ||
+      !sameIds(entry.caveatIds, [...caveatIds])
     ) {
       throw new Error(
-        "Report wording citations are not a subset of supplied facts"
+        "Report wording citations must exactly match supplied finding facts"
       )
     }
-    safeReportText(entry.title)
-    safeReportText(entry.summary)
+    assertGeneratedReportText(entry.title)
+    assertGeneratedReportText(entry.summary)
+    if (!findingTitleChoices(finding).includes(entry.title)) {
+      throw new Error("Report title is not a supplied wording choice")
+    }
+    if (!findingSummaryChoices(finding).includes(entry.summary)) {
+      throw new Error("Report summary is not a supplied wording choice")
+    }
     for (const id of `${entry.title} ${entry.summary}`.match(factIdPattern) ??
       []) {
       if (!allowed.has(id)) throw new Error("Report wording invents a fact ID")
@@ -336,6 +389,10 @@ export interface ReportWordingModelPort {
 function wordingInput(source: AssessmentReportSource): string {
   const compact = {
     assessmentId: source.assessmentId,
+    executiveSummaryChoices: [
+      executiveSummary(source),
+      alternateExecutiveSummary(source),
+    ],
     findings: source.blastRadius.findings.slice(0, 30).map((finding) => ({
       id: finding.id,
       targetId: finding.targetId ?? null,
@@ -346,6 +403,8 @@ function wordingInput(source: AssessmentReportSource): string {
       evidencePathIds: finding.evidencePathIds,
       scenarioIds: finding.scenarios.map(({ id }) => id),
       caveatIds: finding.caveatIds,
+      titleChoices: findingTitleChoices(finding),
+      summaryChoices: findingSummaryChoices(finding),
     })),
   }
   return JSON.stringify(compact)
@@ -364,7 +423,7 @@ export async function generateAssessmentReport(input: {
     const result = await input.model.generateStructured({
       input: wordingInput(source),
       instructions:
-        "Rewrite only supplied finding titles and summaries for a product-aware QA lead. Cite only supplied IDs. Do not claim safety, no impact, feature absence, verification, or facts outside the supplied records.",
+        "Select executive, title, and summary text verbatim from the supplied choices for a product-aware QA lead. Cite every supplied finding ID and every selected finding's complete evidence-path, scenario, and caveat ID lists. Do not author new prose or IDs.",
       schemaName: "sentinel_assessment_report_wording_v1",
       schema: reportWordingOutputSchema,
       maxOutputTokens: 1_200,
@@ -561,9 +620,6 @@ export function renderAssessmentReportMarkdown(
     `- Wording mode: ${view.model.mode}`,
     "",
   ].join("\n")
-  if (unsafeAssurance.test(markdown) || unsafeAbsence.test(markdown)) {
-    throw new Error("Rendered report contains prohibited assurance language")
-  }
   return markdown
 }
 
@@ -643,7 +699,7 @@ export interface AssessmentReportCheckPort {
     readonly assessmentId: string
     readonly headSha: string
     readonly lifecycle: GithubCheckLifecycle
-  }): Promise<boolean>
+  }): Promise<"published" | "sync_pending" | "superseded">
 }
 
 export interface AssessmentReportRunFinalizerPort {
@@ -694,7 +750,12 @@ export function createAssessmentReportRunFinalizer(input: {
         headSha: source.pullRequest.headSha,
         lifecycle: report.check,
       })
-      return synchronized ? report.status : "superseded"
+      if (synchronized === "sync_pending") {
+        throw new Error(
+          "Assessment report GitHub check synchronization is pending"
+        )
+      }
+      return synchronized === "published" ? report.status : "superseded"
     },
   }
 }

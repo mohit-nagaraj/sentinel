@@ -1,5 +1,6 @@
 import {
   assessmentReportViewSchema,
+  artifactIdSchema,
   commitShaSchema,
   contentHashSchema,
   reportVerificationEnrichmentSchema,
@@ -13,6 +14,7 @@ import type { DatabaseExecutor } from "./database.ts"
 const finalizeRowSchema = z.object({
   disposition: z.enum(["published", "existing", "superseded"]),
   report_id: contentHashSchema.nullable(),
+  report_artifact_id: artifactIdSchema.nullable(),
 })
 
 const currentHeadRowSchema = z.object({ current: z.boolean() })
@@ -60,7 +62,10 @@ export class AssessmentReportRepository {
     readonly report: AssessmentReportView
     readonly identityHash: string
     readonly artifactDatabaseId: string
-  }): Promise<"published" | "existing" | "superseded"> {
+  }): Promise<{
+    readonly disposition: "published" | "existing" | "superseded"
+    readonly artifactId: string | null
+  }> {
     const report = assessmentReportViewSchema.parse(input.report)
     const identityHash = contentHashSchema.parse(input.identityHash)
     if (
@@ -93,10 +98,22 @@ export class AssessmentReportRepository {
       ]
     )
     const row = finalizeRowSchema.parse(rows[0])
-    if (row.disposition !== "superseded" && row.report_id !== report.id) {
+    if (row.disposition === "published" && row.report_id !== report.id) {
       throw new Error("Finalized report identity changed")
     }
-    return row.disposition
+    if (row.disposition === "published" && row.report_artifact_id === null) {
+      throw new Error("Finalized report artifact is missing")
+    }
+    if (
+      row.disposition === "existing" &&
+      (row.report_id === null || row.report_artifact_id === null)
+    ) {
+      throw new Error("Existing report identity is incomplete")
+    }
+    return {
+      disposition: row.disposition,
+      artifactId: row.report_artifact_id,
+    }
   }
 
   async getOwned(input: {

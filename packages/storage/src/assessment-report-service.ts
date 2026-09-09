@@ -1,9 +1,7 @@
 import {
-  assessmentReportArtifactSchema,
   assessmentReportViewSchema,
   artifactIdSchema,
   hashCanonical,
-  type AssessmentReportArtifact,
   type AssessmentReportView,
 } from "@sentinel/contracts"
 
@@ -36,7 +34,7 @@ export class AssessmentReportDeliveryService {
     readonly markdown: string
   }): Promise<{
     readonly disposition: "published" | "existing" | "superseded"
-    readonly artifact: AssessmentReportArtifact
+    readonly artifactId: string
   }> {
     const view = assessmentReportViewSchema.parse(input.view)
     const body = new TextEncoder().encode(input.markdown)
@@ -60,11 +58,12 @@ export class AssessmentReportDeliveryService {
       policyVersion: view.policyVersion,
       templateVersion: view.templateVersion,
       wordingPromptVersion: view.wordingPromptVersion,
-      model: view.model,
     })
-    let disposition: "published" | "existing" | "superseded"
+    let finalization: Awaited<
+      ReturnType<AssessmentReportRecordPort["finalize"]>
+    >
     try {
-      disposition = await this.repository.finalize({
+      finalization = await this.repository.finalize({
         assessmentId: view.assessmentId,
         headSha: view.headSha,
         report: view,
@@ -77,18 +76,16 @@ export class AssessmentReportDeliveryService {
         .catch(() => undefined)
       throw error
     }
-    if (disposition === "superseded") {
+    if (
+      finalization.disposition === "superseded" ||
+      (finalization.disposition === "existing" &&
+        finalization.artifactId !== artifact.id)
+    ) {
       await this.artifacts.delete(input.applicationDatabaseId, artifact.id)
     }
     return {
-      disposition,
-      artifact: assessmentReportArtifactSchema.parse({
-        reportId: view.id,
-        artifactId: artifact.id,
-        contentHash: artifact.contentHash,
-        mimeType: artifact.mimeType,
-        sizeBytes: artifact.sizeBytes,
-      }),
+      disposition: finalization.disposition,
+      artifactId: finalization.artifactId ?? artifact.id,
     }
   }
 
@@ -162,7 +159,7 @@ export function bindAssessmentReportPublisher(input: {
       })
       return {
         disposition: result.disposition,
-        artifactId: result.artifact.artifactId,
+        artifactId: result.artifactId,
       }
     },
   }
