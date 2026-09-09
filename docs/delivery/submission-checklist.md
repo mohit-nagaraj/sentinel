@@ -14,7 +14,7 @@ the intended `main` locations after this issue merges.
 
 ## Automated evidence
 
-- [ ] Final pull request CI is green for quality, build, unit, integration,
+- [x] Final pull request CI is green for quality, build, unit, integration,
       agent, graph, browser, security, delivery, and GitGuardian checks.
 - [x] `pnpm delivery:check` regenerates no sample-report diff and all delivery
       contract/link/Markdown tests pass.
