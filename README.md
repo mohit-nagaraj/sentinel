@@ -64,7 +64,7 @@ Current capability is deliberately narrow:
 | Resettable control-plane demo                                                                                                   | Implemented with deterministic in-memory fixtures                                                  |
 | Trusted Render deployment identity and verification planning                                                                    | Implemented; no assignment PR-head deployment is registered                                        |
 | Product report delivery/dashboard (SNT-029)                                                                                     | Implemented with grounded wording, private persistence, API/UI, GitHub summary, and print behavior |
-| Dynamic PR-head verification (SNT-031)                                                                                          | Not implemented; report status is `verification_unavailable`                                       |
+| Dynamic PR-head verification (SNT-031)                                                                                          | Implemented; sample is unavailable because no trusted head was registered                          |
 | Incremental post-deployment refresh (SNT-032)                                                                                   | Implemented with scoped reuse/invalidation and atomic publication                                  |
 
 The committed sample passes its structured data through the product report view
@@ -157,6 +157,7 @@ resources:
 RUN_LIVE_TESTS=1 pnpm test:live
 RUN_LIVE_TESTS=1 RUN_CODE_EXPLORER_HI_EVENTS=1 pnpm test:live -- tests/live/code-explorer-hi-events.live.test.ts
 RUN_LIVE_TESTS=1 RUN_RENDER_DEPLOYMENT_SMOKE=1 pnpm test:live -- tests/live/render-deployment-verification.live.test.ts
+RUN_LIVE_TESTS=1 RUN_HIEVENTS_TARGETED_VERIFICATION=1 pnpm test:live -- tests/live/targeted-verification.live.test.ts
 ```
 
 PowerShell users set environment variables with `$env:NAME = "value"` before
@@ -374,6 +375,15 @@ The committed PR #1338 sample uses the same view schema and canonical renderer:
 ```sh
 pnpm delivery:sample
 ```
+
+SNT-031 compiles targeted verification from an attested deployment and bounded
+mission plan. It revalidates the exact head before every browser mission,
+classifies setup separately, runs affected scenarios and an optional control,
+evaluates deterministic reachability/UI/transition/request/value/error
+checkpoints, permits at most one named gap follow-up, retains private failure
+artifacts, and appends idempotent report/check enrichment. The committed sample
+remains `verification_unavailable` because no trusted PR-head registration was
+supplied; the credential-gated live harness is opt-in.
 
 SNT-032 implements post-deployment refresh as a separate checkpointed graph. It
 validates trusted deployed commit ancestry, plans changed document/TS/PHP/OpenAPI

@@ -121,7 +121,8 @@ describe("assignment delivery", () => {
     ]) {
       expect(design, phrase).toContain(phrase)
     }
-    expect(design).toMatch(/SNT-031[\s\S]*not implemented/i)
+    expect(design).toMatch(/SNT-031 targeted verification[\s\S]*implemented/i)
+    expect(design).toMatch(/no trusted PR-head deployment[\s\S]*registered/i)
     expect(design).toMatch(/SNT-029 report delivery[\s\S]*implemented/i)
     expect(design).toMatch(/SNT-032 incremental refresh[\s\S]*implemented/i)
     expect(design.split(/\s+/).length).toBeGreaterThanOrEqual(3_500)

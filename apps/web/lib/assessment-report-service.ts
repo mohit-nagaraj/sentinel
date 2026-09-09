@@ -216,7 +216,7 @@ function fixtureView(): AssessmentReportView {
     runId: "run:00000000-0000-4000-8000-000000000029",
     repository: {
       host: "github.com",
-      owner: "mohit-nagaraj",
+      owner: "HiEventsDev",
       name: "Hi.Events",
     },
     pullRequestId: `pull-request:v1:${"b".repeat(64)}`,

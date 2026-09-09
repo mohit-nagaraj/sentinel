@@ -211,7 +211,7 @@ No trusted pull\-request head deployment was registered for this sample run\. (s
 - Excluded: Control flow Ticket checkout order creation: The reviewed attribution evidence path does not traverse the public order\-creation workflow\. Keep one checkout smoke as an environment control; this is not a claim that checkout has zero risk\.
 - Excluded: This is deterministic reference output from the SNT\-033 golden fixture, not a live model, browser, database, or Neo4j run\.
 - Excluded: The product report pipeline and incremental refresh are implemented; this committed sample uses deterministic fallback wording rather than a persisted live assessment\.
-- Excluded: SNT\-031 dynamic trusted\-head verification is not implemented on this revision, so verification remains unavailable\.
+- Excluded: Targeted verification is implemented, but no trusted PR\-head deployment was registered or exercised for this sample, so verification remains unavailable\.
 - Excluded: No private screenshot, trace, credential, signed artifact URL, or production data is embedded\.
 - Excluded: Risk labels prioritize the reviewed narrow slice and are not calibrated probabilities or a declaration that the pull request is unsafe\.
 

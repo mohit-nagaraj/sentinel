@@ -32,11 +32,11 @@ The implemented depth is deliberately uneven. Source evidence, safe browser
 observation, durable specialist execution, graph reconciliation, absence
 semantics, immutable PR investigation, deterministic blast-radius scoring,
 grounded report delivery, incremental refresh, evaluation, and security controls
-receive most of the investment. Trusted-head browser verification execution is
-not implemented. The committed sample uses deterministic fallback wording through
-the product renderer, and runtime verification remains
-`verification_unavailable`. That is a product limitation, not a wording problem
-to hide.
+receive most of the investment. Trusted-head browser verification is implemented,
+but no trusted PR-head deployment was registered or exercised for the sample. The
+committed report uses deterministic fallback wording through the product renderer,
+and its runtime verification therefore remains `verification_unavailable`. That
+is an environmental limitation, not a wording problem to hide.
 
 ## 1. Reference target and narrow vertical slice
 
@@ -110,7 +110,9 @@ flowchart LR
   Curator --> Ops[(Postgres and private artifacts)]
   Graph --> Assessment[PR investigation and blast radius]
   Ops --> Assessment
-  Assessment --> Review[QA review surfaces]
+  Assessment --> Delivery[Report, targeted verification, and QA view]
+  Assessment --> Refresh[Incremental refresh]
+  Refresh --> Graph
 ```
 
 ## 3. Agent decomposition: decisions versus authority
@@ -118,19 +120,19 @@ flowchart LR
 This is not one long prompt. Each stage has a narrow question, bounded tools, a
 typed result, and an explicit authority boundary.
 
-| Stage                  | Model-driven responsibility                                                                       | Deterministic authority                                                                                                              |
-| ---------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Source preparation     | None                                                                                              | Fetch immutable inputs; parse documents, TS/React, PHP/Laravel, routes, endpoints, diffs, and browser observations into stable facts |
-| Documentation Explorer | Choose which approved page/section answers the mission; propose atomic requirements               | Approved document map, exact citations, schema, scope, duplicate and budget checks                                                   |
-| Code Explorer          | Choose which symbol/edge/slice to inspect; propose implementation paths and unresolved boundaries | AST/route indexes, exact source ranges, relationship validation, language/path/line budgets                                          |
-| Application Explorer   | Choose among opaque observed actions and decide when the mission has enough evidence              | Exact-origin browser policy, state-bound action identity, destructive-action denial, transition/network capture, replay rules        |
-| Evidence Curator       | Compare proposals, identify conflicts/gaps, request bounded follow-ups, abstain                   | Evidence tiers, link-type rules, source/run/revision compatibility, round and total budget                                           |
-| Publication            | None                                                                                              | Validate the complete pending fact/link/coverage batch and atomically advance the active revision                                    |
-| PR investigation       | Choose bounded follow-up reads from changed symbols                                               | Immutable base/head diff, symbol overlap, graph query scope, evidence-path validation                                                |
-| Blast radius           | None                                                                                              | Normalize paths, exclude stale/conflicted/Tier-D claims, aggregate targets, score risk and evidence separately                       |
-| Report wording         | Select only among bounded supplied wording choices                                                | Exact fact/claim/citation subset validation, deterministic fallback, immutable persistence, API/dashboard, and GitHub check          |
-| Dynamic verification   | Intended future adaptive navigation only                                                          | Trusted-head identity and deterministic checkpoints; planning exists, execution does not                                             |
-| Incremental refresh    | Choose bounded follow-up investigation for changed or stale scope                                 | Commit ancestry, invalidation/reuse, coverage recomputation, pending validation, and atomic active-revision switch                   |
+| Stage                  | Model-driven responsibility                                                                       | Deterministic authority                                                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Source preparation     | None                                                                                              | Fetch immutable inputs; parse documents, TS/React, PHP/Laravel, routes, endpoints, diffs, and browser observations into stable facts  |
+| Documentation Explorer | Choose which approved page/section answers the mission; propose atomic requirements               | Approved document map, exact citations, schema, scope, duplicate and budget checks                                                    |
+| Code Explorer          | Choose which symbol/edge/slice to inspect; propose implementation paths and unresolved boundaries | AST/route indexes, exact source ranges, relationship validation, language/path/line budgets                                           |
+| Application Explorer   | Choose among opaque observed actions and decide when the mission has enough evidence              | Exact-origin browser policy, state-bound action identity, destructive-action denial, transition/network capture, replay rules         |
+| Evidence Curator       | Compare proposals, identify conflicts/gaps, request bounded follow-ups, abstain                   | Evidence tiers, link-type rules, source/run/revision compatibility, round and total budget                                            |
+| Publication            | None                                                                                              | Validate the complete pending fact/link/coverage batch and atomically advance the active revision                                     |
+| PR investigation       | Choose bounded follow-up reads from changed symbols                                               | Immutable base/head diff, symbol overlap, graph query scope, evidence-path validation                                                 |
+| Blast radius           | None                                                                                              | Normalize paths, exclude stale/conflicted/Tier-D claims, aggregate targets, score risk and evidence separately                        |
+| Report wording         | Select only among bounded supplied wording choices                                                | Exact fact/claim/citation subset validation, deterministic fallback, immutable persistence, API/dashboard, and GitHub check           |
+| Dynamic verification   | Adapt within a fixed mission and request at most one named evidence-gap follow-up                 | Revalidated head identity, setup/control classification, deterministic checkpoints/verdicts, total budget, retention, and publication |
+| Incremental refresh    | Choose bounded follow-up investigation for changed or stale scope                                 | Commit ancestry, invalidation/reuse, coverage recomputation, pending validation, and atomic active-revision switch                    |
 
 All three specialists use the same LangGraph kernel. A kernel configuration fixes
 agent identity, allowed mission modes, prompt/model/toolset/validator versions,
@@ -411,9 +413,13 @@ artifact drift. High/critical dependency advisories cannot be excepted.
 
 PR code in a Render preview remains hostile even if provider identity proves its
 commit. The planning contract requires an exact service/deploy/repository/SHA/origin
-and compatibility proof before credential access, but no trusted head deployment
-is registered and execution is not implemented. The demo correctly stops at
-`verification_unavailable`.
+and compatibility proof before credential access. The targeted verification graph
+revalidates identity before every head browser mission, runs affected scenarios
+and an optional control, evaluates deterministic checkpoints, limits one named
+gap follow-up, cleans up in `finally`, retains failure evidence privately, and
+appends versioned report/check enrichment without erasing predicted findings. No
+trusted head deployment is registered for the sample, so the demo correctly stops
+at `verification_unavailable`.
 
 Incremental refresh is implemented separately from assessment history. It checks
 trusted deployed commit ancestry, plans affected document/code/workflow scope,
@@ -452,16 +458,18 @@ cancellation leaves the prior active graph and indexed commit unchanged.
 
 ### Explicit cuts
 
-- Dynamic trusted-head checkpoint execution (SNT-031).
 - Production root graph assembly for the worker.
+- A registered public baseline/head Render pair and an executed live provider
+  demonstration; deterministic and gated live harnesses exist, but the submission
+  does not fabricate an external deployment.
 - Languages beyond TypeScript/React and PHP/Laravel.
 - Arbitrary target code execution, generated tests, auto-healing, broad visual
   regression, payments, outbound messages, repository writes, and PR comments.
 - Statistical calibration or claims that the small golden fixture generalizes.
 
-SNT-029 report delivery and SNT-032 incremental refresh are implemented and
-verified. SNT-031 dynamic verification execution is not implemented; its trusted
-deployment identity and mission planning contracts do not constitute execution.
+SNT-029 report delivery, SNT-031 targeted verification, and SNT-032 incremental
+refresh are implemented and verified. The clean-clone demo uses fixture ports and
+records verification as unavailable because it has no registered external head.
 
 These cuts mean the submission demonstrates the engine and trust boundaries with
 deterministic UI fixtures and a validated reference report, not a fully deployed
@@ -470,16 +478,7 @@ an engineering reviewer deciding what is real.
 
 ## 10. What I would build with another week
 
-### 1. Execute trusted-head verification
-
-Compile the planned graph against an attested disposable Render head. Revalidate
-identity immediately before browser access, run affected scenarios plus one
-control, evaluate deterministic reachability/visibility/transition/request/value
-checkpoints, retain private failure evidence, and append observations without
-erasing predicted risk. This turns an important unknown into measured behavior
-while preserving the prediction/verification distinction.
-
-### 2. Compile and deploy the production root graphs
+### 1. Compile and deploy the production root graphs
 
 Wire initialization, PR assessment, report finalization, verification, and refresh
 handlers into the worker's `createRunGraphs` assembly with real durable rich-state
@@ -488,16 +487,24 @@ deployment can progress from onboarding through one immutable report without
 fixture ports. This closes the gap between tested modules and an operational
 deployment.
 
-### 3. Calibrate live repetitions and a second target
+### 2. Run the trusted Hi.Events deployment and calibration study
 
-Run an explicitly budgeted repeated model/browser sample against a trusted
-Hi.Events deployment, audit disagreements with the human rubric, and add failures
-to the development set. Then validate the adapter boundaries on one smaller
-TypeScript-only public product. This tests whether evidence tiers and tool budgets
-generalize without pretending the current fixture is statistically representative.
+Provision the disposable Render base/head pair, register exact provider identity,
+run the implemented affected scenarios plus one control, and retain the first
+versioned report enrichment. Repeat the approved model/browser subset, audit
+failures with the QA rubric, and record actual cost and variance without selecting
+a best run. This turns the honest `verification_unavailable` sample into measured
+runtime evidence.
 
-I would not spend that week on more UI polish. Verification execution, production
-assembly, and calibrated live evidence close the remaining credibility gaps.
+### 3. Validate a second target
+
+Apply the adapter and evaluation contracts to one smaller TypeScript-only public
+product and add disagreements to the development set. This tests whether evidence
+tiers, absence semantics, and tool budgets generalize without pretending the
+current Hi.Events fixture is statistically representative.
+
+I would not spend that week on more UI polish. Production assembly, trusted live
+calibration, and cross-target evidence close the remaining credibility gaps.
 
 ## 11. Reproduction and review evidence
 

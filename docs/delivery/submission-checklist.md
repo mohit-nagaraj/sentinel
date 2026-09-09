@@ -52,5 +52,5 @@ the intended `main` locations after this issue merges.
       browser, and replace the pending Loom row with its share URL.
 - [ ] Confirm every URL resolves from a signed-out browser after the final merge.
 - [ ] Send repository, design, sample, and Loom URLs using the assignment's
-      required email subject; keep SNT-031 verification execution explicit as the
-      remaining cut.
+      required email subject; keep the absent registered/live PR-head run and
+      fixture-based clean-clone demo explicit.
