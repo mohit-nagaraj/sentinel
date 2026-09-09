@@ -1,12 +1,12 @@
 # SNT-029 — Grounded report generation, dashboard, and GitHub summary
 
-| Field | Value |
-|---|---|
-| Milestone | M6 — Pull-request blast-radius product loop |
-| Status | `not-started` |
-| Depends on | SNT-005, SNT-025, SNT-026, SNT-028 |
-| Blocks | Verification enrichment, final assignment delivery |
-| PRD references | §8.6, §13.3/13.16, §17, FR-014 |
+| Field          | Value                                              |
+| -------------- | -------------------------------------------------- |
+| Milestone      | M6 — Pull-request blast-radius product loop        |
+| Status         | `done`                                             |
+| Depends on     | SNT-005, SNT-025, SNT-026, SNT-028                 |
+| Blocks         | Verification enrichment, final assignment delivery |
+| PRD references | §8.6, §13.3/13.16, §17, FR-014                     |
 
 ## Background
 
@@ -26,16 +26,16 @@ The report is the business output. It must be readable by a product-aware QA lea
 
 ## Implementation tasks
 
-- [ ] Define report schema/view model before prose generation.
-- [ ] Build deterministic fallback Markdown renderer.
-- [ ] Add bounded structured wording call for titles/explanations/summaries.
-- [ ] Validate that generated references/claims are subsets of supplied facts.
-- [ ] Render product-first sections with optional engineering drill-down.
-- [ ] Store Markdown and metadata privately; issue authorized/signed access.
-- [ ] Build dashboard report route with evidence/source/artifact links.
-- [ ] Build GitHub check summary with correct success/neutral/failure/action-required semantics.
-- [ ] Prevent stale head/report races and make finalization idempotent.
-- [ ] Add print/export-friendly layout; PDF remains optional.
+- [x] Define report schema/view model before prose generation.
+- [x] Build deterministic fallback Markdown renderer.
+- [x] Add bounded structured wording call for titles/explanations/summaries.
+- [x] Validate that generated references/claims are subsets of supplied facts.
+- [x] Render product-first sections with optional engineering drill-down.
+- [x] Store Markdown and metadata privately; issue authorized/signed access.
+- [x] Build dashboard report route with evidence/source/artifact links.
+- [x] Build GitHub check summary with correct success/neutral/failure/action-required semantics.
+- [x] Prevent stale head/report races and make finalization idempotent.
+- [x] Add print/export-friendly layout; PDF remains optional.
 
 ## Acceptance criteria
 
@@ -62,4 +62,29 @@ Automatic PR comments, editing GitHub source, final PDF requirement, and perform
 
 ## Implementation notes
 
-_Populate during implementation with final paths, commands, decisions, test evidence, and any explicitly deferred acceptance item._
+- `packages/contracts/src/report.ts` defines the immutable source/view/artifact,
+  mandatory-section, citation, coverage, and append-only verification contracts.
+- `packages/orchestration/src/report.ts` generates deterministic reports, limits
+  model wording to exact supplied choices with complete citations, renders the
+  canonical Markdown, projects GitHub outcomes, and finalizes reports only for a
+  current assessment head.
+- `packages/storage/src/assessment-report-{repository,service}.ts` and
+  `supabase/migrations/20260909000200_assessment_reports.sql` provide private
+  artifact delivery, owner-scoped reads, report-scoped excerpts, immutable
+  compare-and-set finalization, retry reuse, and versioned verification
+  enrichment.
+- `apps/web/app/assessments/[assessmentId]` and
+  `apps/web/components/assessment-report-workspace.tsx` provide the authorized
+  product-first dashboard, engineering drill-down, Markdown download, and a
+  print layout that expands all evidence without duplicating report content.
+- Predicted risk never fails a GitHub check by itself. Verification failure and
+  infrastructure/action-required outcomes remain distinct, and transient check
+  synchronization is retried rather than misclassified as supersession.
+- The ystack bug review found ungrounded model prose, retry artifact conflicts,
+  and over-broad safety wording. Exact deterministic wording choices,
+  authoritative stored-artifact reuse, and contextual assurance validation fix
+  all three findings.
+- Focused verification: 116 report/blast-radius/investigation/storage/web tests,
+  all four affected package typechecks, changed-file lint/format/whitespace
+  checks, and the Chromium dashboard, keyboard, mobile, print, and PDF flow
+  passed. Complete CI remains pending GitHub Actions.

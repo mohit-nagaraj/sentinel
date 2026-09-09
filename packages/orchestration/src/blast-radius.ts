@@ -345,6 +345,14 @@ function mergeRelationship(
       ...left.evidenceIds,
       ...right.evidenceIds,
     ]).slice(0, 100),
+    sourceUris: sortedUnique([...left.sourceUris, ...right.sourceUris]).slice(
+      0,
+      100
+    ),
+    artifactIds: sortedUnique([
+      ...left.artifactIds,
+      ...right.artifactIds,
+    ]).slice(0, 100),
     provenance: [
       ...new Map(
         [...left.provenance, ...right.provenance].map((value) => [
@@ -907,9 +915,11 @@ export function createBlastRadiusCandidatesFromGraphPaths(input: {
         )
       const relationships = sourcePath.path.relationships
         .slice(0, index)
-        .map(({ evidence, ...relationship }) => ({
+        .map(({ evidence, sourceUri, artifactId, ...relationship }) => ({
           ...relationship,
           applicationId: input.applicationId,
+          sourceUris: sourceUri === undefined ? [] : [sourceUri],
+          artifactIds: artifactId === undefined ? [] : [artifactId],
           provenance: evidence.map(({ provenance }) => provenance),
           stale: false,
           conflictIds: [],

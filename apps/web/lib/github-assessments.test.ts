@@ -344,7 +344,7 @@ describe("GithubAssessmentService", () => {
         headSha,
         lifecycle: { state: "running", startedAt: "2026-09-09T00:00:00Z" },
       })
-    ).resolves.toBe(false)
+    ).resolves.toBe("superseded")
     expect(github.updateCheck).not.toHaveBeenCalled()
 
     getCurrentCheck.mockResolvedValue({
@@ -358,7 +358,7 @@ describe("GithubAssessmentService", () => {
         headSha,
         lifecycle: { state: "running", startedAt: "2026-09-09T00:00:00Z" },
       })
-    ).resolves.toBe(true)
+    ).resolves.toBe("published")
     expect(github.updateCheck).toHaveBeenCalledWith(
       expect.objectContaining({ assessmentId, headSha, checkRunId: "777" }),
       expect.objectContaining({ assessmentId, headSha })
@@ -390,7 +390,7 @@ describe("GithubAssessmentService", () => {
         headSha,
         lifecycle: { state: "running", startedAt: "2026-09-09T00:00:00Z" },
       })
-    ).resolves.toBe(true)
+    ).resolves.toBe("published")
     expect(github.ensureQueuedCheck).toHaveBeenCalledWith(checkTarget)
     expect(target.bindCheck).toHaveBeenCalledWith({
       assessmentId,
@@ -402,5 +402,27 @@ describe("GithubAssessmentService", () => {
       boundTarget,
       expect.objectContaining({ assessmentId, headSha })
     )
+  })
+
+  it("keeps a current check pending while another worker owns synchronization", async () => {
+    const target = store({
+      getCurrentCheck: vi.fn().mockResolvedValue({
+        ...checkTarget,
+        checkRunId: null,
+        syncLeaseToken: null,
+      }),
+      claimCheck: vi.fn().mockResolvedValue(null),
+    })
+    const github = provider()
+    const service = new GithubAssessmentService(target, github, secret)
+
+    await expect(
+      service.publishCheck({
+        assessmentId,
+        headSha,
+        lifecycle: { state: "running", startedAt: "2026-09-09T00:00:00Z" },
+      })
+    ).resolves.toBe("sync_pending")
+    expect(github.updateCheck).not.toHaveBeenCalled()
   })
 })

@@ -4,6 +4,7 @@ import { evidenceRelationshipSchema, riskSchema } from "./assessment.ts"
 import { prInvestigationUnknownSchema } from "./pr-investigation.ts"
 import {
   applicationIdSchema,
+  artifactIdSchema,
   codeSymbolIdSchema,
   commitShaSchema,
   contentHashSchema,
@@ -16,6 +17,7 @@ import {
   reasonCodeSchema,
   reviewStateSchema,
   schemaVersionSchema,
+  sourceUriSchema,
   stableEntityIdSchema,
 } from "./primitives.ts"
 
@@ -80,6 +82,12 @@ export const blastRadiusPathRelationshipSchema = z.strictObject({
   evidenceIds: uniqueValues(evidenceIdSchema, "Path-relationship evidence IDs")
     .min(1)
     .max(100),
+  sourceUris: uniqueValues(sourceUriSchema, "Path-relationship source URIs")
+    .max(100)
+    .default([]),
+  artifactIds: uniqueValues(artifactIdSchema, "Path-relationship artifact IDs")
+    .max(100)
+    .default([]),
   provenance: z.array(provenanceSchema).min(1).max(100),
   reviewState: reviewStateSchema,
   graphRevision: z.number().int().nonnegative(),

@@ -28,6 +28,7 @@ import {
 } from "./facts.ts"
 import {
   applicationIdSchema,
+  artifactIdSchema,
   commitShaSchema,
   contentHashSchema,
   entityKindSchema,
@@ -40,6 +41,7 @@ import {
   runIdSchema,
   schemaVersionSchema,
   shortTextSchema,
+  sourceUriSchema,
   stableEntityIdSchema,
   timestampSchema,
 } from "./primitives.ts"
@@ -445,6 +447,8 @@ export const graphPathRelationshipSchema = z.strictObject({
   extractionMethod: z.string().trim().min(1).max(128),
   evidenceIds: z.array(evidenceIdSchema).min(1).max(100),
   evidence: z.array(graphPathEvidenceSchema).min(1).max(100),
+  sourceUri: sourceUriSchema.optional(),
+  artifactId: artifactIdSchema.optional(),
   reviewState: reviewStateSchema,
   graphRevision: z.number().int().positive(),
 })
