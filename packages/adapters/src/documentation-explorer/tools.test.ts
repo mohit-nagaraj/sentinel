@@ -1,8 +1,10 @@
 import {
   createDocumentationRequirementId,
   documentPageIdSchema,
+  documentSourceIdSchema,
   documentationExplorerMissionSchema,
   documentationExplorerToolNames,
+  hashCanonical,
 } from "@sentinel/contracts"
 import { describe, expect, it } from "vitest"
 
@@ -303,6 +305,8 @@ describe("DocumentationExplorerTools", () => {
     ) {
       throw new Error("Expected a section read")
     }
+    const { contentHash, endOffset, evidenceId, sectionId, startOffset } =
+      read.observation.citation
     const claim = await tools.execute("submit_requirement_claim", {
       kind: "requirement",
       statement: "An attendee must provide a valid email before checkout.",
@@ -310,7 +314,13 @@ describe("DocumentationExplorerTools", () => {
       capability: "ticket checkout",
       expectedOutcome: "A valid email exists before checkout.",
       testable: true,
-      citation: read.observation.citation,
+      citation: {
+        evidenceId,
+        sectionId,
+        startOffset,
+        endOffset,
+        contentHash,
+      },
     })
     expect(claim).toMatchObject({ kind: "claim", input: { testable: true } })
 
@@ -419,6 +429,77 @@ describe("DocumentationExplorerTools", () => {
           mission
         )
     ).toThrowError(DocumentationExplorerToolError)
+
+    const forgedSourceId = documentSourceIdSchema.parse(
+      `document-source:v1:${"8".repeat(64)}`
+    )
+    const forgedSource = {
+      ...map,
+      source: { ...map.source, id: forgedSourceId },
+      pages: map.pages.map((page) => ({
+        ...page,
+        fact: { ...page.fact, sourceId: forgedSourceId },
+      })),
+    }
+    expect(
+      () =>
+        new DocumentationExplorerTools(
+          new DocumentationMapIndex(forgedSource),
+          mission
+        )
+    ).toThrowError(DocumentationExplorerToolError)
+
+    const originalSection = map.sections[0]!
+    const injectedText = `X${originalSection.sanitizedText.slice(1)}`
+    const injectedHash = hashCanonical({ excerpt: injectedText })
+    const injectedMap = {
+      ...map,
+      sections: map.sections.map((section, index) =>
+        index === 0
+          ? {
+              ...section,
+              sanitizedText: injectedText,
+              fact: {
+                ...section.fact,
+                excerpt: injectedText,
+                contentHash: injectedHash,
+              },
+            }
+          : section
+      ),
+    }
+    expect(
+      () =>
+        new DocumentationExplorerTools(
+          new DocumentationMapIndex(injectedMap),
+          mission
+        )
+    ).toThrowError(DocumentationExplorerToolError)
+  })
+
+  it("snapshots an admitted map against post-construction mutation", async () => {
+    const { map, mission, checkout } = fixture()
+    const externalSection = map.sections.find(
+      ({ sourceUri }) => sourceUri === checkout
+    )!
+    const expectedText = externalSection.sanitizedText
+    const tools = new DocumentationExplorerTools(
+      new DocumentationMapIndex(map),
+      mission
+    )
+    Object.defineProperty(externalSection, "sanitizedText", {
+      configurable: true,
+      value: `X${expectedText.slice(1)}`,
+    })
+
+    const read = await tools.execute("read_document_section", {
+      sectionId: externalSection.fact.id,
+    })
+
+    expect(read).toMatchObject({
+      kind: "observation",
+      observation: { citation: { quote: expectedText } },
+    })
   })
 
   it("fails closed on oversized sections, output limits, and cancellation", async () => {

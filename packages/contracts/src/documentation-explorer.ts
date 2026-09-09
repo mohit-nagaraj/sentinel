@@ -1,7 +1,11 @@
 import { z } from "zod"
 
 import { requirementCandidateSchema } from "./facts.ts"
-import { hashCanonical } from "./identity.ts"
+import {
+  createClaimId,
+  createRunScopedEvidenceId,
+  hashCanonical,
+} from "./identity.ts"
 import {
   discoveryMissionSchema,
   missionBudgetSchema,
@@ -16,6 +20,7 @@ import {
   documentSectionIdSchema,
   documentSourceIdSchema,
   evidenceIdSchema,
+  missionIdSchema,
   persistedTextSchema,
   reasonCodeSchema,
   requirementIdSchema,
@@ -95,6 +100,19 @@ export const documentationClaimKindSchema = z.enum([
   "acceptance_criterion",
 ])
 
+export const documentationClaimCitationInputSchema = z
+  .strictObject({
+    evidenceId: evidenceIdSchema,
+    sectionId: documentSectionIdSchema,
+    startOffset: z.number().int().nonnegative().max(1_000_000),
+    endOffset: z.number().int().positive().max(1_000_000),
+    contentHash: contentHashSchema,
+  })
+  .refine(({ endOffset, startOffset }) => endOffset > startOffset, {
+    message: "Claim citation end offset must follow its start offset",
+    path: ["endOffset"],
+  })
+
 export const submitRequirementClaimInputSchema = z.strictObject({
   kind: documentationClaimKindSchema,
   statement: persistedTextSchema,
@@ -102,7 +120,7 @@ export const submitRequirementClaimInputSchema = z.strictObject({
   capability: shortTextSchema,
   expectedOutcome: persistedTextSchema.optional(),
   testable: z.literal(true),
-  citation: documentationExcerptCitationSchema,
+  citation: documentationClaimCitationInputSchema,
 })
 
 export const documentationQuestionDispositionSchema = z
@@ -116,6 +134,16 @@ export const documentationQuestionDispositionSchema = z
     summary: persistedTextSchema,
   })
   .superRefine((disposition, context) => {
+    if (
+      new Set(disposition.requirementIds).size !==
+        disposition.requirementIds.length ||
+      new Set(disposition.evidenceIds).size !== disposition.evidenceIds.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Question disposition references must be unique",
+      })
+    }
     if (
       disposition.status === "covered" &&
       (disposition.requirementIds.length === 0 ||
@@ -295,6 +323,8 @@ export const documentationRequirementClaimSchema = z
   .strictObject({
     schemaVersion: schemaVersionSchema,
     claimId: claimIdSchema,
+    missionId: missionIdSchema,
+    runId: runIdSchema,
     status: z.literal("proposed"),
     kind: documentationClaimKindSchema,
     requirement: requirementCandidateSchema.extend({
@@ -319,6 +349,49 @@ export const documentationRequirementClaimSchema = z
         code: "custom",
         message: "Requirement source must exactly match its citation",
         path: ["requirement", "source"],
+      })
+    }
+    const expectedRequirementId = createDocumentationRequirementId({
+      applicationId: claim.requirement.applicationId,
+      sectionId: citation.sectionId,
+      kind: claim.kind,
+      statement: claim.requirement.statement,
+    })
+    if (claim.requirement.id !== expectedRequirementId) {
+      context.addIssue({
+        code: "custom",
+        message: "Requirement ID must match its canonical cited statement",
+        path: ["requirement", "id"],
+      })
+    }
+    const expectedClaimId = createClaimId({
+      applicationId: claim.requirement.applicationId,
+      missionId: claim.missionId,
+      subjectId: claim.requirement.id,
+      predicate: "supported_by",
+      objectId: citation.sectionId,
+      ordinal: 0,
+    })
+    if (claim.claimId !== expectedClaimId) {
+      context.addIssue({
+        code: "custom",
+        message: "Claim ID must match its canonical requirement relation",
+        path: ["claimId"],
+      })
+    }
+    const expectedEvidenceId = createRunScopedEvidenceId({
+      applicationId: claim.requirement.applicationId,
+      runId: claim.runId,
+      sourceId: citation.sectionId,
+      kind: "documentation_excerpt",
+      ordinal: 0,
+    })
+    if (citation.evidenceId !== expectedEvidenceId) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Citation evidence ID must match its run-scoped section identity",
+        path: ["citation", "evidenceId"],
       })
     }
     if (
@@ -360,25 +433,57 @@ export const documentationDuplicateGroupSchema = z
         path: ["duplicateRequirementIds"],
       })
     }
+    if (
+      new Set(group.duplicateRequirementIds).size !==
+        group.duplicateRequirementIds.length ||
+      new Set(group.evidenceIds).size !== group.evidenceIds.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Duplicate group references must be unique",
+      })
+    }
   })
 
-export const documentationConflictSchema = z.strictObject({
-  key: contentHashSchema,
-  status: z.literal("unresolved"),
-  kind: z.literal("contradictory_requirement"),
-  requirementIds: z.array(requirementIdSchema).min(2).max(100),
-  evidenceIds: z.array(evidenceIdSchema).min(2).max(100),
-  summary: persistedTextSchema,
-})
+export const documentationConflictSchema = z
+  .strictObject({
+    key: contentHashSchema,
+    status: z.literal("unresolved"),
+    kind: z.literal("contradictory_requirement"),
+    requirementIds: z.array(requirementIdSchema).min(2).max(100),
+    evidenceIds: z.array(evidenceIdSchema).min(2).max(100),
+    summary: persistedTextSchema,
+  })
+  .superRefine((conflict, context) => {
+    if (
+      new Set(conflict.requirementIds).size !==
+        conflict.requirementIds.length ||
+      new Set(conflict.evidenceIds).size !== conflict.evidenceIds.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Conflict references must be distinct",
+      })
+    }
+  })
 
-export const documentationCapabilityTermSchema = z.strictObject({
-  id: capabilityIdSchema,
-  applicationId: applicationIdSchema,
-  normalizedName: shortTextSchema,
-  requirementIds: z.array(requirementIdSchema).min(1).max(500),
-  status: z.literal("proposed"),
-  authoritative: z.literal(false),
-})
+export const documentationCapabilityTermSchema = z
+  .strictObject({
+    id: capabilityIdSchema,
+    applicationId: applicationIdSchema,
+    normalizedName: shortTextSchema,
+    requirementIds: z.array(requirementIdSchema).min(1).max(500),
+    status: z.literal("proposed"),
+    authoritative: z.literal(false),
+  })
+  .refine(
+    ({ requirementIds }) =>
+      new Set(requirementIds).size === requirementIds.length,
+    {
+      message: "Capability requirement references must be unique",
+      path: ["requirementIds"],
+    }
+  )
 
 export const documentationMissionMetricsSchema = z.strictObject({
   treePagesVisited: z.number().int().nonnegative(),
@@ -389,6 +494,16 @@ export const documentationMissionMetricsSchema = z.strictObject({
   duplicateRequirements: z.number().int().nonnegative(),
   conflictsFound: z.number().int().nonnegative(),
 })
+
+const documentationBudgetStopReasons = new Set([
+  "budget_exhausted",
+  "elapsed_budget_exhausted",
+  "model_budget_exhausted",
+  "model_usage_exceeded_preflight",
+  "recursion_limit",
+  "tool_budget_exhausted",
+  "tool_usage_exceeded_preflight",
+])
 
 export const documentationMissionResultSchema = missionResultSchema
   .extend({
@@ -508,6 +623,19 @@ export const documentationMissionResultSchema = missionResultSchema
           path: ["capabilityTerms", index, "applicationId"],
         })
       }
+      if (
+        term.id !==
+        createDocumentationCapabilityId({
+          applicationId: term.applicationId,
+          normalizedName: term.normalizedName,
+        })
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Capability ID must match its canonical normalized name",
+          path: ["capabilityTerms", index, "id"],
+        })
+      }
       validateReferences(term.requirementIds, [
         "capabilityTerms",
         index,
@@ -516,6 +644,8 @@ export const documentationMissionResultSchema = missionResultSchema
     })
     result.requirements.forEach((claim, index) => {
       if (
+        claim.missionId !== result.missionId ||
+        claim.runId !== result.runId ||
         claim.requirement.applicationId !== result.applicationId ||
         claim.citation.sourceId !== result.sourceId
       ) {
@@ -524,6 +654,91 @@ export const documentationMissionResultSchema = missionResultSchema
           message:
             "Requirement must belong to the mission application and documentation source",
           path: ["requirements", index],
+        })
+      }
+    })
+    result.duplicateGroups.forEach((group, index) => {
+      const groupedClaims = [
+        group.canonicalRequirementId,
+        ...group.duplicateRequirementIds,
+      ].map((id) => requirementById.get(id))
+      const fingerprints = new Set(
+        groupedClaims.map((claim) =>
+          claim === undefined
+            ? "missing"
+            : `${claim.kind}:${claim.statementFingerprint}`
+        )
+      )
+      const expectedEvidence = [
+        ...new Set(
+          groupedClaims.flatMap((claim) =>
+            claim === undefined ? [] : [claim.citation.evidenceId]
+          )
+        ),
+      ].sort()
+      const suppliedEvidence = [...group.evidenceIds].sort()
+      const firstClaim = groupedClaims[0]
+      const expectedKey =
+        firstClaim === undefined
+          ? undefined
+          : hashCanonical({
+              kind: "documentation_duplicate_group",
+              normalizedKey: `${firstClaim.kind}\u0000${firstClaim.statementFingerprint}`,
+            })
+      if (
+        fingerprints.size !== 1 ||
+        group.key !== expectedKey ||
+        expectedEvidence.length !== suppliedEvidence.length ||
+        expectedEvidence.some(
+          (evidenceId, evidenceIndex) =>
+            evidenceId !== suppliedEvidence[evidenceIndex]
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Duplicate groups must contain the same normalized claim and exact evidence union",
+          path: ["duplicateGroups", index],
+        })
+      }
+    })
+    result.conflicts.forEach((conflict, index) => {
+      const conflictClaims = conflict.requirementIds.map((id) =>
+        requirementById.get(id)
+      )
+      const subjects = new Set(
+        conflictClaims.map((claim) =>
+          claim === undefined
+            ? "missing"
+            : `${normalizeRequirementStatement(claim.requirement.actor ?? "system")}\u0000${normalizeRequirementStatement(claim.requirement.capability)}`
+        )
+      )
+      const subject = [...subjects][0]
+      const expectedKey =
+        subjects.size === 1 && subject !== undefined
+          ? hashCanonical({ kind: "documentation_conflict", subject })
+          : undefined
+      const expectedEvidence = [
+        ...new Set(
+          conflictClaims.flatMap((claim) =>
+            claim === undefined ? [] : [claim.citation.evidenceId]
+          )
+        ),
+      ].sort()
+      const suppliedEvidence = [...conflict.evidenceIds].sort()
+      if (
+        conflict.key !== expectedKey ||
+        expectedEvidence.length !== suppliedEvidence.length ||
+        expectedEvidence.some(
+          (evidenceId, evidenceIndex) =>
+            evidenceId !== suppliedEvidence[evidenceIndex]
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Conflicts must share one actor/capability and the exact evidence union",
+          path: ["conflicts", index],
         })
       }
     })
@@ -568,11 +783,12 @@ export const documentationMissionResultSchema = missionResultSchema
     }
     if (
       result.status === "budget_exhausted" &&
-      !result.stopReason.code.endsWith("budget_exhausted")
+      !documentationBudgetStopReasons.has(result.stopReason.code)
     ) {
       context.addIssue({
         code: "custom",
-        message: "Budget-exhausted results require the matching stop reason",
+        message:
+          "Budget-exhausted results require a deterministic budget or recursion stop reason",
         path: ["stopReason", "code"],
       })
     }
@@ -713,6 +929,9 @@ export type InspectLinkedSectionsInput = z.infer<
 >
 export type DocumentationExcerptCitation = z.infer<
   typeof documentationExcerptCitationSchema
+>
+export type DocumentationClaimCitationInput = z.infer<
+  typeof documentationClaimCitationInputSchema
 >
 export type SubmitRequirementClaimInput = z.infer<
   typeof submitRequirementClaimInputSchema

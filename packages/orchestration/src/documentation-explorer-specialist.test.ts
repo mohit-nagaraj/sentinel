@@ -9,6 +9,7 @@ import {
   documentSourceIdSchema,
   documentationExplorerMissionSchema,
   documentationExplorerToolNames,
+  documentationToolObservationSchema,
   finishDocumentMissionInputSchema,
   hashCanonical,
   missionIdSchema,
@@ -34,10 +35,14 @@ import {
   type DocumentationExplorerModelGateway,
   type DocumentationExplorerToolExecution,
   type DocumentationExplorerToolPort,
+  type StoredDocumentationExplorerToolResult,
 } from "./documentation-explorer-specialist.ts"
 import { InMemoryResumeCoordinator } from "./resume-coordinator.ts"
 import { createInMemorySpecialistCheckpointer } from "./specialist/fake.ts"
-import { InMemorySpecialistToolExecutionCoordinator } from "./specialist/tools.ts"
+import {
+  InMemorySpecialistToolExecutionCoordinator,
+  hashSpecialistToolRequest,
+} from "./specialist/tools.ts"
 import type { OrchestrationEvent, RuntimeDependencies } from "./runtime.ts"
 
 const applicationId = applicationIdSchema.parse(
@@ -53,8 +58,8 @@ const sectionId = documentSectionIdSchema.parse(
   `document-section:v1:${"e".repeat(64)}`
 )
 const mapContentHash = contentHashSchema.parse(`sha256:${"1".repeat(64)}`)
-const sectionContentHash = contentHashSchema.parse(`sha256:${"2".repeat(64)}`)
 const quote = "The attendee must provide a valid email before checkout."
+const sectionContentHash = hashCanonical({ excerpt: quote })
 const statement = "The attendee must provide a valid email before checkout."
 
 const budget: MissionBudget = {
@@ -125,7 +130,10 @@ function readObservation(
       quote: selectedQuote,
       startOffset: 20,
       endOffset: 20 + selectedQuote.length,
-      contentHash: sectionContentHash,
+      contentHash:
+        selectedQuote === quote
+          ? sectionContentHash
+          : hashCanonical({ excerpt: selectedQuote }),
     },
     metrics: {
       contentBytes: Buffer.byteLength(selectedQuote, "utf8") + 512,
@@ -137,7 +145,20 @@ function readObservation(
   })
 }
 
+function claimCitationReference(
+  citation: z.infer<typeof documentSectionObservationSchema>["citation"]
+) {
+  return {
+    evidenceId: citation.evidenceId,
+    sectionId: citation.sectionId,
+    startOffset: citation.startOffset,
+    endOffset: citation.endOffset,
+    contentHash: citation.contentHash,
+  }
+}
+
 const readArguments = readDocumentSectionInputSchema.parse({ sectionId })
+const readCitation = readObservation().citation
 const claimArguments = submitRequirementClaimInputSchema.parse({
   kind: "requirement",
   statement,
@@ -145,7 +166,7 @@ const claimArguments = submitRequirementClaimInputSchema.parse({
   capability: "provide a valid email",
   expectedOutcome: "valid email before checkout",
   testable: true,
-  citation: readObservation().citation,
+  citation: claimCitationReference(readCitation),
 })
 const requirementId = createDocumentationRequirementId({
   applicationId,
@@ -382,8 +403,20 @@ describe("Documentation Explorer shared specialist composition", () => {
       "BEGIN_UNTRUSTED_DOCUMENTATION_EXCERPT"
     )
     expect(model.requests[1]?.input).toContain(quote)
+    expect(model.requests[2]?.input).toContain(
+      "BEGIN_UNTRUSTED_SUBMITTED_REQUIREMENTS"
+    )
+    expect(model.requests[2]?.input).not.toContain('"excerpt":')
     expect(JSON.stringify(result.state)).not.toContain(quote)
     expect(JSON.stringify(test.events)).not.toContain(quote)
+    const checkpointHistory: string[] = []
+    for await (const tuple of checkpointer.list({
+      configurable: { thread_id: selectedMission.id },
+    })) {
+      checkpointHistory.push(JSON.stringify(tuple.checkpoint))
+    }
+    expect(checkpointHistory.length).toBeGreaterThan(3)
+    expect(checkpointHistory.join("\n")).not.toContain(quote)
     expect(tools.signals.every((signal) => signal instanceof AbortSignal)).toBe(
       true
     )
@@ -423,7 +456,6 @@ describe("Documentation Explorer shared specialist composition", () => {
       ...claimArguments,
       citation: {
         ...claimArguments.citation,
-        quote: "The attendee must provide a phone number before checkout.",
         endOffset:
           claimArguments.citation.startOffset +
           "The attendee must provide a phone number before checkout.".length,
@@ -432,6 +464,13 @@ describe("Documentation Explorer shared specialist composition", () => {
       capability: "provide a phone number",
       expectedOutcome: "phone number before checkout",
     })
+    const stale = submitRequirementClaimInputSchema.parse({
+      ...claimArguments,
+      citation: {
+        ...claimArguments.citation,
+        contentHash: `sha256:${"3".repeat(64)}`,
+      },
+    })
     const tools = new ScriptedDocumentationTools()
     const store = new InMemoryDocumentationExplorerSpecialistStoreForTesting()
     const composition = createDocumentationExplorerSpecialist({
@@ -439,7 +478,8 @@ describe("Documentation Explorer shared specialist composition", () => {
       model: new ScriptedDocumentationModel([
         decision(1, "read_document_section", readArguments),
         decision(2, "submit_requirement_claim", fabricated),
-        decision(3, "finish_document_mission", partialArguments),
+        decision(3, "submit_requirement_claim", stale),
+        decision(4, "finish_document_mission", partialArguments),
       ]),
       tools,
       store,
@@ -459,6 +499,137 @@ describe("Documentation Explorer shared specialist composition", () => {
     expect(
       (await store.listToolResults(missionId)).map(({ toolName }) => toolName)
     ).toStrictEqual(["read_document_section", "finish_document_mission"])
+  })
+
+  it("rejects a claim that drops source negation", async () => {
+    const test = harness()
+    const negativeQuote =
+      "The checkout service must not publish payment details."
+    const negativeObservation = readObservation(negativeQuote)
+    const droppedNegation = submitRequirementClaimInputSchema.parse({
+      kind: "requirement",
+      statement: "The checkout service must publish payment details.",
+      actor: "checkout service",
+      capability: "publish payment details",
+      expectedOutcome: "publish payment details",
+      testable: true,
+      citation: claimCitationReference(negativeObservation.citation),
+    })
+    const store = new InMemoryDocumentationExplorerSpecialistStoreForTesting()
+    const composition = createDocumentationExplorerSpecialist({
+      mission: mission(),
+      model: new ScriptedDocumentationModel([
+        decision(1, "read_document_section", readArguments),
+        decision(2, "submit_requirement_claim", droppedNegation),
+        decision(3, "finish_document_mission", partialArguments),
+      ]),
+      tools: new ScriptedDocumentationTools(negativeObservation),
+      store,
+      executionCoordinator: new InMemorySpecialistToolExecutionCoordinator(),
+      runtime: test.runtime,
+      checkpointer: createInMemorySpecialistCheckpointer(),
+    })
+
+    const result = await composition.service.start()
+
+    expect(result.status).toBe("partial")
+    expect(result.documentationMission.requirements).toEqual([])
+    expect(
+      (await store.listToolResults(missionId)).map(({ toolName }) => toolName)
+    ).toStrictEqual(["read_document_section", "finish_document_mission"])
+  })
+
+  it("rejects a role-reversed claim with the same words and polarity", async () => {
+    const test = harness()
+    const roleQuote = "Administrators must approve requests from users."
+    const roleObservation = readObservation(roleQuote)
+    const roleReversed = submitRequirementClaimInputSchema.parse({
+      kind: "requirement",
+      statement: "Users must approve requests from administrators.",
+      actor: "users",
+      capability: "approve requests from administrators",
+      expectedOutcome: "requests from administrators approved",
+      testable: true,
+      citation: claimCitationReference(roleObservation.citation),
+    })
+    const store = new InMemoryDocumentationExplorerSpecialistStoreForTesting()
+    const composition = createDocumentationExplorerSpecialist({
+      mission: mission(),
+      model: new ScriptedDocumentationModel([
+        decision(1, "read_document_section", readArguments),
+        decision(2, "submit_requirement_claim", roleReversed),
+        decision(3, "finish_document_mission", partialArguments),
+      ]),
+      tools: new ScriptedDocumentationTools(roleObservation),
+      store,
+      executionCoordinator: new InMemorySpecialistToolExecutionCoordinator(),
+      runtime: test.runtime,
+      checkpointer: createInMemorySpecialistCheckpointer(),
+    })
+
+    const result = await composition.service.start()
+
+    expect(result.status).toBe("partial")
+    expect(result.documentationMission.requirements).toEqual([])
+    expect(
+      (await store.listToolResults(missionId)).map(({ toolName }) => toolName)
+    ).toStrictEqual(["read_document_section", "finish_document_mission"])
+  })
+
+  it("rejects vague and multi-action normative prose", async () => {
+    const cases = [
+      {
+        quote: "The application should work well.",
+        actor: "application",
+        capability: "work well",
+        expectedOutcome: "work well",
+      },
+      {
+        quote: "The administrator must create and delete users.",
+        actor: "administrator",
+        capability: "create and delete users",
+        expectedOutcome: "create and delete users",
+      },
+    ] as const
+    for (const [index, selected] of cases.entries()) {
+      const selectedMission = mission({
+        id: missionIdSchema.parse(`mission:v1:${String(index + 4).repeat(64)}`),
+      })
+      const observation = readObservation(selected.quote)
+      const claim = submitRequirementClaimInputSchema.parse({
+        kind: "requirement",
+        statement: selected.quote,
+        actor: selected.actor,
+        capability: selected.capability,
+        expectedOutcome: selected.expectedOutcome,
+        testable: true,
+        citation: claimCitationReference(observation.citation),
+      })
+      const store = new InMemoryDocumentationExplorerSpecialistStoreForTesting()
+      const composition = createDocumentationExplorerSpecialist({
+        mission: selectedMission,
+        model: new ScriptedDocumentationModel([
+          decision(1, "read_document_section", readArguments),
+          decision(2, "submit_requirement_claim", claim),
+          decision(3, "finish_document_mission", partialArguments),
+        ]),
+        tools: new ScriptedDocumentationTools(observation),
+        store,
+        executionCoordinator: new InMemorySpecialistToolExecutionCoordinator(),
+        runtime: harness().runtime,
+        checkpointer: createInMemorySpecialistCheckpointer(),
+      })
+
+      const result = await composition.service.start()
+
+      expect(result.status).toBe("partial")
+      expect(result.documentationMission.requirements).toEqual([])
+      expect(
+        (await store.listToolResults(selectedMission.id)).map(
+          ({ toolName }) => toolName
+        )
+      ).toStrictEqual(["read_document_section", "finish_document_mission"])
+    }
   })
 
   it("redacts secret-shaped document data before model context", async () => {
@@ -488,6 +659,41 @@ describe("Documentation Explorer shared specialist composition", () => {
     expect(JSON.stringify(test.events)).not.toContain("secret-value")
   })
 
+  it("does not checkpoint a source body returned as a tool summary", async () => {
+    const test = harness()
+    const checkpointer = createInMemorySpecialistCheckpointer()
+    const base = readObservation()
+    const maliciousSummary = documentSectionObservationSchema.parse({
+      ...base,
+      summary: quote,
+    })
+    const composition = createDocumentationExplorerSpecialist({
+      mission: mission(),
+      model: new ScriptedDocumentationModel([
+        decision(1, "read_document_section", readArguments),
+        decision(2, "finish_document_mission", partialArguments),
+      ]),
+      tools: new ScriptedDocumentationTools(maliciousSummary),
+      store: new InMemoryDocumentationExplorerSpecialistStoreForTesting(),
+      executionCoordinator: new InMemorySpecialistToolExecutionCoordinator(),
+      runtime: test.runtime,
+      checkpointer,
+    })
+
+    const result = await composition.service.start()
+
+    expect(result.status).toBe("partial")
+    expect(JSON.stringify(result.state)).not.toContain(quote)
+    expect(JSON.stringify(test.events)).not.toContain(quote)
+    const history: string[] = []
+    for await (const tuple of checkpointer.list({
+      configurable: { thread_id: missionId },
+    })) {
+      history.push(JSON.stringify(tuple.checkpoint))
+    }
+    expect(history.join("\n")).not.toContain(quote)
+  })
+
   it("returns a schema-valid rich budget result without calling the provider", async () => {
     const test = harness()
     const selectedMission = mission({
@@ -514,6 +720,270 @@ describe("Documentation Explorer shared specialist composition", () => {
       stopReason: { code: "model_budget_exhausted" },
     })
     expect(model.requests).toHaveLength(0)
+
+    const oneTokenMission = mission({
+      id: missionIdSchema.parse(`mission:v1:${"9".repeat(64)}`),
+      budget: {
+        ...budget,
+        modelInputTokens: 1,
+        modelOutputTokens: 512,
+      },
+    })
+    const oneTokenModel = new ScriptedDocumentationModel([
+      decision(1, "read_document_section", readArguments),
+    ])
+    const oneTokenResult = await createDocumentationExplorerSpecialist({
+      mission: oneTokenMission,
+      model: oneTokenModel,
+      tools: new ScriptedDocumentationTools(),
+      store: new InMemoryDocumentationExplorerSpecialistStoreForTesting(),
+      executionCoordinator: new InMemorySpecialistToolExecutionCoordinator(),
+      runtime: harness().runtime,
+      checkpointer: createInMemorySpecialistCheckpointer(),
+    }).service.start()
+    expect(oneTokenResult.status).toBe("budget_exhausted")
+    expect(oneTokenResult.mission.budgetUsed.modelInputTokens).toBe(0)
+    expect(oneTokenModel.requests).toHaveLength(0)
+  })
+
+  it("returns schema-valid rich results for malformed-provider and recursion exits", async () => {
+    const failedTest = harness()
+    const malformed = createDocumentationExplorerSpecialist({
+      mission: mission(),
+      model: new ScriptedDocumentationModel([
+        {
+          kind: "final_text",
+          output: "Free-form completion is not a valid tool decision.",
+          model: "test-documentation-model",
+          usage: { inputTokens: 20, outputTokens: 10, totalTokens: 30 },
+        },
+      ]),
+      tools: new ScriptedDocumentationTools(),
+      store: new InMemoryDocumentationExplorerSpecialistStoreForTesting(),
+      executionCoordinator: new InMemorySpecialistToolExecutionCoordinator(),
+      runtime: failedTest.runtime,
+      checkpointer: createInMemorySpecialistCheckpointer(),
+    })
+    const failed = await malformed.service.start()
+    expect(failed.status).toBe("failed")
+    expect(failed.documentationMission).toMatchObject({
+      status: "failed",
+      stopReason: { code: "model_decision_invalid" },
+      questionDispositions: [{ status: "unresolved" }],
+    })
+
+    const recursionTest = harness()
+    const recursion = createDocumentationExplorerSpecialist({
+      mission: mission(),
+      model: new ScriptedDocumentationModel([
+        decision(1, "read_document_section", readArguments),
+      ]),
+      tools: new ScriptedDocumentationTools(),
+      store: new InMemoryDocumentationExplorerSpecialistStoreForTesting(),
+      executionCoordinator: new InMemorySpecialistToolExecutionCoordinator(),
+      runtime: recursionTest.runtime,
+      checkpointer: createInMemorySpecialistCheckpointer(),
+      options: { maxIterations: 1 },
+    })
+    const exhausted = await recursion.service.start()
+    expect(exhausted.status).toBe("budget_exhausted")
+    expect(exhausted.documentationMission).toMatchObject({
+      status: "budget_exhausted",
+      stopReason: { code: "recursion_limit" },
+      questionDispositions: [{ status: "unresolved" }],
+    })
+  })
+
+  it("projects authorized human approval and rejection through rich results", async () => {
+    const needsHuman = finishDocumentMissionInputSchema.parse({
+      status: "needs_human",
+      selectedRequirementIds: [],
+      questionDispositions: [
+        {
+          questionIndex: 0,
+          question: mission().questions[0],
+          status: "unresolved",
+          requirementIds: [],
+          evidenceIds: [],
+          reasonCode: "source_policy_review",
+          summary: "A reviewer must decide whether to broaden source policy.",
+        },
+      ],
+      exclusions: [{ category: "unsupported", summary: quote }],
+      suggestedFollowups: [],
+      stopReason: {
+        code: "source_policy_review",
+        summary: quote,
+      },
+    })
+    const afterApproval = finishDocumentMissionInputSchema.parse({
+      ...partialArguments,
+      stopReason: {
+        code: "human_scope_confirmed",
+        summary: "The reviewer confirmed the bounded stopping point.",
+      },
+    })
+
+    const approvedMission = mission({
+      id: missionIdSchema.parse(`mission:v1:${"7".repeat(64)}`),
+    })
+    const approvedModel = new ScriptedDocumentationModel([
+      decision(1, "read_document_section", readArguments),
+      decision(2, "finish_document_mission", needsHuman),
+      decision(3, "finish_document_mission", afterApproval),
+    ])
+    const approved = createDocumentationExplorerSpecialist({
+      mission: approvedMission,
+      model: approvedModel,
+      tools: new ScriptedDocumentationTools(),
+      store: new InMemoryDocumentationExplorerSpecialistStoreForTesting(),
+      executionCoordinator: new InMemorySpecialistToolExecutionCoordinator(),
+      runtime: harness().runtime,
+      checkpointer: createInMemorySpecialistCheckpointer(),
+    })
+    const interrupted = await approved.service.start()
+    expect(interrupted.status).toBe("interrupted")
+    expect(interrupted.documentationMission.status).toBe("needs_human")
+    const resumed = await approved.service.resume({
+      decisionId: interrupted.interrupts[0]!.decisionId,
+      actorId: "reviewer:documentation_specialist",
+      approved: true,
+    })
+    expect(resumed.status).toBe("partial")
+    expect(resumed.documentationMission.stopReason.code).toBe(
+      "human_scope_confirmed"
+    )
+    expect(approvedModel.requests[2]?.input).toContain('"approved":true')
+    expect(approvedModel.requests[2]?.input).toContain(
+      "BEGIN_UNTRUSTED_PENDING_HUMAN_RESULT"
+    )
+    expect(approvedModel.requests[2]?.input).toContain(quote)
+
+    const rejectedMission = mission({
+      id: missionIdSchema.parse(`mission:v1:${"8".repeat(64)}`),
+    })
+    const rejectedModel = new ScriptedDocumentationModel([
+      decision(1, "read_document_section", readArguments),
+      decision(2, "finish_document_mission", needsHuman),
+    ])
+    const rejected = createDocumentationExplorerSpecialist({
+      mission: rejectedMission,
+      model: rejectedModel,
+      tools: new ScriptedDocumentationTools(),
+      store: new InMemoryDocumentationExplorerSpecialistStoreForTesting(),
+      executionCoordinator: new InMemorySpecialistToolExecutionCoordinator(),
+      runtime: harness().runtime,
+      checkpointer: createInMemorySpecialistCheckpointer(),
+    })
+    const pending = await rejected.service.start()
+    const blocked = await rejected.service.resume({
+      decisionId: pending.interrupts[0]!.decisionId,
+      actorId: "reviewer:reject_documentation_scope",
+      approved: false,
+    })
+    expect(blocked.status).toBe("blocked")
+    expect(blocked.documentationMission).toMatchObject({
+      status: "blocked",
+      stopReason: { code: "human_rejected" },
+      questionDispositions: [{ status: "unresolved" }],
+    })
+    expect(rejectedModel.requests).toHaveLength(2)
+  })
+
+  it("does not publish orphan rich-store records absent from checkpoint state", async () => {
+    const sourceTest = harness()
+    const sourceStore =
+      new InMemoryDocumentationExplorerSpecialistStoreForTesting()
+    const source = createDocumentationExplorerSpecialist({
+      mission: mission(),
+      model: new ScriptedDocumentationModel([
+        decision(1, "read_document_section", readArguments),
+        decision(2, "submit_requirement_claim", claimArguments),
+        decision(3, "finish_document_mission", completeArguments),
+      ]),
+      tools: new ScriptedDocumentationTools(),
+      store: sourceStore,
+      executionCoordinator: new InMemorySpecialistToolExecutionCoordinator(),
+      runtime: sourceTest.runtime,
+      checkpointer: createInMemorySpecialistCheckpointer(),
+    })
+    await source.service.start()
+    const claimRecord = (await sourceStore.listToolResults(missionId)).find(
+      ({ toolName }) => toolName === "submit_requirement_claim"
+    )!
+    if (
+      claimRecord.request.toolName !== "submit_requirement_claim" ||
+      claimRecord.execution.kind !== "claim" ||
+      claimRecord.claim === undefined
+    ) {
+      throw new Error("Expected a stored claim record")
+    }
+    const rewrittenInput = submitRequirementClaimInputSchema.parse({
+      ...claimRecord.request.arguments,
+      expectedOutcome: "email before checkout",
+    })
+    const rewrittenRequest = {
+      toolName: "submit_requirement_claim" as const,
+      arguments: rewrittenInput,
+    }
+    const rewrittenExecution = {
+      kind: "claim" as const,
+      input: rewrittenInput,
+    }
+    const rewrittenClaim = {
+      ...claimRecord.claim,
+      requirement: {
+        ...claimRecord.claim.requirement,
+        expectedOutcome: rewrittenInput.expectedOutcome,
+      },
+    }
+    const rewrittenDraftId = hashCanonical({
+      kind: "documentation_tool_draft",
+      missionId,
+      request: rewrittenRequest,
+      version: 1,
+    })
+    const rewrittenRecord = {
+      ...claimRecord,
+      request: rewrittenRequest,
+      argumentsHash: hashCanonical({
+        toolName: "submit_requirement_claim",
+        arguments: { draftId: rewrittenDraftId },
+      }),
+      execution: rewrittenExecution,
+      claim: rewrittenClaim,
+      payloadHash: hashCanonical({
+        execution: rewrittenExecution,
+        claim: rewrittenClaim,
+      }),
+    }
+    await expect(
+      new InMemoryDocumentationExplorerSpecialistStoreForTesting().putToolResult(
+        rewrittenRecord
+      )
+    ).rejects.toThrow(/request hash is invalid/)
+    const orphanStore =
+      new InMemoryDocumentationExplorerSpecialistStoreForTesting()
+    await orphanStore.putToolResult({ ...claimRecord, sequence: 1 })
+    const selectedMission = mission({
+      budget: { ...budget, modelOutputTokens: 0 },
+    })
+    const orphan = createDocumentationExplorerSpecialist({
+      mission: selectedMission,
+      model: new ScriptedDocumentationModel([]),
+      tools: new ScriptedDocumentationTools(),
+      store: orphanStore,
+      executionCoordinator: new InMemorySpecialistToolExecutionCoordinator(),
+      runtime: harness().runtime,
+      checkpointer: createInMemorySpecialistCheckpointer(),
+    })
+
+    const result = await orphan.service.start()
+
+    expect(result.state.completedCalls).toEqual([])
+    expect(result.mission.claims).toEqual([])
+    expect(result.documentationMission.requirements).toEqual([])
+    expect(result.documentationMission.capabilityTerms).toEqual([])
   })
 
   it("requires the durable boundaries and every mission-allowed described tool", () => {
@@ -553,6 +1023,112 @@ describe("Documentation Explorer shared specialist composition", () => {
     )
   })
 
+  it("rejects a valid draft returned for the wrong mission and ID", async () => {
+    class MisdirectingStore extends InMemoryDocumentationExplorerSpecialistStoreForTesting {
+      override async getToolDraft(missionIdInput: string, draftId: string) {
+        const draft = await super.getToolDraft(missionIdInput, draftId)
+        if (draft === undefined) return undefined
+        const wrongMissionId = missionIdSchema.parse(
+          `mission:v1:${"a".repeat(64)}`
+        )
+        return {
+          ...draft,
+          missionId: wrongMissionId,
+          draftId: hashCanonical({
+            kind: "documentation_tool_draft",
+            missionId: wrongMissionId,
+            request: draft.request,
+            version: 1,
+          }),
+        }
+      }
+    }
+    const test = harness()
+    const tools = new ScriptedDocumentationTools()
+    const store = new MisdirectingStore()
+    const composition = createDocumentationExplorerSpecialist({
+      mission: mission(),
+      model: new ScriptedDocumentationModel([
+        decision(1, "finish_document_mission", partialArguments),
+      ]),
+      tools,
+      store,
+      executionCoordinator: new InMemorySpecialistToolExecutionCoordinator(),
+      runtime: test.runtime,
+      checkpointer: createInMemorySpecialistCheckpointer(),
+    })
+
+    const result = await composition.service.start()
+
+    expect(result.status).not.toBe("complete")
+    expect(tools.execute).not.toHaveBeenCalled()
+    expect(await store.listToolResults(missionId)).toEqual([])
+  })
+
+  it("rejects a self-hashed rich record that conflicts with checkpoint output", async () => {
+    class TamperingStore extends InMemoryDocumentationExplorerSpecialistStoreForTesting {
+      #tamper = false
+
+      override async putToolResult(
+        result: Parameters<
+          InMemoryDocumentationExplorerSpecialistStoreForTesting["putToolResult"]
+        >[0]
+      ) {
+        await super.putToolResult(result)
+        this.#tamper = true
+      }
+
+      override async listToolResults(
+        missionIdInput: string
+      ): Promise<readonly StoredDocumentationExplorerToolResult[]> {
+        const records = await super.listToolResults(missionIdInput)
+        if (!this.#tamper) return records
+        return records.map((record) => {
+          if (
+            record.execution.kind !== "observation" ||
+            record.execution.observation.toolName !== "read_document_section"
+          ) {
+            return record
+          }
+          const execution: DocumentationExplorerToolExecution = {
+            kind: "observation",
+            observation: documentationToolObservationSchema.parse({
+              ...record.execution.observation,
+              citation: {
+                ...record.execution.observation.citation,
+                evidenceId: `evidence:v1:${"3".repeat(64)}`,
+              },
+            }),
+          }
+          return {
+            ...record,
+            execution,
+            payloadHash: hashCanonical({ execution }),
+          }
+        })
+      }
+    }
+    const test = harness()
+    const model = new ScriptedDocumentationModel([
+      decision(1, "read_document_section", readArguments),
+      decision(2, "finish_document_mission", partialArguments),
+    ])
+    const composition = createDocumentationExplorerSpecialist({
+      mission: mission(),
+      model,
+      tools: new ScriptedDocumentationTools(),
+      store: new TamperingStore(),
+      executionCoordinator: new InMemorySpecialistToolExecutionCoordinator(),
+      runtime: test.runtime,
+      checkpointer: createInMemorySpecialistCheckpointer(),
+    })
+
+    await expect(composition.service.start()).rejects.toThrow(
+      /conflicts with checkpoint state/
+    )
+    expect(model.requests).toHaveLength(1)
+  })
+
   it("derives stable tool requests and rejects conflicting store revisions", async () => {
     const store = new InMemoryDocumentationExplorerSpecialistStoreForTesting()
     const record = {
@@ -560,7 +1136,14 @@ describe("Documentation Explorer shared specialist composition", () => {
       sequence: 1,
       callId: "call_one",
       decisionId: "decision_one",
-      requestHash: hashCanonical({ request: 1 }),
+      requestHash: hashSpecialistToolRequest({
+        callId: "call_one",
+        decisionId: "decision_one",
+        missionId,
+        agent: "documentation",
+        toolName: "read_document_section",
+        arguments: readArguments,
+      }),
       argumentsHash: hashCanonical({
         toolName: "read_document_section",
         arguments: readArguments,
@@ -598,7 +1181,7 @@ describe("Documentation Explorer shared specialist composition", () => {
     await expect(
       store.putToolResult({
         ...record,
-        requestHash: hashCanonical({ request: 2 }),
+        usage: { ...record.usage, elapsedMs: 1 },
       })
     ).rejects.toThrow(/Conflicting Documentation Explorer tool result/)
   })

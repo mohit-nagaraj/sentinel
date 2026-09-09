@@ -101,9 +101,10 @@ const sectionText: Readonly<Record<DocumentationFixtureSectionKey, string>> = {
     "An organizer cannot refund a paid order before the event starts.",
   marketing:
     "The world's most delightful and seamless ticketing platform delights every team.",
-  setup: "Install the package and run the development server.",
+  setup:
+    "Developers must install the package before running the development server.",
   architecture:
-    "The checkout service publishes messages through an internal event bus.",
+    "The checkout service must publish payment events through the internal event bus.",
   example:
     "For example, a demo organizer may refund a sample order during training.",
 }
@@ -353,12 +354,7 @@ export function createDocumentationExplorerFixture(input: {
         kind: "documentation_excerpt",
         ordinal: 0,
       }),
-      sourceId: map.source.id,
-      pageId: page.fact.id,
       sectionId: section.fact.id,
-      uri: section.sourceUri,
-      headingPath: [...section.fact.headingPath],
-      quote: section.sanitizedText,
       startOffset: section.startOffset,
       endOffset: section.endOffset,
       contentHash: section.fact.contentHash,

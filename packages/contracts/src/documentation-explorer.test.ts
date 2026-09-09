@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest"
 
-import { createClaimId, hashCanonical } from "./identity.ts"
+import {
+  createClaimId,
+  createRunScopedEvidenceId,
+  hashCanonical,
+} from "./identity.ts"
 import {
   applicationIdSchema,
   contentHashSchema,
   documentPageIdSchema,
   documentSectionIdSchema,
   documentSourceIdSchema,
-  evidenceIdSchema,
   missionIdSchema,
   runIdSchema,
 } from "./primitives.ts"
@@ -17,6 +20,8 @@ import {
   documentationExplorerMissionSchema,
   documentationExplorerToolInputSchema,
   documentationExplorerToolNames,
+  documentationConflictSchema,
+  documentationDuplicateGroupSchema,
   documentationExcerptCitationSchema,
   documentationMissionResultSchema,
   documentationQuestionDispositionSchema,
@@ -37,7 +42,13 @@ const pageId = documentPageIdSchema.parse(`document-page:v1:${"d".repeat(64)}`)
 const sectionId = documentSectionIdSchema.parse(
   `document-section:v1:${"e".repeat(64)}`
 )
-const evidenceId = evidenceIdSchema.parse(`evidence:v1:${"f".repeat(64)}`)
+const evidenceId = createRunScopedEvidenceId({
+  applicationId,
+  runId,
+  sourceId: sectionId,
+  kind: "documentation_excerpt",
+  ordinal: 0,
+})
 const contentHash = contentHashSchema.parse(`sha256:${"1".repeat(64)}`)
 
 const emptyBudget = {
@@ -96,6 +107,13 @@ const citation = {
   endOffset: quote.length,
   contentHash,
 }
+const citationReference = {
+  evidenceId,
+  sectionId,
+  startOffset: 0,
+  endOffset: quote.length,
+  contentHash,
+}
 
 const statement = "An attendee must provide a valid email before checkout."
 const requirementId = createDocumentationRequirementId({
@@ -116,6 +134,8 @@ const claimId = createClaimId({
 const requirementClaim = {
   schemaVersion: 1,
   claimId,
+  missionId,
+  runId,
   status: "proposed",
   kind: "requirement",
   requirement: {
@@ -239,7 +259,7 @@ describe("Documentation Explorer contracts", () => {
           capability: "ticket checkout",
           expectedOutcome: "A valid email exists before checkout.",
           testable: true,
-          citation,
+          citation: citationReference,
         },
       })
     ).toMatchObject({ toolName: "submit_requirement_claim" })
@@ -251,7 +271,7 @@ describe("Documentation Explorer contracts", () => {
           statement,
           capability: "ticket checkout",
           testable: true,
-          citation,
+          citation: citationReference,
         },
       }).success
     ).toBe(false)
@@ -263,7 +283,7 @@ describe("Documentation Explorer contracts", () => {
           statement,
           capability: "ticket checkout",
           testable: false,
-          citation,
+          citation: citationReference,
         },
       }).success
     ).toBe(false)
@@ -280,6 +300,21 @@ describe("Documentation Explorer contracts", () => {
       documentationRequirementClaimSchema.safeParse({
         ...requirementClaim,
         citation: { ...citation, uri: "https://example.com/docs/other" },
+      }).success
+    ).toBe(false)
+    expect(
+      documentationRequirementClaimSchema.safeParse({
+        ...requirementClaim,
+        requirement: {
+          ...requirementClaim.requirement,
+          id: `requirement:v1:${"2".repeat(64)}`,
+        },
+      }).success
+    ).toBe(false)
+    expect(
+      documentationRequirementClaimSchema.safeParse({
+        ...requirementClaim,
+        claimId: `claim:v1:${"3".repeat(64)}`,
       }).success
     ).toBe(false)
     expect(
@@ -313,6 +348,39 @@ describe("Documentation Explorer contracts", () => {
         summary: "The approved sources disagree.",
       })
     ).toMatchObject({ status: "conflict" })
+    expect(
+      documentationQuestionDispositionSchema.safeParse({
+        questionIndex: 0,
+        question: mission.questions[0],
+        status: "conflict",
+        requirementIds: [requirementId, requirementId],
+        evidenceIds: [evidenceId, evidenceId],
+        reasonCode: "contradictory_sources",
+        summary: "Repeated references cannot manufacture a conflict.",
+      }).success
+    ).toBe(false)
+    expect(
+      documentationConflictSchema.safeParse({
+        key: `sha256:${"4".repeat(64)}`,
+        status: "unresolved",
+        kind: "contradictory_requirement",
+        requirementIds: [requirementId, requirementId],
+        evidenceIds: [evidenceId, evidenceId],
+        summary: "Repeated references cannot manufacture a conflict.",
+      }).success
+    ).toBe(false)
+    expect(
+      documentationDuplicateGroupSchema.safeParse({
+        key: `sha256:${"5".repeat(64)}`,
+        status: "grouped",
+        canonicalRequirementId: requirementId,
+        duplicateRequirementIds: [
+          `requirement:v1:${"6".repeat(64)}`,
+          `requirement:v1:${"6".repeat(64)}`,
+        ],
+        evidenceIds: [evidenceId, evidenceId],
+      }).success
+    ).toBe(false)
   })
 
   it("returns a strict MissionResult-compatible rich result", () => {
@@ -407,6 +475,26 @@ describe("Documentation Explorer contracts", () => {
     expect(
       documentationMissionResultSchema.safeParse({ ...result, accepted: true })
         .success
+    ).toBe(false)
+    expect(
+      documentationMissionResultSchema.safeParse({
+        ...result,
+        status: "budget_exhausted",
+        stopReason: {
+          code: "recursion_limit",
+          summary: "The bounded graph reached its recursion limit.",
+        },
+      }).success
+    ).toBe(true)
+    expect(
+      documentationMissionResultSchema.safeParse({
+        ...result,
+        status: "budget_exhausted",
+        stopReason: {
+          code: "criteria_met",
+          summary: "This is not a deterministic budget stop.",
+        },
+      }).success
     ).toBe(false)
   })
 })

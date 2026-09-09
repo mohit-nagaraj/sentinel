@@ -1,7 +1,7 @@
 import {
+  createMissionId,
   discoveryMissionSchema,
   finishDocumentMissionInputSchema,
-  type DocumentationExplorerMission,
   type MissionBudget,
 } from "@sentinel/contracts"
 import {
@@ -126,6 +126,38 @@ function confirmationClaim(fixture: DocumentationExplorerFixture) {
     actor: "attendee",
     capability: "receives an order confirmation",
     expectedOutcome: "payment succeeds attendee receives order confirmation",
+  })
+}
+
+function codeFollowup(
+  fixture: DocumentationExplorerFixture,
+  evidenceId: string
+) {
+  return discoveryMissionSchema.parse({
+    schemaVersion: 1,
+    id: createMissionId({
+      applicationId: fixture.mission.applicationId,
+      runId: fixture.mission.runId,
+      agent: "code",
+      mode: "implementation_trace",
+      ordinal: 99,
+    }),
+    runId: fixture.mission.runId,
+    applicationId: fixture.mission.applicationId,
+    agent: "code",
+    mode: "implementation_trace",
+    goal: "Find the implementation of the cited checkout requirement.",
+    seedEvidenceIds: [evidenceId],
+    questions: ["Which source path implements the cited requirement?"],
+    scope: {
+      repositoryPaths: ["backend"],
+      languages: ["php"],
+      sourceUris: [],
+      allowedHosts: [],
+      allowedTools: ["finish_code_mission"],
+    },
+    budget: fixture.mission.budget,
+    successCriteria: ["Return source-backed implementation evidence."],
   })
 }
 
@@ -310,6 +342,42 @@ describe("Documentation Explorer shared-kernel agent trajectories", () => {
     expect(tools.execute).toHaveBeenCalledTimes(8)
   })
 
+  it("cannot complete baseline discovery while root pagination is truncated", async () => {
+    const fixture = createDocumentationExplorerFixture({
+      mode: "baseline_discovery",
+      ordinal: 6,
+    })
+    const checkoutId = fixture.requirementId("checkout_email", "requirement")
+    const confirmationId = fixture.requirementId(
+      "checkout_confirmation",
+      "acceptance_criterion"
+    )
+    const truncatedAgenda = baselineAgenda(fixture).map((step, index) =>
+      index === 0
+        ? { name: "list_document_tree", arguments: { limit: 1 } }
+        : step
+    )
+    const store = new InMemoryDocumentationExplorerSpecialistStoreForTesting()
+    const result = await createComposition({
+      fixture,
+      store,
+      model: new AgendaModel(truncatedAgenda),
+    }).service.start()
+
+    expect(result.status).not.toBe("complete")
+    expect(result.documentationMission.metrics.treePagesVisited).toBe(1)
+    expect(
+      result.documentationMission.requirements.map(
+        ({ requirement }) => requirement.id
+      )
+    ).toEqual(expect.arrayContaining([checkoutId, confirmationId]))
+    expect(
+      (await store.listToolResults(fixture.mission.id)).some(
+        ({ toolName }) => toolName === "finish_document_mission"
+      )
+    ).toBe(false)
+  })
+
   it("groups exact cross-section duplicates deterministically", async () => {
     const fixture = createDocumentationExplorerFixture({
       mode: "targeted_requirement_lookup",
@@ -382,6 +450,147 @@ describe("Documentation Explorer shared-kernel agent trajectories", () => {
         authoritative: false,
       }),
     ])
+  })
+
+  it("allows follow-ups only from selected validated requirement evidence", async () => {
+    const fixture = createDocumentationExplorerFixture({
+      mode: "targeted_requirement_lookup",
+      ordinal: 9,
+    })
+    const requirementId = fixture.requirementId("checkout_email", "requirement")
+    const selectedEvidence = fixture.citation("checkout_email").evidenceId
+    const sourceEchoFollowup = {
+      ...codeFollowup(fixture, selectedEvidence),
+      goal: fixture.sections.checkout_email.sanitizedText,
+    }
+    const finish = (followupEvidenceId: string) =>
+      finishDocumentMissionInputSchema.parse({
+        status: "complete",
+        selectedRequirementIds: [requirementId],
+        questionDispositions: [
+          {
+            questionIndex: 0,
+            question: fixture.mission.questions[0],
+            status: "covered",
+            requirementIds: [requirementId],
+            evidenceIds: [selectedEvidence],
+            reasonCode: "cited_requirement",
+            summary: "The checkout section gives exact cited coverage.",
+          },
+        ],
+        exclusions: [],
+        suggestedFollowups: [
+          followupEvidenceId === selectedEvidence
+            ? sourceEchoFollowup
+            : codeFollowup(fixture, followupEvidenceId),
+        ],
+        stopReason: {
+          code: "criteria_met",
+          summary: "The targeted question has exact cited coverage.",
+        },
+      })
+    const positiveCheckpointer = createInMemorySpecialistCheckpointer()
+    const positive = await createComposition({
+      fixture,
+      checkpointer: positiveCheckpointer,
+      model: new AgendaModel([
+        {
+          name: "read_document_section",
+          arguments: { sectionId: fixture.sections.checkout_email.fact.id },
+        },
+        { name: "submit_requirement_claim", arguments: checkoutClaim(fixture) },
+        {
+          name: "finish_document_mission",
+          arguments: finish(selectedEvidence),
+        },
+      ]),
+    }).service.start()
+    expect(positive.status).toBe("complete")
+    expect(positive.documentationMission.suggestedFollowups).toEqual([
+      expect.objectContaining({
+        agent: "code",
+        seedEvidenceIds: [selectedEvidence],
+      }),
+    ])
+    expect(JSON.stringify(positive.state)).not.toContain(
+      fixture.sections.checkout_email.sanitizedText
+    )
+    const positiveHistory: string[] = []
+    for await (const tuple of positiveCheckpointer.list({
+      configurable: { thread_id: fixture.mission.id },
+    })) {
+      positiveHistory.push(JSON.stringify(tuple.checkpoint))
+    }
+    expect(positiveHistory.join("\n")).not.toContain(
+      fixture.sections.checkout_email.sanitizedText
+    )
+
+    const negativeFixture = createDocumentationExplorerFixture({
+      mode: "targeted_requirement_lookup",
+      ordinal: 10,
+    })
+    const negativeRequirementId = negativeFixture.requirementId(
+      "checkout_email",
+      "requirement"
+    )
+    const negativeSelectedEvidence =
+      negativeFixture.citation("checkout_email").evidenceId
+    const unrelatedEvidence = negativeFixture.citation(
+      "checkout_confirmation"
+    ).evidenceId
+    const negativeFinish = finishDocumentMissionInputSchema.parse({
+      status: "complete",
+      selectedRequirementIds: [negativeRequirementId],
+      questionDispositions: [
+        {
+          questionIndex: 0,
+          question: negativeFixture.mission.questions[0],
+          status: "covered",
+          requirementIds: [negativeRequirementId],
+          evidenceIds: [negativeSelectedEvidence],
+          reasonCode: "cited_requirement",
+          summary: "The checkout section gives exact cited coverage.",
+        },
+      ],
+      exclusions: [],
+      suggestedFollowups: [codeFollowup(negativeFixture, unrelatedEvidence)],
+      stopReason: {
+        code: "criteria_met",
+        summary: "The targeted question has exact cited coverage.",
+      },
+    })
+    const negativeStore =
+      new InMemoryDocumentationExplorerSpecialistStoreForTesting()
+    const negative = await createComposition({
+      fixture: negativeFixture,
+      store: negativeStore,
+      model: new AgendaModel([
+        {
+          name: "read_document_section",
+          arguments: {
+            sectionId: negativeFixture.sections.checkout_email.fact.id,
+          },
+        },
+        {
+          name: "submit_requirement_claim",
+          arguments: checkoutClaim(negativeFixture),
+        },
+        {
+          name: "read_document_section",
+          arguments: {
+            sectionId: negativeFixture.sections.checkout_confirmation.fact.id,
+          },
+        },
+        { name: "finish_document_mission", arguments: negativeFinish },
+      ]),
+    }).service.start()
+    expect(negative.status).not.toBe("complete")
+    expect(negative.documentationMission.suggestedFollowups).toEqual([])
+    expect(
+      (await negativeStore.listToolResults(negativeFixture.mission.id)).some(
+        ({ toolName }) => toolName === "finish_document_mission"
+      )
+    ).toBe(false)
   })
 
   it("keeps opposite refund sources distinct and unresolved", async () => {
@@ -464,11 +673,15 @@ describe("Documentation Explorer shared-kernel agent trajectories", () => {
       }),
       fixture.claim("setup", {
         kind: "requirement",
-        capability: "development server",
+        actor: "developers",
+        capability: "install the package",
+        expectedOutcome: "install package before running development server",
       }),
       fixture.claim("architecture", {
         kind: "requirement",
-        capability: "publishes messages",
+        actor: "checkout service",
+        capability: "publish payment events",
+        expectedOutcome: "payment events through internal event bus",
       }),
       fixture.claim("example", {
         kind: "requirement",
@@ -521,26 +734,94 @@ describe("Documentation Explorer shared-kernel agent trajectories", () => {
     ])
   })
 
-  it("detects circular repeated link inspection without repeating a read-only effect", async () => {
+  it.each([
+    ["link inspection", "inspect_linked_sections", "linksInspected", 4],
+    ["search", "search_documentation", "searchesPerformed", 7],
+    ["section read", "read_document_section", "sectionsRead", 8],
+  ] as const)(
+    "detects repeated %s without repeating a read-only effect",
+    async (_label, toolName, metric, ordinal) => {
+      const fixture = createDocumentationExplorerFixture({
+        mode: "targeted_requirement_lookup",
+        ordinal,
+      })
+      const repeated = {
+        name: toolName,
+        arguments:
+          toolName === "search_documentation"
+            ? { query: "attendee checkout" }
+            : {
+                sectionId:
+                  toolName === "read_document_section"
+                    ? fixture.sections.checkout_email.fact.id
+                    : fixture.sections.overview.fact.id,
+                ...(toolName === "inspect_linked_sections"
+                  ? { limit: 10 }
+                  : {}),
+              },
+      }
+      const tools = new CountingDocumentationTools(fixture.tools)
+      const result = await createComposition({
+        fixture,
+        tools,
+        model: new AgendaModel([repeated, repeated, repeated, repeated]),
+      }).service.start()
+
+      expect(result.status).toBe("partial")
+      expect(result.mission.stopReason.code).toBe("no_progress")
+      expect(result.documentationMission.metrics[metric]).toBe(1)
+      expect(tools.execute).toHaveBeenCalledOnce()
+    }
+  )
+
+  it("keeps a source-echoing search query out of checkpoint history", async () => {
     const fixture = createDocumentationExplorerFixture({
       mode: "targeted_requirement_lookup",
-      ordinal: 4,
+      ordinal: 11,
     })
-    const repeated = {
-      name: "inspect_linked_sections",
-      arguments: { sectionId: fixture.sections.overview.fact.id, limit: 10 },
-    }
-    const tools = new CountingDocumentationTools(fixture.tools)
+    const checkpointer = createInMemorySpecialistCheckpointer()
+    const echoedSource = fixture.sections.checkout_email.sanitizedText
+    const echoedFinish = finishDocumentMissionInputSchema.parse({
+      ...partialArguments(fixture),
+      exclusions: [
+        {
+          category: "unsupported",
+          summary: echoedSource,
+        },
+      ],
+      stopReason: {
+        code: "source_echo_rejected",
+        summary: echoedSource,
+      },
+    })
     const result = await createComposition({
       fixture,
-      tools,
-      model: new AgendaModel([repeated, repeated, repeated, repeated]),
+      checkpointer,
+      model: new AgendaModel([
+        {
+          name: "read_document_section",
+          arguments: { sectionId: fixture.sections.checkout_email.fact.id },
+        },
+        {
+          name: "search_documentation",
+          arguments: { query: echoedSource },
+        },
+        {
+          name: "finish_document_mission",
+          arguments: echoedFinish,
+        },
+      ]),
     }).service.start()
-
     expect(result.status).toBe("partial")
-    expect(result.mission.stopReason.code).toBe("no_progress")
-    expect(result.documentationMission.metrics.linksInspected).toBe(1)
-    expect(tools.execute).toHaveBeenCalledOnce()
+
+    const checkpointHistory: string[] = []
+    for await (const tuple of checkpointer.list({
+      configurable: { thread_id: fixture.mission.id },
+    })) {
+      checkpointHistory.push(JSON.stringify(tuple.checkpoint))
+    }
+    expect(checkpointHistory.length).toBeGreaterThan(3)
+    expect(checkpointHistory.join("\n")).not.toContain(echoedSource)
   })
 
   it.each([
@@ -597,8 +878,8 @@ describe("Documentation Explorer shared-kernel agent trajectories", () => {
       ordinal: 40,
       budget: {
         modelCalls: 3,
-        modelInputTokens: 60,
-        modelOutputTokens: 30,
+        modelInputTokens: 36_000,
+        modelOutputTokens: 1_536,
       },
     })
     const requirementId = fixture.requirementId("checkout_email", "requirement")
@@ -653,7 +934,11 @@ describe("Documentation Explorer shared-kernel agent trajectories", () => {
     ]
     const first = createComposition({
       fixture,
-      model: new AgendaModel(agenda),
+      model: new AgendaModel(agenda, {
+        inputTokens: 12_000,
+        outputTokens: 512,
+        totalTokens: 12_512,
+      }),
       tools,
       store,
       coordinator,
@@ -680,8 +965,8 @@ describe("Documentation Explorer shared-kernel agent trajectories", () => {
     expect(result.status).toBe("complete")
     expect(result.mission.budgetUsed).toMatchObject({
       modelCalls: 3,
-      modelInputTokens: 60,
-      modelOutputTokens: 30,
+      modelInputTokens: 36_000,
+      modelOutputTokens: 1_536,
     })
     expect(recoveredModel.requests).toHaveLength(0)
     expect(tools.execute).toHaveBeenCalledTimes(3)

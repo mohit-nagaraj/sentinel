@@ -903,12 +903,14 @@ function assertSpecialistStateConsistency(
     (total, call) => addBudgetUsage(total, call.preflightUsage),
     EMPTY_BUDGET_USAGE
   )
+  const exceedsMissionBudget = budgetKeys.some(
+    (key) =>
+      state.budgetLedger.total[key] + reservedBudget[key] >
+      state.mission.budget[key]
+  )
   if (
-    budgetKeys.some(
-      (key) =>
-        state.budgetLedger.total[key] + reservedBudget[key] >
-        state.mission.budget[key]
-    )
+    exceedsMissionBudget &&
+    state.terminalResult?.status !== "budget_exhausted"
   ) {
     throw new Error(
       "Specialist budget usage and reservations exceed the mission budget"

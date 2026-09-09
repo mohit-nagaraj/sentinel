@@ -20,6 +20,7 @@ import {
   type FinishDocumentMissionInput,
   type SubmitRequirementClaimInput,
   createRunScopedEvidenceId,
+  createStableKey,
   hashCanonical,
 } from "@sentinel/contracts"
 import { z } from "zod"
@@ -188,14 +189,16 @@ export class DocumentationExplorerTools {
 
   private readonly allowedTools: ReadonlySet<DocumentationExplorerToolName>
   private readonly mission: DocumentationExplorerMission
+  private readonly index: DocumentationMapIndex
   private readonly pagesById: ReadonlyMap<string, DocumentPageRecord>
   private readonly sectionsById: ReadonlyMap<string, DocumentSectionRecord>
 
   constructor(
-    private readonly index: DocumentationMapIndex,
+    indexInput: DocumentationMapIndex,
     missionInput: DocumentationExplorerMission,
     limitsInput: DocumentationExplorerLimits = defaultDocumentationExplorerLimits
   ) {
+    this.index = new DocumentationMapIndex(structuredClone(indexInput.map))
     this.mission = documentationExplorerMissionSchema.parse(missionInput)
     this.limits = documentationExplorerLimitsSchema.parse(limitsInput)
     this.allowedTools = new Set(
@@ -203,13 +206,13 @@ export class DocumentationExplorerTools {
         documentationExplorerToolNameSchema.parse(tool)
       )
     )
-    this.sourceId = index.map.source.id
-    this.mapContentHash = index.map.mapHash
+    this.sourceId = this.index.map.source.id
+    this.mapContentHash = this.index.map.mapHash
     this.pagesById = new Map(
-      index.map.pages.map((page) => [page.fact.id, page])
+      this.index.map.pages.map((page) => [page.fact.id, page])
     )
     this.sectionsById = new Map(
-      index.map.sections.map((section) => [section.fact.id, section])
+      this.index.map.sections.map((section) => [section.fact.id, section])
     )
     this.assertPreparedMapScope()
     this.definitions = Object.freeze(
@@ -221,9 +224,17 @@ export class DocumentationExplorerTools {
 
   private assertPreparedMapScope(): void {
     const { map } = this.index
+    const expectedSourceId = createStableKey({
+      kind: "document-source",
+      applicationId: this.mission.applicationId,
+      rootUri: map.source.rootUri,
+    })
     if (
       map.source.applicationId !== this.mission.applicationId ||
+      String(map.source.id) !== String(expectedSourceId) ||
       map.source.contentHash !== map.mapHash ||
+      (map.source.kind === "repository") !==
+        map.source.rootUri.startsWith("repository://") ||
       !this.mission.scope.sourceUris.includes(map.source.rootUri)
     ) {
       throw new DocumentationExplorerToolError("source_mismatch")
@@ -236,10 +247,21 @@ export class DocumentationExplorerTools {
       return this.mission.scope.allowedHosts.includes(new URL(uri).hostname)
     }
     const pageIds = new Set(map.pages.map(({ fact }) => fact.id))
+    if (pageIds.size !== map.pages.length) {
+      throw new DocumentationExplorerToolError("scope_denied")
+    }
     for (const page of map.pages) {
+      const expectedPageId = createStableKey({
+        kind: "document-page",
+        applicationId: this.mission.applicationId,
+        sourceId: map.source.id,
+        canonicalUri: page.fact.canonicalUri,
+        contentHash: page.fact.contentHash,
+      })
       if (
         page.fact.applicationId !== this.mission.applicationId ||
         page.fact.sourceId !== map.source.id ||
+        String(page.fact.id) !== String(expectedPageId) ||
         !isApprovedUri(page.fact.canonicalUri) ||
         !isApprovedUri(page.sourceUri) ||
         !isApprovedHost(page.fact.canonicalUri) ||
@@ -270,9 +292,24 @@ export class DocumentationExplorerTools {
         referencedSectionIds.add(sectionId)
       }
     }
+    if (
+      this.sectionsById.size !== map.sections.length ||
+      referencedSectionIds.size !== map.sections.length
+    ) {
+      throw new DocumentationExplorerToolError("scope_denied")
+    }
     for (const section of map.sections) {
+      const page = this.pagesById.get(section.fact.pageId)
+      const expectedSectionId = createStableKey({
+        kind: "document-section",
+        applicationId: this.mission.applicationId,
+        pageId: section.fact.pageId,
+        headingPath: [...section.fact.headingPath],
+        contentHash: section.fact.contentHash,
+      })
       if (
         section.fact.applicationId !== this.mission.applicationId ||
+        String(section.fact.id) !== String(expectedSectionId) ||
         !pageIds.has(section.fact.pageId) ||
         !referencedSectionIds.has(section.fact.id) ||
         !isApprovedUri(section.sourceUri) ||
@@ -280,14 +317,42 @@ export class DocumentationExplorerTools {
         section.sourceUri !==
           this.pagesById.get(section.fact.pageId)?.sourceUri ||
         section.startOffset < 0 ||
+        section.endOffset > (page?.sanitizedText.length ?? -1) ||
         section.endOffset - section.startOffset !==
           section.sanitizedText.length ||
+        page?.sanitizedText.slice(section.startOffset, section.endOffset) !==
+          section.sanitizedText ||
         section.fact.excerpt !== section.sanitizedText ||
         section.fact.contentHash !==
           hashCanonical({ excerpt: section.sanitizedText })
       ) {
         throw new DocumentationExplorerToolError("scope_denied")
       }
+    }
+    const expectedLinks = map.pages.flatMap((page) =>
+      page.fact.linkedPageIds.map((toPageId) => ({
+        fromPageId: page.fact.id,
+        toPageId,
+        relation: "LINKS_TO" as const,
+      }))
+    )
+    if (hashCanonical(expectedLinks) !== hashCanonical(map.links)) {
+      throw new DocumentationExplorerToolError("scope_denied")
+    }
+    const expectedMapHash = hashCanonical({
+      coverage: map.coverage,
+      failedUris: map.failedUris,
+      links: map.links,
+      pages: map.pages.map((page) => page.fact),
+      sections: map.sections.map((section) => ({
+        ...section.fact,
+        endOffset: section.endOffset,
+        sourceUri: section.sourceUri,
+        startOffset: section.startOffset,
+      })),
+    })
+    if (map.mapHash !== expectedMapHash) {
+      throw new DocumentationExplorerToolError("source_mismatch")
     }
   }
 
