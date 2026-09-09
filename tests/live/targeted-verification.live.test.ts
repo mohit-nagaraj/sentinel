@@ -243,7 +243,7 @@ describeHiEvents("trusted Hi.Events head verification", () => {
           checkpointObservations: [
             {
               schemaVersion: 1,
-              checkpointId: checkpoint.id,
+              checkpointId: plan.checkpoints[0]!.id,
               kind: "reachability",
               reachable: true,
               normalizedRoute: parsedUrl.pathname,
