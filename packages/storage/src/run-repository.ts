@@ -66,6 +66,7 @@ const runRowSchema = z.object({
   created_at: z.coerce.date(),
   started_at: z.coerce.date().nullable(),
   finished_at: z.coerce.date().nullable(),
+  assessment_id: z.uuid().nullable().optional(),
 })
 type RunRow = z.infer<typeof runRowSchema> & Record<string, unknown>
 
@@ -143,6 +144,7 @@ export interface RunRecord {
   readonly createdAt: Date
   readonly startedAt: Date | null
   readonly finishedAt: Date | null
+  readonly assessmentId?: string | null
 }
 
 function mapRun(row: RunRow): RunRecord {
@@ -170,6 +172,7 @@ function mapRun(row: RunRow): RunRecord {
     createdAt: parsed.created_at,
     startedAt: parsed.started_at,
     finishedAt: parsed.finished_at,
+    assessmentId: parsed.assessment_id ?? null,
   }
 }
 
@@ -203,6 +206,11 @@ export function toPublicRun(run: RunRecord): PublicRun {
     status: run.status,
     attemptCount: run.attemptCount,
     ...(run.retryOf === null ? {} : { retryOf: run.retryOf }),
+    ...(run.runType === "assess_pr" &&
+    run.status === "succeeded" &&
+    run.assessmentId != null
+      ? { assessmentId: run.assessmentId }
+      : {}),
     createdAt: run.createdAt.toISOString(),
     ...(run.startedAt === null
       ? {}
@@ -579,10 +587,15 @@ export class RunRepository {
 
   async getOwned(operatorId: string, runId: string): Promise<PublicRun | null> {
     const rows = await this.controlQuery<RunRow>(
-      `select run.* from sentinel.runs run
+      `select run.*, assessment.id as assessment_id
+       from sentinel.runs run
        join sentinel.onboarding_configurations onboarding
          on onboarding.application_id = run.application_id
         and onboarding.operator_id = $1::uuid
+       left join sentinel.pr_assessments assessment
+         on assessment.application_id = run.application_id
+        and assessment.run_id = run.id
+        and assessment.report_id is not null
        where run.id = $2::uuid`,
       [operatorIdSchema.parse(operatorId), databaseRunIdSchema.parse(runId)]
     )
@@ -601,10 +614,15 @@ export class RunRepository {
     const cursor = input.cursor
     const limit = pageLimitSchema.parse(input.limit)
     const rows = await this.controlQuery<RunRow>(
-      `select run.* from sentinel.runs run
+      `select run.*, assessment.id as assessment_id
+       from sentinel.runs run
        join sentinel.onboarding_configurations onboarding
          on onboarding.application_id = run.application_id
         and onboarding.operator_id = $1::uuid
+       left join sentinel.pr_assessments assessment
+         on assessment.application_id = run.application_id
+        and assessment.run_id = run.id
+        and assessment.report_id is not null
        where ($2::uuid is null or run.application_id = $2::uuid)
          and ($3::timestamptz is null or (
            date_trunc('milliseconds', run.created_at), run.id

@@ -29,6 +29,7 @@ import { RunActivityWorkspace } from "./run-activity-workspace"
 
 const databaseRunId = "33333333-3333-4333-8333-333333333333"
 const applicationId = "22222222-2222-4222-8222-222222222222"
+const assessmentId = "00000000-0000-4000-8000-000000000029"
 const contractRunId = runIdSchema.parse(`run:${databaseRunId}`)
 const missionId = `mission:v1:${"b".repeat(64)}`
 const screenshotArtifactId = artifactIdSchema.parse(
@@ -48,6 +49,7 @@ function run(status: PublicRun["status"] = "running"): PublicRun {
     ...(new Set(["cancelled", "succeeded", "failed"]).has(status)
       ? { finishedAt: "2026-09-09T00:01:00.000Z" }
       : {}),
+    ...(status === "succeeded" ? { assessmentId } : {}),
     ...(status === "failed"
       ? {
           error: {
@@ -311,6 +313,24 @@ describe("run activity workspace", () => {
         .getAllByRole("status")
         .some((element) => element.textContent?.includes("Run completed"))
     ).toBe(true)
+    expect(
+      screen.getByRole("link", { name: "Open assessment report" })
+    ).toHaveAttribute("href", `/assessments/${assessmentId}`)
+
+    rerender(
+      <RunActivityWorkspace
+        key="succeeded-without-report"
+        initialRun={publicRunSchema.parse({
+          ...run("succeeded"),
+          assessmentId: undefined,
+        })}
+        initialEventPage={page([])}
+        live={false}
+      />
+    )
+    expect(
+      screen.queryByRole("link", { name: "Open assessment report" })
+    ).toBeNull()
 
     rerender(
       <RunActivityWorkspace
@@ -322,6 +342,9 @@ describe("run activity workspace", () => {
     )
     expect(screen.getByRole("alert").textContent).toContain("Run failed")
     expect(screen.getByRole("button", { name: "Retry" })).toBeDefined()
+    expect(
+      screen.queryByRole("link", { name: "Open assessment report" })
+    ).toBeNull()
   })
 
   it("pauses, confirms stop, and resumes through authenticated control routes", async () => {

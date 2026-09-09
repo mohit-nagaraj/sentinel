@@ -21,6 +21,8 @@ import { RunActivityConfigurationError } from "./run-control"
 export const ACTIVITY_FIXTURE_RUN_ID = "00000000-0000-4000-8000-000000000024"
 export const ACTIVITY_FIXTURE_APPLICATION_ID =
   "00000000-0000-4000-8000-000000000124"
+export const ACTIVITY_FIXTURE_ASSESSMENT_ID =
+  "00000000-0000-4000-8000-000000000029"
 export const ACTIVITY_FIXTURE_SCREENSHOT_ID = `artifact:v1:${"a".repeat(64)}`
 
 const contractRunId = runIdSchema.parse(`run:${ACTIVITY_FIXTURE_RUN_ID}`)
@@ -277,6 +279,7 @@ export function advanceActivityFixture(): void {
   updateRun({
     status: "succeeded",
     finishedAt: "2026-09-09T04:00:09.000Z",
+    assessmentId: ACTIVITY_FIXTURE_ASSESSMENT_ID,
   })
 }
 

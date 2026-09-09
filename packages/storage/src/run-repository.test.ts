@@ -15,6 +15,7 @@ import {
 
 const runId = "11111111-1111-4111-8111-111111111111"
 const applicationId = "22222222-2222-4222-8222-222222222222"
+const assessmentId = "00000000-0000-4000-8000-000000000029"
 const now = new Date("2026-09-07T00:00:00.000Z")
 const budget: MissionBudget = {
   toolCalls: 1,
@@ -242,6 +243,40 @@ describe("run repository", () => {
     )
   })
 
+  it("owner-scopes the assessment identity projected for a completed run", async () => {
+    const query = vi.fn().mockResolvedValue([
+      {
+        ...runRow,
+        run_type: "assess_pr",
+        status: "succeeded",
+        assessment_id: assessmentId,
+        started_at: now,
+        finished_at: now,
+      },
+    ])
+    const repository = new RunRepository({
+      query: query as DatabaseExecutor["query"],
+    })
+
+    await expect(
+      repository.getOwned(applicationId, runId)
+    ).resolves.toMatchObject({
+      id: runId,
+      type: "assess_pr",
+      status: "succeeded",
+      assessmentId,
+    })
+    expect(query.mock.calls[0]?.[0]).toContain(
+      "left join sentinel.pr_assessments assessment"
+    )
+    expect(query.mock.calls[0]?.[0]).toContain(
+      "assessment.report_id is not null"
+    )
+    expect(query.mock.calls[0]?.[0]).toContain(
+      "onboarding.operator_id = $1::uuid"
+    )
+  })
+
   it("distinguishes cooperative pause from cancellation in worker control", async () => {
     const query = vi.fn().mockResolvedValue([
       {
@@ -313,6 +348,41 @@ describe("run repository", () => {
       retryable: true,
     })
     expect(JSON.stringify(projected)).not.toContain("private-key")
+  })
+
+  it("keeps succeeded assessment mutation replays valid without report enrichment", () => {
+    const projected = toPublicRun({
+      id: runId,
+      applicationId,
+      runType: "assess_pr",
+      status: "succeeded",
+      idempotencyKey: "private-key",
+      budget,
+      request: {},
+      requestFingerprint: runRow.request_fingerprint,
+      retryOf: null,
+      resumeDecisionId: null,
+      configurationFingerprint: runRow.configuration_fingerprint,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      attemptCount: 1,
+      cancelRequestedAt: null,
+      pauseRequestedAt: null,
+      errorCategory: null,
+      errorCode: null,
+      errorRetryable: null,
+      createdAt: now,
+      startedAt: now,
+      finishedAt: now,
+      assessmentId: null,
+    })
+
+    expect(projected).toMatchObject({
+      id: runId,
+      type: "assess_pr",
+      status: "succeeded",
+    })
+    expect(projected.assessmentId).toBeUndefined()
   })
 
   it("scopes pending interrupt reads through the owning operator", async () => {
