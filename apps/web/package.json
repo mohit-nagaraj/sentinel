@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
+    "@next/env": "16.2.6",
     "@sentinel/adapters": "workspace:*",
     "@sentinel/contracts": "workspace:*",
     "@sentinel/storage": "workspace:*",
