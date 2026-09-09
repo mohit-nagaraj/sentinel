@@ -47,3 +47,12 @@
 - [x] Implement raw-body authentication, GitHub App token management, PR resolution, and Checks API operations.
 - [x] Enqueue deliveries, immutable-head assessments, runs, supersession, and check binding transactionally.
 - [x] Expose and verify shared signed-webhook and operator-authenticated manual assessment routes.
+
+SNT-026 implementation, QA, clean-database migration verification, and production builds are complete.
+
+| Date       | Decision                                                                                                          | Reason                                                                                                               |
+| ---------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| 2026-09-09 | Verify the exact bounded webhook bytes before parsing and use the GitHub delivery GUID as the durable replay key. | Authentication and idempotency must precede all assessment side effects.                                             |
+| 2026-09-09 | Cache repository-scoped installation tokens generated from short-lived RS256 App JWTs.                            | App automation needs only Contents read, Pull requests read, and Checks write, without personal tokens.              |
+| 2026-09-09 | Enqueue delivery, immutable head, supersession, cancellation, and worker run in one PostgreSQL function.          | Concurrent and out-of-order deliveries cannot rely on process locks or overwrite the current head.                   |
+| 2026-09-09 | Bind checks to assessment ID plus head SHA and recover partial creation through a short lease and external ID.    | GitHub side effects are not transactional with PostgreSQL, so retry must discover prior success without duplication. |
