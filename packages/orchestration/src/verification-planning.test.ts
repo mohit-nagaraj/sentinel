@@ -345,6 +345,32 @@ describe("createVerificationPlan", () => {
     expect(plan.actionRequired).toContain("baseline observations cannot verify")
   })
 
+  it("keeps scenarios without a workflow link out of executable report missions", () => {
+    const input = planningInput()
+    const { workflowId: _workflowId, ...unlinkedScenario } = scenario
+    void _workflowId
+    const source = verificationPlanningInputSchema.parse({
+      ...input,
+      blastRadius: {
+        ...input.blastRadius,
+        findings: input.blastRadius.findings.map((finding) => ({
+          ...finding,
+          scenarios: [unlinkedScenario],
+        })),
+      },
+      scenarios: input.scenarios.map((definition) => ({
+        ...definition,
+        scenario: unlinkedScenario,
+      })),
+      controls: [],
+    })
+
+    const plan = createVerificationPlan(source)
+
+    expect(plan.status).toBe("verification_unavailable")
+    expect(plan.exclusions.join(" ")).toContain("not linked to a workflow")
+  })
+
   it("rejects a trusted deployment validation from another assessment", () => {
     const otherAssessment = trustedDeployment({
       assessmentId: "123e4567-e89b-42d3-a456-426614174099",

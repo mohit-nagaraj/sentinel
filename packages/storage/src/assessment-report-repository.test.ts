@@ -4,6 +4,7 @@ import {
   applicationIdSchema,
   assessmentReportViewSchema,
   hashCanonical,
+  reportVerificationSchema,
   reportVerificationEnrichmentSchema,
 } from "@sentinel/contracts"
 import { describe, expect, it } from "vitest"
@@ -112,6 +113,15 @@ class FakeDatabase implements DatabaseExecutor {
     if (statement.includes("append_report_verification_enrichment")) {
       return [{ appended: true } as unknown as Row]
     }
+    if (statement.includes("append_current_report_verification")) {
+      return [
+        {
+          disposition: this.disposition,
+          version: this.disposition === "superseded" ? null : 2,
+          report_id: this.disposition === "superseded" ? null : reportId,
+        } as unknown as Row,
+      ]
+    }
     return []
   }
 }
@@ -195,5 +205,36 @@ describe("assessment report repository", () => {
     expect(database.queries[0]?.statement).toContain(
       "append_report_verification_enrichment"
     )
+  })
+
+  it("allocates current-head verification versions idempotently", async () => {
+    const database = new FakeDatabase()
+    database.disposition = "existing"
+    const repository = new AssessmentReportRepository(database)
+    const { version: _version, ...verification } =
+      reportVerificationSchema.parse({
+        status: "verification_unavailable",
+        results: [],
+        reason: "No trusted deployment was configured.",
+        version: 0,
+      })
+    void _version
+
+    await expect(
+      repository.appendCurrent({
+        assessmentId,
+        headSha: "2".repeat(40),
+        resultId: hashCanonical({ kind: "targeted-result" }),
+        idempotencyKey: hashCanonical({ kind: "verification-publication" }),
+        verification,
+        appendedAt: timestamp,
+      })
+    ).resolves.toEqual({ disposition: "existing", version: 2 })
+    expect(database.queries[0]?.statement).toContain(
+      "append_current_report_verification"
+    )
+    expect(
+      JSON.parse(String(database.queries[0]?.parameters[4]))
+    ).not.toHaveProperty("version")
   })
 })
