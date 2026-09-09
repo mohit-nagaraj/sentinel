@@ -770,6 +770,12 @@ export function RunActivityWorkspace({
             Applications
           </Link>
           <Link
+            href="/knowledge"
+            className="min-h-11 rounded-md px-3 leading-[2.75rem] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+          >
+            Knowledge
+          </Link>
+          <Link
             href="/runs"
             aria-current="page"
             className="min-h-11 rounded-md bg-muted px-3 leading-[2.75rem] font-medium"

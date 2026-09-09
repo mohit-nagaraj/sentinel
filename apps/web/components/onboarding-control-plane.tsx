@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  BookOpenCheck,
   Check,
   CheckCircle2,
   CircleDot,
@@ -1219,6 +1220,13 @@ export function OnboardingControlPlane({
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <Link
+            href="/knowledge"
+            className="flex min-h-11 items-center gap-2 rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+          >
+            <BookOpenCheck className="size-4" aria-hidden="true" />
+            Knowledge
+          </Link>
           <Link
             href="/runs"
             className="flex min-h-11 items-center gap-2 rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"

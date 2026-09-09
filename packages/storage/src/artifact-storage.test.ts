@@ -30,6 +30,9 @@ class FakeObjects implements PrivateObjectStore {
     if (body === undefined) throw new Error("missing")
     return body
   }
+  async getRange(_bucket: string, key: string, maximumBytes: number) {
+    return (await this.get(_bucket, key)).slice(0, maximumBytes)
+  }
   async signedDownloadUrl(
     bucket: string,
     key: string,
@@ -281,5 +284,37 @@ describe("artifact service", () => {
       service.signedRunDownloadUrl(applicationId, runId, saved.id, 300)
     ).rejects.toThrow("not private")
     expect(objects.signed).toHaveLength(0)
+  })
+
+  it("returns only a bounded, redacted excerpt from a private text artifact", async () => {
+    const objects = new FakeObjects()
+    const metadata = new FakeMetadata()
+    const service = new ArtifactService("sentinel-artifacts", objects, metadata)
+    const saved = await service.persist({
+      applicationId,
+      applicationStableId,
+      runId: null,
+      artifactType: "source_excerpt",
+      mimeType: "text/plain",
+      body: new TextEncoder().encode(
+        `authorization: Bearer must-not-leak\n${"bounded evidence ".repeat(30)}`
+      ),
+      retainUntil: null,
+    })
+
+    const excerpt = await service.readTextExcerpt(applicationId, saved.id, 256)
+    expect(excerpt).toMatchObject({
+      artifactId: saved.id,
+      mimeType: "text/plain",
+      truncated: true,
+    })
+    expect(excerpt?.excerpt).toContain("[REDACTED]")
+    expect(excerpt?.excerpt).not.toContain("must-not-leak")
+    expect(excerpt?.excerpt.length).toBeLessThanOrEqual(256)
+
+    metadata.record = { ...saved, mimeType: "application/zip" }
+    await expect(
+      service.readTextExcerpt(applicationId, saved.id)
+    ).resolves.toBeNull()
   })
 })

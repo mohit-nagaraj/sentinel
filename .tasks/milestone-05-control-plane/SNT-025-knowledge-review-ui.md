@@ -1,12 +1,12 @@
 # SNT-025 — Knowledge, coverage, evidence-path, and review UI
 
-| Field | Value |
-|---|---|
-| Milestone | M5 — Onboarding and observable control plane |
-| Status | `not-started` |
-| Depends on | SNT-019, SNT-020, SNT-021, SNT-023, SNT-024 |
-| Blocks | Assessment report dashboard |
-| PRD references | §8.5, §12, §17, FR-019 |
+| Field          | Value                                        |
+| -------------- | -------------------------------------------- |
+| Milestone      | M5 — Onboarding and observable control plane |
+| Status         | `done`                                       |
+| Depends on     | SNT-019, SNT-020, SNT-021, SNT-023, SNT-024  |
+| Blocks         | Assessment report dashboard                  |
+| PRD references | §8.5, §12, §17, FR-019                       |
 
 ## Background
 
@@ -26,15 +26,15 @@ Users need to inspect current knowledge and ambiguity without rendering the enti
 
 ## Implementation tasks
 
-- [ ] Add typed read APIs over SNT-021 queries and Postgres summaries.
-- [ ] Build knowledge overview counts/freshness/source status.
-- [ ] Build requirement and workflow coverage views.
-- [ ] Build evidence-path component spanning docs→requirement→UI→endpoint→code.
-- [ ] Add private artifact/source excerpt drill-down.
-- [ ] Build review queue/detail with competing evidence.
-- [ ] Wire accept/reject/reason to review and interrupt-resume services.
-- [ ] Mark reviewed links stale when source identity changes.
-- [ ] Add accessible filters, loading, pagination, and error handling.
+- [x] Add typed read APIs over SNT-021 queries and Postgres summaries.
+- [x] Build knowledge overview counts/freshness/source status.
+- [x] Build requirement and workflow coverage views.
+- [x] Build evidence-path component spanning docs→requirement→UI→endpoint→code.
+- [x] Add private artifact/source excerpt drill-down.
+- [x] Build review queue/detail with competing evidence.
+- [x] Wire accept/reject/reason to review and interrupt-resume services.
+- [x] Mark reviewed links stale when source identity changes.
+- [x] Add accessible filters, loading, pagination, and error handling.
 
 ## Acceptance criteria
 
@@ -60,4 +60,9 @@ Full force-directed graph editor, manual arbitrary Cypher, editing source requir
 
 ## Implementation notes
 
-_Populate during implementation with final paths, commands, decisions, test evidence, and any explicitly deferred acceptance item._
+- Typed contracts and bounded Neo4j/Postgres read models live in `packages/contracts/src/knowledge.ts`, `packages/storage/src/knowledge-graph-repository.ts`, and `packages/storage/src/knowledge-summary-repository.ts`.
+- `apps/web/lib/knowledge-service.ts` enforces operator/application ownership, current graph revisions, source-identity invalidation, auditable link decisions, and one-time owned interrupt resume. Current Postgres decisions override graph-projected review state only for the matching source identity.
+- The authenticated, private/no-store HTTP surface is implemented in `apps/web/app/api/knowledge/[[...path]]/route.ts`; request bodies, page sizes, graph paths, and artifact excerpts are bounded. Source URIs are allowlisted and private excerpts are MIME-limited, range-read, redacted, and rendered as text.
+- `/knowledge` and `/knowledge/[applicationId]` provide responsive requirement/workflow coverage, selected cross-layer provenance paths, stale/partial/error states, cursor pagination, and review actions without fetching or rendering an unlimited graph.
+- Focused verification passed for 22 contract/storage tests and 11 API/component tests, package type checks for `@sentinel/contracts`, `@sentinel/storage`, and `@sentinel/web`, and scoped ESLint/Prettier checks.
+- `pnpm exec playwright test tests/browser/knowledge.spec.ts --project=chromium` passed the evidence-path, private excerpt, interrupt-resume/idempotency, keyboard, secret-canary, and desktop/mobile overflow flow. No acceptance item is deferred.
