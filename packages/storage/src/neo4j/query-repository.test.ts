@@ -250,4 +250,46 @@ describe("Neo4j graph query repository", () => {
     ).rejects.toThrow()
     expect(database.queries).toHaveLength(1)
   })
+
+  it("accepts bounded file, symbol, endpoint, and domain PR impact seeds", async () => {
+    const database = new QueryDatabase()
+    const repository = new Neo4jGraphQueryRepository(database)
+    const seeds = [
+      `code-file:v1:${"1".repeat(64)}`,
+      symbolId,
+      `api-endpoint:v1:${"2".repeat(64)}`,
+      `domain-entity:v1:${"3".repeat(64)}`,
+    ].map((id) => stableEntityIdSchema.parse(id))
+
+    await expect(
+      repository.findPullRequestImpactPaths({
+        applicationId,
+        graphRevision: 3,
+        seedIds: seeds,
+        evidenceTiers: ["A", "B"],
+        maxDepth: 8,
+        limit: 20,
+      })
+    ).resolves.toHaveLength(1)
+
+    expect(database.queries[0]?.context.operation).toBe("query_pr_impact_seeds")
+    expect(database.queries[0]?.parameters).toMatchObject({ seedIds: seeds })
+    expect(database.queries[0]?.cypher).not.toContain(seeds[0])
+    expect(database.queries[0]?.cypher).not.toContain("shortestPath")
+    expect(database.queries[0]?.cypher).toContain("allShortestPaths")
+    expect(database.queries[0]?.cypher).toContain(
+      "[r IN relationships(path) | r.stable_key]"
+    )
+    await expect(
+      repository.findPullRequestImpactPaths({
+        applicationId,
+        graphRevision: 3,
+        seedIds: [requirementId],
+        evidenceTiers: ["A"],
+        maxDepth: 8,
+        limit: 20,
+      })
+    ).rejects.toThrow("PR impact seeds")
+    expect(database.queries).toHaveLength(1)
+  })
 })

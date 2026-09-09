@@ -4,6 +4,7 @@ import {
   graphEntitySummarySchema,
   graphEvidencePathSchema,
   graphPathQuerySchema,
+  graphPullRequestImpactQuerySchema,
   graphPullRequestSeedQuerySchema,
   graphReadScopeSchema,
   provenanceSchema,
@@ -12,6 +13,7 @@ import {
   type GraphEntitySummary,
   type GraphEvidencePath,
   type GraphPathQuery,
+  type GraphPullRequestImpactQuery,
   type GraphPullRequestSeedQuery,
   type GraphReadScope,
 } from "@sentinel/contracts"
@@ -421,6 +423,62 @@ export class Neo4jGraphQueryRepository {
             applicationId: input.applicationId,
             graphRevision: input.graphRevision,
             changedSymbolIds: input.changedSymbolIds,
+            relationshipTypes: prSeedRelationshipTypes,
+            evidenceTiers: input.evidenceTiers,
+            maxDepth: input.maxDepth,
+            limit: input.limit,
+          }
+        )
+        return result.records.map((record) =>
+          mapEvidencePath(record.get("evidencePath"))
+        )
+      }
+    )
+  }
+
+  async findPullRequestImpactPaths(
+    inputValue: GraphPullRequestImpactQuery
+  ): Promise<readonly GraphEvidencePath[]> {
+    const input = graphPullRequestImpactQuerySchema.parse(inputValue)
+    return this.database.read(
+      {
+        applicationId: input.applicationId,
+        operation: "query_pr_impact_seeds",
+      },
+      async (transaction) => {
+        const result = await transaction.run(
+          `UNWIND $seedIds AS seedId
+           MATCH (seed {
+             application_id: $applicationId,
+             stable_key: seedId,
+             graph_revision: $graphRevision
+           })
+           MATCH (requirement:Requirement {
+             application_id: $applicationId,
+             graph_revision: $graphRevision
+           })
+           MATCH path = allShortestPaths((seed)-[*1..12]-(requirement))
+           WHERE length(path) <= $maxDepth
+             AND all(n IN nodes(path) WHERE
+               n.application_id = $applicationId AND
+               n.graph_revision = $graphRevision
+             )
+             AND all(r IN relationships(path) WHERE
+               r.application_id = $applicationId AND
+               r.graph_revision = $graphRevision AND
+               type(r) IN $relationshipTypes AND
+               r.evidence_tier IN $evidenceTiers AND
+               r.review_state IN ['not_required', 'accepted']
+             )
+           RETURN ${pathProjection} AS evidencePath
+           ORDER BY length(path), seedId, requirement.stable_key,
+             [n IN nodes(path) | n.stable_key],
+             [r IN relationships(path) | r.stable_key]
+           LIMIT $limit`,
+          {
+            applicationId: input.applicationId,
+            graphRevision: input.graphRevision,
+            seedIds: input.seedIds,
             relationshipTypes: prSeedRelationshipTypes,
             evidenceTiers: input.evidenceTiers,
             maxDepth: input.maxDepth,
