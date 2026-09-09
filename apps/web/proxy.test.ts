@@ -17,6 +17,18 @@ describe("control-plane proxy", () => {
     expect(response.headers.get("cache-control")).toBe("no-store")
   })
 
+  it("admits signed GitHub webhook deliveries without operator authentication", () => {
+    vi.stubEnv("SENTINEL_OPERATOR_TOKEN", "")
+
+    const response = proxy(
+      new NextRequest("http://sentinel.test/api/github/webhooks", {
+        method: "POST",
+      })
+    )
+
+    expect(response.status).toBe(200)
+  })
+
   it("challenges unauthenticated requests and admits a valid operator", () => {
     vi.stubEnv("SENTINEL_OPERATOR_TOKEN", token)
     const rejected = proxy(new NextRequest("http://sentinel.test/"))

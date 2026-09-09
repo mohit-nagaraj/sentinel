@@ -14,7 +14,7 @@ Provider compatibility and permission checks still need to be established by eac
 
 ## Later inputs to verify
 
-- SNT-026: GitHub App App ID, Client ID, installation ID, and private-key file are configured locally. Webhook secret and public webhook URL still need to be set when the hook is enabled.
+- SNT-026: GitHub App App ID, Client ID, installation ID, private-key file, webhook secret, and local ngrok origin are configured. The GitHub App webhook URL still needs to be saved in GitHub (sudo/2FA).
 - SNT-030: trusted public baseline and PR-head deployment identity/preview strategy.
 
 Update this file whenever an implementation task cannot proceed without user action. Do not place credentials, tokens, private URLs, or secret-derived values here.

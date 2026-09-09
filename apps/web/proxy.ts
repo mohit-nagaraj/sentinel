@@ -6,7 +6,12 @@ import {
   isOperatorRequestAuthorized,
 } from "@/lib/operator-auth"
 
+const publicPaths = new Set(["/api/health", "/api/github/webhooks"])
+
 export function proxy(request: NextRequest) {
+  if (publicPaths.has(request.nextUrl.pathname)) {
+    return NextResponse.next()
+  }
   if (!isOperatorAuthConfigured(process.env)) {
     return new NextResponse("Control-plane authentication is unavailable", {
       status: 503,
@@ -31,5 +36,7 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api/health|_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    "/((?!api/health|api/github/webhooks|_next/static|_next/image|favicon.ico).*)",
+  ],
 }
