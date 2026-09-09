@@ -38,6 +38,7 @@ const specialistToolOutputBaseSchema = compactObservationSchema.pick({
   summary: true,
   evidenceIds: true,
   references: true,
+  activity: true,
 })
 
 export const specialistToolOutputSchema = specialistToolOutputBaseSchema.extend(
@@ -642,6 +643,14 @@ export function settlePendingSpecialistToolCall(
         "Tool execution failed after authorization; side-effect status is uncertain.",
       evidenceIds: [],
       references: [],
+      activity: {
+        category: "tool",
+        action: {
+          kind: call.toolName,
+          label: call.toolName.replaceAll("_", " "),
+          status: "failed",
+        },
+      },
       usage: call.preflightUsage,
     })
   )
@@ -665,6 +674,7 @@ function buildSpecialistToolExecution(
     summary: result.summary,
     evidenceIds: result.evidenceIds,
     references: result.references,
+    ...(result.activity === undefined ? {} : { activity: result.activity }),
   })
   const completedCall = completedToolCallSchema.parse({
     callId: call.callId,

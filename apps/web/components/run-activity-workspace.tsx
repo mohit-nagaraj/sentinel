@@ -44,6 +44,7 @@ import {
   type ActivityFeedState,
 } from "@/lib/activity-feed"
 import {
+  projectActivityEvent,
   projectActivityFeed,
   type ActivityCategory,
   type ActivityLane,
@@ -437,6 +438,7 @@ export function RunActivityWorkspace({
   const [busy, setBusy] = useState<ControlAction | null>(null)
   const [confirmStop, setConfirmStop] = useState(false)
   const [controlMessage, setControlMessage] = useState("")
+  const [activityAnnouncement, setActivityAnnouncement] = useState("")
   const [slow, setSlow] = useState(false)
   const [feed, setFeed] = useState<ActivityFeedState>(() => {
     try {
@@ -457,8 +459,22 @@ export function RunActivityWorkspace({
     }
   })
   const feedRef = useRef(feed)
+  const announcedCursor = useRef(feed.cursor)
 
   const writeFeed = useCallback((next: ActivityFeedState) => {
+    if (next.cursor > announcedCursor.current) {
+      const added = next.items.filter(
+        (item) => item.sequence > announcedCursor.current
+      )
+      const latest = added.at(-1)
+      if (latest !== undefined) {
+        const view = projectActivityEvent(latest)
+        setActivityAnnouncement(
+          `${added.length} new activity ${added.length === 1 ? "event" : "events"}. Latest from ${humanize(view.lane)}: ${view.categoryLabel}, ${view.summary.slice(0, 240)}.`
+        )
+      }
+      announcedCursor.current = next.cursor
+    }
     feedRef.current = next
     setFeed(next)
   }, [])
@@ -516,9 +532,42 @@ export function RunActivityWorkspace({
         )
       } else throw new Error("interrupt_refresh_failed")
     }
-    const synchronize = async () => {
-      await controller.wake()
-      await refreshSnapshot()
+    let synchronizeRequested = false
+    let synchronization: Promise<void> | undefined
+    const synchronize = (): Promise<void> => {
+      synchronizeRequested = true
+      if (synchronization !== undefined) return synchronization
+      const operation = (async () => {
+        try {
+          while (synchronizeRequested && !disposed) {
+            synchronizeRequested = false
+            await controller.wake()
+            await refreshSnapshot()
+          }
+        } catch (error) {
+          if (!disposed) {
+            writeFeed(
+              activityFeedReducer(feedRef.current, {
+                type: "connection",
+                connection: "error",
+                errorMessage:
+                  "Activity synchronization failed. Reconnect to try again.",
+              })
+            )
+          }
+          throw error
+        }
+      })()
+      synchronization = operation
+      void operation
+        .finally(() => {
+          if (synchronization === operation) synchronization = undefined
+          if (synchronizeRequested && !disposed) {
+            void synchronize().catch(() => undefined)
+          }
+        })
+        .catch(() => undefined)
+      return operation
     }
     if (transport === "fixture-poll") {
       const poll = () => {
@@ -678,7 +727,7 @@ export function RunActivityWorkspace({
         }
         setConfirmStop(false)
         setControlMessage(
-          action === "approve" && interrupt?.decisionId === "resume_run"
+          action === "approve" && interrupt?.decisionId.startsWith("resume_run")
             ? "Run resumed."
             : `${humanize(action)} request accepted.`
         )
@@ -838,7 +887,7 @@ export function RunActivityWorkspace({
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-l-2 border-amber-500 bg-amber-500/5 px-4 py-3">
             <div className="min-w-0">
               <p className="text-sm font-semibold">
-                {interrupt.decisionId === "resume_run"
+                {interrupt.decisionId.startsWith("resume_run")
                   ? "Paused at a safe boundary"
                   : "Operator decision required"}
               </p>
@@ -854,9 +903,11 @@ export function RunActivityWorkspace({
                 onClick={() => void handleControl("approve")}
               >
                 <CheckCircle2 aria-hidden="true" />
-                {interrupt.decisionId === "resume_run" ? "Resume" : "Approve"}
+                {interrupt.decisionId.startsWith("resume_run")
+                  ? "Resume"
+                  : "Approve"}
               </Button>
-              {interrupt.decisionId === "resume_run" ? null : (
+              {interrupt.decisionId.startsWith("resume_run") ? null : (
                 <Button
                   type="button"
                   variant="outline"
@@ -874,6 +925,14 @@ export function RunActivityWorkspace({
 
         <p className="sr-only" aria-live="assertive" aria-atomic="true">
           {controlMessage}
+        </p>
+        <p
+          className="sr-only"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {activityAnnouncement}
         </p>
       </section>
 

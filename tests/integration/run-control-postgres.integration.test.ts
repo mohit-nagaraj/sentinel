@@ -29,7 +29,7 @@ const migrations = [
   "../../supabase/migrations/20260907000100_operational_state.sql",
   "../../supabase/migrations/20260908000100_onboarding_control_plane.sql",
   "../../supabase/migrations/20260908000300_run_control.sql",
-  "../../supabase/migrations/20260908000400_realtime_activity.sql",
+  "../../supabase/migrations/20260908000500_realtime_activity.sql",
 ].map((path) => readFileSync(new URL(path, import.meta.url), "utf8"))
 
 describeIntegration("run control PostgreSQL state machine", () => {
@@ -677,6 +677,19 @@ describeIntegration("run control PostgreSQL state machine", () => {
     await expect(
       runs.getOwnedPendingInterrupt(operatorId, queued.run.id)
     ).resolves.toMatchObject({ decisionId: "resume_run", status: "pending" })
+    const stateBroadcasts = await database.query<{
+      event: string
+      payload: { runId: string }
+    }>(
+      `select event, payload from realtime.messages
+       where topic = $1 and event = 'run_state'
+       order by inserted_at desc limit 1`,
+      [`run:${queued.run.id}`]
+    )
+    expect(stateBroadcasts[0]).toMatchObject({
+      event: "run_state",
+      payload: { runId: queued.run.id },
+    })
     await runs.respondInterrupt({
       operatorId,
       runId: queued.run.id,
@@ -691,6 +704,29 @@ describeIntegration("run control PostgreSQL state machine", () => {
     expect(
       (await runs.getOwned(operatorId, queued.run.id))?.pauseRequestedAt
     ).toBeUndefined()
+    await runs.requestOwnedPause(operatorId, queued.run.id)
+    await expect(
+      runs.getOwnedPendingInterrupt(operatorId, queued.run.id)
+    ).resolves.toMatchObject({ decisionId: "resume_run_2", status: "pending" })
+    await expect(
+      runs.respondInterrupt({
+        operatorId,
+        runId: queued.run.id,
+        decisionId: "resume_run",
+        response: { approved: true },
+      })
+    ).resolves.toMatchObject({ idempotent: true })
+    await expect(
+      runs.getOwned(operatorId, queued.run.id)
+    ).resolves.toMatchObject({
+      status: "interrupted",
+    })
+    await runs.respondInterrupt({
+      operatorId,
+      runId: queued.run.id,
+      decisionId: "resume_run_2",
+      response: { approved: true },
+    })
 
     const running = await runs.enqueueControl(operatorId, {
       schemaVersion: 1,
@@ -716,6 +752,34 @@ describeIntegration("run control PostgreSQL state machine", () => {
     await expect(
       runs.controlState(running.run.id, "pause-test-worker")
     ).resolves.toBe("pause_requested")
+    const firstRunningPause = await runs.recordInterrupt({
+      runId: running.run.id,
+      owner: "pause-test-worker",
+      decisionId: "resume_run",
+      prompt: "Run paused by operator",
+    })
+    expect(firstRunningPause.decisionId).toBe("resume_run")
+    await runs.respondInterrupt({
+      operatorId,
+      runId: running.run.id,
+      decisionId: firstRunningPause.decisionId,
+      response: { approved: true },
+    })
+    await database.query(
+      `update sentinel.runs
+       set status = 'running', lease_owner = 'pause-test-worker',
+           lease_expires_at = now() + interval '1 minute'
+       where id = $1::uuid`,
+      [running.run.id]
+    )
+    await runs.requestOwnedPause(operatorId, running.run.id)
+    const secondRunningPause = await runs.recordInterrupt({
+      runId: running.run.id,
+      owner: "pause-test-worker",
+      decisionId: "resume_run",
+      prompt: "Run paused by operator",
+    })
+    expect(secondRunningPause.decisionId).toBe("resume_run_2")
   })
 
   it("reconciles legacy overlapping mutations before adding the unique index", async () => {

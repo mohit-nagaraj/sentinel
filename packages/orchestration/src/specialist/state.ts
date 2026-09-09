@@ -12,6 +12,7 @@ import {
   persistedTextSchema,
   reasonCodeSchema,
   redactPersistedText,
+  runActivityDisplaySchema,
   repositoryPathSchema,
   sourceUriSchema,
   stableEntityIdSchema,
@@ -188,6 +189,7 @@ export const compactObservationSchema = z.strictObject({
   summary: compactTextSchema,
   evidenceIds: sortedEvidenceIdsSchema.default(() => []),
   references: sortedReferencesSchema.default(() => []),
+  activity: runActivityDisplaySchema.optional(),
 })
 
 export const completedToolCallSchema = z.strictObject({

@@ -160,6 +160,45 @@ describe("run control service", () => {
     )
   })
 
+  it("maps token and screenshot provider failures to fixed activity errors", async () => {
+    const target = store()
+    const failingTokenService = new RunControlService(
+      operatorId,
+      target,
+      {},
+      fetch,
+      {
+        supabaseUrl: "http://127.0.0.1:54321",
+        publishableKey: "publishable-key-that-is-long-enough",
+        tokenIssuer: { issue: vi.fn().mockRejectedValue(new Error("private")) },
+      }
+    )
+    await expect(failingTokenService.realtime(runId)).rejects.toMatchObject({
+      name: "RunActivityConfigurationError",
+      message: "Run activity service is unavailable",
+    })
+
+    const failingArtifactService = new RunControlService(
+      operatorId,
+      target,
+      {},
+      fetch,
+      {
+        artifacts: {
+          signedRunDownloadUrl: vi
+            .fn()
+            .mockRejectedValue(new Error("bucket details")),
+        },
+      }
+    )
+    await expect(
+      failingArtifactService.artifact(runId, `artifact:v1:${"a".repeat(64)}`)
+    ).rejects.toMatchObject({
+      name: "RunActivityConfigurationError",
+      message: "Run activity service is unavailable",
+    })
+  })
+
   it("reports named readiness states without reflecting probe failures", async () => {
     const target = store()
     const fetcher = vi

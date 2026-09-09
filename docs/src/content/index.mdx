@@ -130,12 +130,15 @@ reasoning, selectors, arbitrary DOM, credentials, and unbounded provider details
 are outside the event projection.
 
 Each inserted event sends only its run UUID and sequence to a private Supabase
-Broadcast topic. A four-minute owner JWT authorizes the topic through
+Broadcast topic. Run and interrupt transitions send a content-free lifecycle
+wake on the same topic. A four-minute owner JWT authorizes the topic through
 `realtime.messages` RLS, while the client fetches canonical pages after its last
-durable cursor. Serialized catch-up rejects gaps and conflicting duplicates, so
-reload and reconnect produce the same visible order.
+durable cursor and refreshes the run snapshot. Serialized catch-up rejects gaps
+and conflicting duplicates, so reload and reconnect produce the same visible
+order.
 
 Application screenshots remain in private Storage. The server verifies the
-owned application, run, screenshot type, and PNG/JPEG MIME before returning a URL
-that expires in at most five minutes. Pause waits for a worker safe boundary;
+owned application, run association, private bucket, screenshot type, and
+PNG/JPEG MIME before returning a URL that expires in at most five minutes. Pause
+waits for a worker safe boundary and retains a distinct decision for each cycle;
 stop, retry, and one-time interrupt responses reuse the durable run-control API.

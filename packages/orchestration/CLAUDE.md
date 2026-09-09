@@ -7,6 +7,7 @@
 - `src/application-explorer-specialist.ts` - Application Explorer composition.
 - `src/runtime.ts` - lease, cancellation, deadline, and event wrapper.
 - `src/event-projection.ts` - durable public run-event projection.
+- `src/specialist/tools.ts` - safe compact tool output and activity projection boundary.
 
 ## Conventions
 
@@ -18,4 +19,5 @@
 - Recheck run ownership before work, event persistence, and recovery.
 - Classify model decisions as provider-backed or deterministic for budgeting.
 - Keep prompts, arguments, outputs, credentials, and reasoning out of state/events.
+- Emit only bounded `activity` metadata from committed specialist decisions and sanitized tool observations.
 - Colocate unit tests; keep agent, integration, and live suites separate.

@@ -8,6 +8,7 @@ const operatorIdSchema = z.uuid()
 const algorithmSchema = z.enum(["ES256", "RS256"])
 
 export interface RealtimeSigningEnvironment {
+  readonly NODE_ENV?: string | undefined
   readonly SUPABASE_URL?: string | undefined
   readonly SUPABASE_REALTIME_SIGNING_JWK?: string | undefined
   readonly SUPABASE_JWT_SECRET?: string | undefined
@@ -35,19 +36,32 @@ export function createRealtimeTokenIssuer(
   environment: RealtimeSigningEnvironment,
   now: () => Date = () => new Date()
 ): RealtimeTokenIssuer {
-  const issuer = z
-    .url({ protocol: /^https?$/ })
-    .parse(environment.SUPABASE_URL)
-    .replace(/\/$/, "")
+  let endpoint: URL
+  try {
+    endpoint = new URL(
+      z.url({ protocol: /^https?$/ }).parse(environment.SUPABASE_URL)
+    )
+    if (
+      endpoint.username !== "" ||
+      endpoint.password !== "" ||
+      endpoint.pathname !== "/" ||
+      endpoint.search !== "" ||
+      endpoint.hash !== ""
+    ) {
+      throw new RealtimeTokenConfigurationError()
+    }
+  } catch {
+    throw new RealtimeTokenConfigurationError()
+  }
+  const issuer = endpoint.origin
+  const jwkInput = environment.SUPABASE_REALTIME_SIGNING_JWK?.trim()
   let algorithm: "ES256" | "RS256" | "HS256"
   let key: Uint8Array | ReturnType<typeof importJWK>
   let kid: string | undefined
-  if (environment.SUPABASE_REALTIME_SIGNING_JWK !== undefined) {
+  if (jwkInput !== undefined && jwkInput.length > 0) {
     let jwk: JWK
     try {
-      jwk = z
-        .record(z.string(), z.unknown())
-        .parse(JSON.parse(environment.SUPABASE_REALTIME_SIGNING_JWK)) as JWK
+      jwk = z.record(z.string(), z.unknown()).parse(JSON.parse(jwkInput)) as JWK
       algorithm = algorithmSchema.parse(jwk.alg)
       kid = z.string().min(1).max(255).parse(jwk.kid)
       if (typeof jwk.d !== "string" || jwk.d.length === 0) {
@@ -58,6 +72,12 @@ export function createRealtimeTokenIssuer(
       throw new RealtimeTokenConfigurationError()
     }
   } else if (environment.SUPABASE_JWT_SECRET !== undefined) {
+    if (
+      environment.NODE_ENV === "production" ||
+      !new Set(["127.0.0.1", "::1", "localhost"]).has(endpoint.hostname)
+    ) {
+      throw new RealtimeTokenConfigurationError()
+    }
     algorithm = "HS256"
     key = encodeSecret(environment.SUPABASE_JWT_SECRET)
   } else {

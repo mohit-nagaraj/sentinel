@@ -3,6 +3,8 @@
 - `src/operations.ts` - application, onboarding, compatibility, run, and mission contracts.
 - `src/github-app.ts` - webhook, immutable-head assessment, check lifecycle, and App permission contracts.
 - `src/primitives.ts` - shared URL, secret-reference, identity, and redaction primitives.
+- `src/events.ts` - redacted durable activity and lifecycle event wire contracts.
+- `src/run-control.ts` - operator run, interrupt, realtime bootstrap, and signed artifact DTOs.
 - `src/contracts.test.ts` - cross-boundary contract and invariant tests.
 - `src/index.ts` - public package exports.
 

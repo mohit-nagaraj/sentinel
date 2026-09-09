@@ -89,8 +89,9 @@ idempotency keys, leases, checkpoint state, or provider error details.
 
 The `/runs` workspace projects canonical Postgres events into independent
 Documentation, Code, and Application lanes plus Curator reconciliation. Private
-Supabase Broadcast messages contain only the run ID and sequence; they wake a
-serialized catch-up loop rather than acting as event storage. Reload and
+Supabase Broadcast messages contain only the run ID and, for event wakes, its
+sequence; lifecycle wakes contain no event content. They wake a serialized
+catch-up loop and run snapshot refresh rather than acting as storage. Reload and
 reconnect merge ordered pages by sequence, reject gaps or conflicting duplicates,
 and refresh run/interrupt state. The workspace distinguishes decisions, policy,
 tools, browser actions, requests, evidence, budgets, interrupts, failures, and

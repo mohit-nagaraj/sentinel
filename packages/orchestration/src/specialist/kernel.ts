@@ -5,6 +5,7 @@ import {
   hashCanonical,
   missionIdSchema,
   missionResultSchema,
+  persistedTextSchema,
   reasonCodeSchema,
   runIdSchema,
   type DiscoveryMission,
@@ -675,6 +676,7 @@ function buildKernelGraph(
           status: "started",
           summary: "Specialist mission started",
           reasonCode: "mission_started",
+          activity: { category: "transition" },
         },
         { idempotencyKey: specialistEventKey(state, "mission_started") }
       )
@@ -952,6 +954,12 @@ function buildKernelGraph(
           status: "completed",
           summary: "Specialist decision committed",
           reasonCode: decision.kind,
+          activity: {
+            category: "decision",
+            detail: persistedTextSchema.parse(
+              `Selected ${decision.kind.replaceAll("_", " ")}`
+            ),
+          },
         },
         {
           idempotencyKey: specialistEventKey(
@@ -967,6 +975,7 @@ function buildKernelGraph(
           status: "completed",
           summary: "Specialist model budget committed",
           reasonCode: "model_budget_updated",
+          activity: { category: "status" },
           budget: {
             consumed: state.budgetLedger.total.modelCalls,
             limit: state.mission.budget.modelCalls,
@@ -990,6 +999,7 @@ function buildKernelGraph(
             status: "blocked",
             summary: "Specialist human input committed",
             reasonCode: pending.reasonCode,
+            activity: { category: "policy" },
           },
           {
             idempotencyKey: specialistEventKey(
@@ -1137,6 +1147,9 @@ function buildKernelGraph(
         toolName: completed.toolName,
         phase: "completed",
         idempotencyKey: specialistEventKey(state, "tool_completed", callId),
+        ...(observation.activity === undefined
+          ? {}
+          : { activity: observation.activity }),
       })
       if (observation.evidenceIds.length > 0) {
         await runtime.emit(
@@ -1146,6 +1159,10 @@ function buildKernelGraph(
             summary: "Specialist tool evidence committed",
             reasonCode: "evidence_gained",
             evidenceIds: observation.evidenceIds,
+            activity: {
+              category: "coverage",
+              coverageDelta: observation.evidenceIds.length,
+            },
           },
           {
             idempotencyKey: specialistEventKey(
@@ -1162,6 +1179,7 @@ function buildKernelGraph(
           status: "completed",
           summary: "Specialist tool budget committed",
           reasonCode: "tool_budget_updated",
+          activity: { category: "status" },
           budget: {
             consumed: state.budgetLedger.total.toolCalls,
             limit: state.mission.budget.toolCalls,
@@ -1243,6 +1261,7 @@ function buildKernelGraph(
           status: "completed",
           summary: "Specialist human input committed",
           reasonCode: human.approved ? "resume_approved" : "resume_rejected",
+          activity: { category: "policy" },
         },
         {
           idempotencyKey: specialistEventKey(
@@ -1270,6 +1289,7 @@ function buildKernelGraph(
           status: terminalEventStatus(result),
           summary: "Specialist mission reached a terminal result",
           reasonCode: result.stopReason.code,
+          activity: { category: "status", detail: result.stopReason.summary },
         },
         {
           idempotencyKey: specialistEventKey(

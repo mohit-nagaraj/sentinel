@@ -18,7 +18,7 @@ type BootstrapFetcher = (
 interface RealtimeChannelLike {
   on(
     type: "broadcast",
-    filter: { readonly event: "run_event" },
+    filter: { readonly event: "run_event" | "run_state" },
     callback: (payload: unknown) => void
   ): RealtimeChannelLike
   subscribe(callback: (status: string) => void): RealtimeChannelLike
@@ -45,10 +45,14 @@ export type RealtimeClientFactory = (input: {
 
 const wakeEnvelopeSchema = zod.object({
   event: zod.literal("run_event"),
-  payload: zod.strictObject({
+  payload: zod.object({
     runId: databaseRunIdSchema,
     sequence: zod.number().int().positive(),
   }),
+})
+const stateWakeEnvelopeSchema = zod.object({
+  event: zod.literal("run_state"),
+  payload: zod.object({ runId: databaseRunIdSchema }),
 })
 
 function defaultClientFactory(input: {
@@ -127,7 +131,7 @@ export function createRealtimeBootstrapProvider(input: {
 
 export function createRunRealtimeSubscription(input: {
   readonly runId: string
-  readonly onWake: (sequence: number) => void
+  readonly onWake: (sequence?: number) => void
   readonly onStatus: (status: ActivityConnectionState) => void
   readonly fetcher?: BootstrapFetcher
   readonly now?: () => Date
@@ -142,12 +146,15 @@ export function createRunRealtimeSubscription(input: {
   const clientFactory = input.clientFactory ?? defaultClientFactory
   let client: RealtimeClientLike | undefined
   let channel: RealtimeChannelLike | undefined
+  let stopped = false
 
   return {
     async start(): Promise<void> {
+      if (stopped) return
       input.onStatus("connecting")
       try {
         const initial = await bootstrap()
+        if (stopped) return
         client = clientFactory({
           url: initial.supabaseUrl,
           publishableKey: initial.publishableKey,
@@ -161,12 +168,21 @@ export function createRunRealtimeSubscription(input: {
             },
           })
           .on("broadcast", { event: "run_event" }, (payload) => {
+            if (stopped) return
             const parsed = wakeEnvelopeSchema.safeParse(payload)
             if (parsed.success && parsed.data.payload.runId === runId) {
               input.onWake(parsed.data.payload.sequence)
             }
           })
+          .on("broadcast", { event: "run_state" }, (payload) => {
+            if (stopped) return
+            const parsed = stateWakeEnvelopeSchema.safeParse(payload)
+            if (parsed.success && parsed.data.payload.runId === runId) {
+              input.onWake()
+            }
+          })
           .subscribe((status) => {
+            if (stopped) return
             if (status === "SUBSCRIBED") input.onStatus("live")
             else if (status === "CLOSED") input.onStatus("offline")
             else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
@@ -179,6 +195,7 @@ export function createRunRealtimeSubscription(input: {
       }
     },
     async stop(): Promise<void> {
+      stopped = true
       if (client !== undefined && channel !== undefined) {
         await client.removeChannel(channel)
       }

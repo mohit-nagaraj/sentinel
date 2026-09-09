@@ -200,6 +200,11 @@ describe("realtime activity migration", () => {
     expect(realtimeActivityMigration).toContain("'runId', new.run_id")
     expect(realtimeActivityMigration).toContain("'sequence', new.sequence")
     expect(realtimeActivityMigration).not.toContain("new.event")
+    expect(realtimeActivityMigration).toContain("run_state")
+    expect(realtimeActivityMigration).toContain("runs_broadcast_state")
+    expect(realtimeActivityMigration).toContain(
+      "run_interrupts_broadcast_state"
+    )
     expect(realtimeActivityMigration).not.toMatch(
       /for insert\s+to authenticated/i
     )
@@ -212,5 +217,17 @@ describe("realtime activity migration", () => {
       "resume_decision_id = 'resume_run'"
     )
     expect(realtimeActivityMigration).toContain("old.status = 'interrupted'")
+    expect(realtimeActivityMigration).toContain("next_pause_decision_id")
+    expect(realtimeActivityMigration).toContain("v_decision_id")
+  })
+
+  it("associates content-addressed artifacts with every owning run", () => {
+    expect(realtimeActivityMigration).toContain("sentinel.run_artifacts")
+    expect(realtimeActivityMigration).toContain(
+      "primary key (run_id, artifact_id)"
+    )
+    expect(realtimeActivityMigration).toContain(
+      "alter table sentinel.run_artifacts enable row level security"
+    )
   })
 })

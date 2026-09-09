@@ -62,7 +62,7 @@ Token-by-token hidden reasoning, full live screencast/video, Langfuse UI, and ge
 ## Implementation notes
 
 - Redacted display metadata and ordered event projection live in `packages/contracts/src/events.ts` and `packages/orchestration/src/event-projection.ts`.
-- `supabase/migrations/20260908000400_realtime_activity.sql` adds safe-boundary pause state, cursor-only private Broadcast, and owner authorization through `realtime.messages` RLS.
+- `supabase/migrations/20260908000500_realtime_activity.sql` adds repeatable safe-boundary pause state, private event/lifecycle wakes, run-artifact associations, and owner authorization through `realtime.messages` RLS.
 - `apps/web/lib/activity-feed.ts`, `activity-projector.ts`, and `realtime-client.ts` reconstruct Postgres pages deterministically and treat Broadcast only as a catch-up signal.
 - `/runs` and `/runs/[runId]` render the responsive specialist workspace. Production uses short-lived owner JWTs and five-minute, run-scoped PNG/JPEG URLs; unavailable images remain accessible.
 - Verification includes strict projection/XSS/component tests, token/key and reconnect tests, local Supabase RLS/cross-owner/Broadcast/pause integration, and Playwright live/reload/PNG/keyboard/mobile coverage.

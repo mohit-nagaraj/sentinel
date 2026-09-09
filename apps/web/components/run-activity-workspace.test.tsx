@@ -245,6 +245,41 @@ describe("run activity workspace", () => {
     )
   })
 
+  it("announces newly caught-up activity without replaying saved history", async () => {
+    const incoming = events()[0]!
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes("/events?")) {
+          const after = new URL(url, "http://sentinel.test").searchParams.get(
+            "after"
+          )
+          return Response.json(after === "0" ? page([incoming]) : page([]))
+        }
+        if (url.endsWith("/interrupt")) {
+          return new Response(null, { status: 404 })
+        }
+        return Response.json(run())
+      })
+    )
+    render(
+      <RunActivityWorkspace
+        initialRun={run()}
+        initialEventPage={page([])}
+        transport="fixture-poll"
+      />
+    )
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          /1 new activity event\. Latest from Documentation: Decision, Documentation contract mapped\./
+        )
+      ).toBeDefined()
+    )
+  })
+
   it("shows empty, slow, completed, and failed states", async () => {
     vi.useFakeTimers()
     vi.stubGlobal(
@@ -271,7 +306,11 @@ describe("run activity workspace", () => {
         live={false}
       />
     )
-    expect(screen.getByRole("status").textContent).toContain("Run completed")
+    expect(
+      screen
+        .getAllByRole("status")
+        .some((element) => element.textContent?.includes("Run completed"))
+    ).toBe(true)
 
     rerender(
       <RunActivityWorkspace
@@ -290,7 +329,7 @@ describe("run activity workspace", () => {
       schemaVersion: 1,
       id: "44444444-4444-4444-8444-444444444444",
       runId: databaseRunId,
-      decisionId: "resume_run",
+      decisionId: "resume_run_2",
       prompt: "Resume when the operator is ready" as never,
       status: "pending",
       createdAt: "2026-09-09T00:00:10.000Z",
@@ -355,7 +394,7 @@ describe("run activity workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Resume" }))
     await waitFor(() =>
       expect(fetcher).toHaveBeenCalledWith(
-        expect.stringContaining("/interrupts/resume_run/respond"),
+        expect.stringContaining("/interrupts/resume_run_2/respond"),
         expect.objectContaining({ method: "POST" })
       )
     )

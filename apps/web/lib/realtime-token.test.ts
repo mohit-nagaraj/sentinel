@@ -96,4 +96,39 @@ describe("realtime operator token issuer", () => {
       )
     }
   })
+
+  it("treats a blank JWK as absent locally and rejects HS256 in production", async () => {
+    const secret = "local-realtime-secret-at-least-32-characters"
+    const local = createRealtimeTokenIssuer(
+      {
+        SUPABASE_URL: "http://127.0.0.1:54321",
+        SUPABASE_REALTIME_SIGNING_JWK: "   ",
+        SUPABASE_JWT_SECRET: secret,
+      },
+      () => now
+    )
+    await expect(local.issue({ operatorId, runId })).resolves.toMatchObject({
+      expiresAt: "2026-09-08T00:04:00.000Z",
+    })
+
+    for (const environment of [
+      {
+        NODE_ENV: "production",
+        SUPABASE_URL: "http://127.0.0.1:54321",
+        SUPABASE_JWT_SECRET: secret,
+      },
+      {
+        SUPABASE_URL: "https://project.supabase.co",
+        SUPABASE_JWT_SECRET: secret,
+      },
+      {
+        SUPABASE_URL: "https://project.supabase.co/auth/v1",
+        SUPABASE_REALTIME_SIGNING_JWK: "{}",
+      },
+    ]) {
+      expect(() => createRealtimeTokenIssuer(environment)).toThrow(
+        RealtimeTokenConfigurationError
+      )
+    }
+  })
 })

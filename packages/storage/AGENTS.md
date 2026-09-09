@@ -3,6 +3,7 @@
 - `src/onboarding-repository.ts` - owner-scoped onboarding persistence and public projection.
 - `src/secret-service.ts` - Supabase Vault reference lifecycle.
 - `src/run-repository.ts` - owner-scoped run commands, leases, interrupts, and paginated history.
+- `src/artifact-storage.ts` - private content-addressed artifacts and run-scoped screenshot associations.
 - `src/github-assessment-repository.ts` - transactional delivery, immutable-head run, supersession, and check ownership state.
 - `src/database.ts` - server-only Postgres client and transaction port.
 - `src/source-repository.ts` - normalized source status persistence.
@@ -21,3 +22,4 @@
 - Preserve current graph identity on failed or stale configuration changes.
 - Use scripted database unit tests and opt-in disposable Supabase integration tests.
 - Require bounded event idempotency keys and reject conflicting retries.
+- Recheck the persisted bucket is private before signing a run-associated screenshot.

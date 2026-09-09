@@ -207,10 +207,15 @@ export class RunControlService {
     ) {
       throw new RunActivityConfigurationError()
     }
-    const issued = await this.activity.tokenIssuer.issue({
-      operatorId: this.operatorId,
-      runId,
-    })
+    let issued: Awaited<ReturnType<RealtimeTokenIssuer["issue"]>>
+    try {
+      issued = await this.activity.tokenIssuer.issue({
+        operatorId: this.operatorId,
+        runId,
+      })
+    } catch {
+      throw new RunActivityConfigurationError()
+    }
     return runRealtimeBootstrapSchema.parse({
       schemaVersion: 1,
       runId,
@@ -230,12 +235,17 @@ export class RunControlService {
       throw new RunActivityConfigurationError()
     }
     const expiresInSeconds = 300
-    const url = await this.activity.artifacts.signedRunDownloadUrl(
-      run.applicationId,
-      run.id,
-      artifactId,
-      expiresInSeconds
-    )
+    let url: string | null
+    try {
+      url = await this.activity.artifacts.signedRunDownloadUrl(
+        run.applicationId,
+        run.id,
+        artifactId,
+        expiresInSeconds
+      )
+    } catch {
+      throw new RunActivityConfigurationError()
+    }
     if (url === null) return null
     const now = this.activity.now ?? (() => new Date())
     return signedRunArtifactSchema.parse({
@@ -373,6 +383,7 @@ export function getRunControlService(): RunControlService {
   let tokenIssuer: RealtimeTokenIssuer | undefined
   try {
     tokenIssuer = createRealtimeTokenIssuer({
+      NODE_ENV: process.env["NODE_ENV"],
       SUPABASE_URL: process.env["SUPABASE_URL"],
       SUPABASE_REALTIME_SIGNING_JWK:
         process.env["SUPABASE_REALTIME_SIGNING_JWK"],

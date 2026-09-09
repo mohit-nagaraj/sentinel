@@ -147,9 +147,12 @@ export class ArtifactMetadataRepository {
     id: ArtifactId
   ): Promise<ArtifactMetadata | null> {
     const rows = await this.database.query<ArtifactRow>(
-      `select * from sentinel.artifacts
-       where application_id = $1::uuid and run_id = $2::uuid
-         and stable_key = $3 and deleted_at is null`,
+      `select artifact.* from sentinel.artifacts artifact
+       join sentinel.run_artifacts link on link.artifact_id = artifact.id
+       join sentinel.runs run on run.id = link.run_id
+       where artifact.application_id = $1::uuid and run.id = $2::uuid
+         and run.application_id = $1::uuid and artifact.stable_key = $3
+         and artifact.deleted_at is null`,
       [
         databaseIdSchema.parse(applicationId),
         databaseIdSchema.parse(runId),
@@ -157,6 +160,42 @@ export class ArtifactMetadataRepository {
       ]
     )
     return rows[0] === undefined ? null : mapArtifact(rows[0])
+  }
+
+  async associateWithRun(
+    applicationId: string,
+    runId: string,
+    artifactDatabaseId: string
+  ): Promise<boolean> {
+    const identifiers = [
+      databaseIdSchema.parse(applicationId),
+      databaseIdSchema.parse(runId),
+      databaseIdSchema.parse(artifactDatabaseId),
+    ]
+    await this.database.query(
+      `insert into sentinel.run_artifacts (run_id, artifact_id)
+       select run.id, artifact.id
+       from sentinel.runs run
+       join sentinel.artifacts artifact
+         on artifact.id = $3::uuid and artifact.application_id = $1::uuid
+       where run.id = $2::uuid and run.application_id = $1::uuid
+         and artifact.deleted_at is null
+       on conflict (run_id, artifact_id) do nothing`,
+      identifiers
+    )
+    const rows = await this.database.query<{ linked: boolean }>(
+      `select exists(
+         select 1 from sentinel.run_artifacts link
+         join sentinel.runs run on run.id = link.run_id
+         join sentinel.artifacts artifact on artifact.id = link.artifact_id
+         where link.run_id = $2::uuid and link.artifact_id = $3::uuid
+           and run.application_id = $1::uuid
+           and artifact.application_id = $1::uuid
+           and artifact.deleted_at is null
+       ) as linked`,
+      identifiers
+    )
+    return rows[0]?.linked === true
   }
 
   async markDeleted(id: string): Promise<boolean> {
@@ -271,6 +310,11 @@ export interface ArtifactMetadataStore {
     runId: string,
     id: ArtifactId
   ): Promise<ArtifactMetadata | null>
+  associateWithRun(
+    applicationId: string,
+    runId: string,
+    artifactDatabaseId: string
+  ): Promise<boolean>
   markDeleted(id: string): Promise<boolean>
   restore(id: string): Promise<void>
   assertPrivateBucket(bucket: string): Promise<void>
@@ -418,6 +462,7 @@ export class ArtifactService {
     )
     await this.objects.put(this.bucket, objectKey, input.body, mimeType)
 
+    let createdArtifact: ArtifactMetadata | undefined
     try {
       const result = await this.metadata.create({
         id: stableId,
@@ -433,11 +478,27 @@ export class ArtifactService {
         referenceCount: 0,
         retainUntil: input.retainUntil,
       })
+      if (result.created) createdArtifact = result.artifact
+      if (
+        runId !== null &&
+        !(await this.metadata.associateWithRun(
+          applicationId,
+          runId,
+          result.artifact.databaseId
+        ))
+      ) {
+        throw new Error("Run artifact association was rejected")
+      }
       if (!result.created) {
         await this.objects.delete(this.bucket, objectKey)
       }
       return result.artifact
     } catch (error) {
+      if (createdArtifact !== undefined) {
+        await this.metadata
+          .markDeleted(createdArtifact.databaseId)
+          .catch(() => undefined)
+      }
       await this.objects.delete(this.bucket, objectKey).catch(() => undefined)
       throw error
     }
@@ -482,6 +543,7 @@ export class ArtifactService {
     ) {
       return null
     }
+    await this.metadata.assertPrivateBucket(artifact.bucket)
     const expires = z.number().int().min(1).max(300).parse(expiresInSeconds)
     return this.objects.signedDownloadUrl(
       artifact.bucket,

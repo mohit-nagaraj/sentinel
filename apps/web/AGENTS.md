@@ -15,6 +15,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - `lib/operator-auth.ts` - constant-time Basic/Bearer token verification.
 - `lib/run-control.ts` - owner-scoped run command/read service and readiness projection.
 - `app/api/control/[[...path]]/route.ts` - authenticated run control HTTP boundary.
+- `app/runs/[runId]/page.tsx` - owner-scoped activity snapshot entry point.
+- `components/run-activity-workspace.tsx` - live specialist lanes, controls, budgets, and screenshot storyboard.
+- `lib/activity-feed.ts` and `lib/realtime-client.ts` - canonical cursor convergence and private Broadcast wake transport.
 - `lib/github-assessments.ts` - shared signed-webhook/manual PR assessment and check synchronization service.
 - `app/api/github/[[...path]]/route.ts` - raw webhook and operator-authenticated manual PR HTTP boundary.
 
@@ -29,3 +32,4 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Return `OnboardingActionState`; never reflect credential or storage-state values.
 - Keep operational UI compact, responsive, keyboard accessible, and on existing theme tokens.
 - Colocate web tests and keep full browser flows under `tests/browser`.
+- Keep PostgreSQL events canonical; Realtime payloads only wake owner-scoped catch-up and lifecycle refresh.

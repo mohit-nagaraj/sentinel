@@ -199,21 +199,27 @@ export function createRunDispatcher(
       if (decision !== null) {
         const decisionId = reasonCodeSchema.parse(decision.decisionId)
         await context.assertActive()
-        const interruptPending = await graph.hasPendingInterrupt(
-          input,
-          decisionId
-        )
+        const checkpointExists = await graph.hasCheckpoint(input)
         await context.assertActive()
-        rawResult = interruptPending
-          ? await graph.resume(
-              input,
-              {
-                decisionId,
-                response: humanDecisionSchema.parse(decision.response),
-              },
-              context
-            )
-          : await graph.continue(input, context)
+        if (!checkpointExists) {
+          rawResult = await graph.start(input, context)
+        } else {
+          const interruptPending = await graph.hasPendingInterrupt(
+            input,
+            decisionId
+          )
+          await context.assertActive()
+          rawResult = interruptPending
+            ? await graph.resume(
+                input,
+                {
+                  decisionId,
+                  response: humanDecisionSchema.parse(decision.response),
+                },
+                context
+              )
+            : await graph.continue(input, context)
+        }
       } else {
         const checkpointExists = await graph.hasCheckpoint(input)
         await context.assertActive()

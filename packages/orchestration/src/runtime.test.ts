@@ -10,7 +10,6 @@ import {
   CancelledOrchestrationError,
   CheckpointStateError,
   LeaseOwnershipError,
-  PauseRequestedOrchestrationError,
   wrapNode,
   type OrchestrationEvent,
   type RuntimeDependencies,
@@ -81,11 +80,13 @@ describe("orchestration runtime boundaries", () => {
   it("propagates a cooperative pause without recording a node failure", async () => {
     const events: OrchestrationEvent[] = []
     const sideEffect = vi.fn()
+    const pause = new Error("Pause requested by worker control")
+    pause.name = "PauseRequestedOrchestrationError"
     const dependencies: RuntimeDependencies = {
       owner: "worker-a",
       control: {
         assertActive: async () => {
-          throw new PauseRequestedOrchestrationError()
+          throw pause
         },
       },
       events: { append: async (event) => void events.push(event) },
@@ -102,9 +103,7 @@ describe("orchestration runtime boundaries", () => {
         return {}
       }
     )
-    await expect(node(state)).rejects.toBeInstanceOf(
-      PauseRequestedOrchestrationError
-    )
+    await expect(node(state)).rejects.toBe(pause)
     expect(sideEffect).not.toHaveBeenCalled()
     expect(events).toEqual([])
   })

@@ -38,6 +38,24 @@ describe("run activity event display", () => {
       { category: "action", detail: "Authorization: Bearer private" },
       { category: "action", detail: "x".repeat(2_049) },
       { category: "action", selector: "#checkout button" },
+      {
+        category: "request",
+        request: {
+          method: "GET",
+          route: `/auth/callback/${"eyJhbGciOiJIUzI1NiJ9"}.${"a".repeat(24)}.${"b".repeat(24)}`,
+        },
+      },
+      {
+        category: "request",
+        request: { method: "GET", route: "/reset/token-value" },
+      },
+      {
+        category: "request",
+        request: {
+          method: "GET",
+          route: "/orders/11111111-1111-4111-8111-111111111111",
+        },
+      },
     ]) {
       expect(() => parseRunEvent({ ...runEventFixture, activity })).toThrow()
     }

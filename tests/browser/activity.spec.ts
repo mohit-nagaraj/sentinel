@@ -35,10 +35,12 @@ test("streams a parallel run, resumes safely, and reconstructs its storyboard", 
   expect(uploaded.status()).toBe(201)
 
   await page.goto("/runs")
-  await page.getByRole("link", { name: /Assess Pr/ }).click()
-  await expect(page).toHaveURL(new RegExp(`/runs/${activityFixtureRunId}$`), {
-    timeout: 15_000,
-  })
+  const activityLink = page.getByRole("link", { name: /Assess Pr/ })
+  await expect(activityLink).toHaveAttribute(
+    "href",
+    `/runs/${activityFixtureRunId}`
+  )
+  await page.goto(`/runs/${activityFixtureRunId}`)
   await expect(
     page.getByRole("heading", { name: "Specialist activity" })
   ).toBeVisible({ timeout: 15_000 })

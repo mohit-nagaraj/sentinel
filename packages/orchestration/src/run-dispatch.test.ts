@@ -131,6 +131,30 @@ describe("run graph dispatcher", () => {
     expect(handlers.initialize_knowledge.resume).toHaveBeenCalledOnce()
   })
 
+  it("starts a pre-execution run after its queued pause is approved", async () => {
+    const handlers = registry()
+    const dispatcher = createRunDispatcher(handlers)
+    await dispatcher.execute(
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        applicationId: "22222222-2222-4222-8222-222222222222",
+        runType: "initialize_knowledge",
+        budget,
+        request: {},
+        configurationFingerprint: `sha256:${"a".repeat(64)}`,
+        attemptCount: 1,
+      },
+      { decisionId: "resume_run", response: { approved: true } },
+      context
+    )
+    expect(handlers.initialize_knowledge.hasCheckpoint).toHaveBeenCalledOnce()
+    expect(
+      handlers.initialize_knowledge.hasPendingInterrupt
+    ).not.toHaveBeenCalled()
+    expect(handlers.initialize_knowledge.start).toHaveBeenCalledOnce()
+    expect(handlers.initialize_knowledge.continue).not.toHaveBeenCalled()
+  })
+
   it("rejects malformed persisted work and classifies errors without details", async () => {
     const dispatcher = createRunDispatcher(registry())
     await expect(

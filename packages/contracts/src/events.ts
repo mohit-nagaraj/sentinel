@@ -8,11 +8,51 @@ import {
   missionIdSchema,
   persistedTextSchema,
   reasonCodeSchema,
+  redactPersistedText,
   runIdSchema,
   runStatusSchema,
   schemaVersionSchema,
   timestampSchema,
 } from "./primitives.ts"
+
+const sensitiveValueRouteSegment =
+  /^(?:activate|activation|callback|code|confirm|confirmation|invite|magic[-_]?link|recover|recovery|reset|signature|token|verify|verification)$/i
+const opaqueRouteSegment =
+  /^(?:\d+|[0-9a-f]{20,}|[0-9a-f]{8}-[0-9a-f-]{27,}|[A-Za-z0-9_~.-]{32,})$/i
+
+function isSafeActivityRoute(value: string): boolean {
+  if (redactPersistedText(value) !== value) return false
+  const segments = value.split("/").filter((segment) => segment.length > 0)
+  for (const [index, segment] of segments.entries()) {
+    const template = /^\{[a-z][a-z0-9_]*\}$/i.test(segment)
+    const mixedOpaque =
+      /^[A-Za-z0-9_-]{12,}$/.test(segment) &&
+      ((/[a-z]/.test(segment) && /[A-Z]/.test(segment)) ||
+        (/[A-Za-z]/.test(segment) && /\d/.test(segment)))
+    if (!template && (opaqueRouteSegment.test(segment) || mixedOpaque)) {
+      return false
+    }
+    const next = segments[index + 1]
+    if (
+      sensitiveValueRouteSegment.test(segment) &&
+      next !== undefined &&
+      next !== "redacted" &&
+      !/^\{[a-z][a-z0-9_]*\}$/i.test(next)
+    ) {
+      return false
+    }
+  }
+  return true
+}
+
+const activityRouteSchema = z
+  .string()
+  .min(1)
+  .max(512)
+  .regex(/^\/[A-Za-z0-9._~:/{}*-]*$/)
+  .refine(isSafeActivityRoute, {
+    message: "Activity request routes must be redacted normalized templates",
+  })
 
 export const runEventKindSchema = z.enum([
   "run_status",
@@ -69,11 +109,7 @@ export const runActivityDisplaySchema = z.strictObject({
   request: z
     .strictObject({
       method: z.enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]),
-      route: z
-        .string()
-        .min(1)
-        .max(512)
-        .regex(/^\/[A-Za-z0-9._~:/{}*-]*$/),
+      route: activityRouteSchema,
       status: z.number().int().min(100).max(599).optional(),
     })
     .optional(),

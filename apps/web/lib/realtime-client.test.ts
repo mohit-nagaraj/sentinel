@@ -42,18 +42,18 @@ describe("private run realtime client", () => {
 
   it("joins a private topic and wakes only for the matching run", async () => {
     const statuses: string[] = []
-    const wakes: number[] = []
-    let broadcast: ((payload: unknown) => void) | undefined
+    const wakes: (number | undefined)[] = []
+    const broadcasts = new Map<string, (payload: unknown) => void>()
     let subscription: ((status: string) => void) | undefined
     const removeChannel = vi.fn().mockResolvedValue(undefined)
     const channel = {
       on: vi.fn(
         (
           _type: string,
-          _filter: unknown,
+          filter: { event: string },
           callback: (payload: unknown) => void
         ) => {
-          broadcast = callback
+          broadcasts.set(filter.event, callback)
           return channel
         }
       ),
@@ -87,13 +87,29 @@ describe("private run realtime client", () => {
       { event: "run_event" },
       expect.any(Function)
     )
+    expect(channel.on).toHaveBeenCalledWith(
+      "broadcast",
+      { event: "run_state" },
+      expect.any(Function)
+    )
     subscription?.("SUBSCRIBED")
-    broadcast?.({ event: "run_event", payload: { runId, sequence: 7 } })
-    broadcast?.({
+    broadcasts.get("run_event")?.({
+      event: "run_event",
+      payload: { id: crypto.randomUUID(), runId, sequence: 7 },
+    })
+    broadcasts.get("run_event")?.({
       event: "run_event",
       payload: { runId: "44444444-4444-4444-8444-444444444444", sequence: 8 },
     })
-    expect(wakes).toEqual([7])
+    broadcasts.get("run_state")?.({
+      event: "run_state",
+      payload: { id: crypto.randomUUID(), runId },
+    })
+    broadcasts.get("run_state")?.({
+      event: "run_state",
+      payload: { runId: "44444444-4444-4444-8444-444444444444" },
+    })
+    expect(wakes).toEqual([7, undefined])
     expect(statuses).toEqual(["connecting", "live"])
     await realtime.stop()
     expect(removeChannel).toHaveBeenCalledWith(channel)
@@ -113,5 +129,27 @@ describe("private run realtime client", () => {
       })
       await expect(provider()).rejects.toThrow(RunRealtimeConfigurationError)
     }
+  })
+
+  it("does not create a channel when stop wins an in-flight bootstrap", async () => {
+    let release: ((response: Response) => void) | undefined
+    const pending = new Promise<Response>((resolve) => {
+      release = resolve
+    })
+    const clientFactory = vi.fn() as unknown as RealtimeClientFactory
+    const realtime = createRunRealtimeSubscription({
+      runId,
+      onWake: vi.fn(),
+      onStatus: vi.fn(),
+      fetcher: vi.fn(async () => pending),
+      now: () => new Date("2026-09-09T00:00:00.000Z"),
+      clientFactory,
+    })
+
+    const starting = realtime.start()
+    await realtime.stop()
+    release?.(Response.json(bootstrap()))
+    await starting
+    expect(clientFactory).not.toHaveBeenCalled()
   })
 })

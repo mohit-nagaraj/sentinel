@@ -761,6 +761,32 @@ describe("shared specialist kernel", () => {
     expect(test.events.some((event) => event.kind === "tool_completed")).toBe(
       true
     )
+    expect(test.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "node_completed",
+          activity: expect.objectContaining({ category: "decision" }),
+        }),
+        expect.objectContaining({
+          kind: "tool_started",
+          activity: expect.objectContaining({
+            category: "tool",
+            action: expect.objectContaining({ status: "selected" }),
+          }),
+        }),
+        expect.objectContaining({
+          kind: "tool_completed",
+          activity: expect.objectContaining({
+            category: "tool",
+            action: expect.objectContaining({ status: "completed" }),
+          }),
+        }),
+        expect.objectContaining({
+          kind: "evidence_gained",
+          activity: { category: "coverage", coverageDelta: 1 },
+        }),
+      ])
+    )
   })
 
   it("settles an in-flight tool reservation when elapsed time expires", async () => {
