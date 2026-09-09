@@ -54,10 +54,6 @@ async function configureSafety(page: Page, deploymentUrl: string) {
   await page.getByRole("button", { name: "Inspect and continue" }).click()
 }
 
-async function review(page: Page) {
-  await page.getByRole("tab", { name: "Review" }).click()
-}
-
 async function saveScreenshot(page: Page, testInfo: TestInfo, name: string) {
   await page.screenshot({
     path: testInfo.outputPath(name),
@@ -201,7 +197,9 @@ test("keeps the control plane coherent on a narrow keyboard-driven viewport", as
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto("/applications/new/onboarding")
 
-  await expect(page.getByRole("heading", { name: "Connect application" })).toBeVisible()
+  await expect(
+    page.getByRole("heading", { name: "Connect application" })
+  ).toBeVisible()
   await expect(page.getByRole("tab", { name: "Access" })).toBeDisabled()
   await page.getByRole("button", { name: "Open navigation" }).focus()
   await page.keyboard.press("Enter")

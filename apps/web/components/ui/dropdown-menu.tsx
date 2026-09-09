@@ -51,7 +51,10 @@ function DropdownMenuItem({ className, ...props }: MenuPrimitive.Item.Props) {
     />
   )
 }
-function DropdownMenuLabel({ className, ...props }: React.ComponentProps<"div">) {
+function DropdownMenuLabel({
+  className,
+  ...props
+}: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dropdown-menu-label"
