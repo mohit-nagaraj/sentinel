@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   AlertTriangle,
@@ -24,7 +25,6 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react"
-import Link from "next/link"
 
 import {
   publicRunSchema,
@@ -747,56 +747,7 @@ export function RunActivityWorkspace({
   const canStop = activeStatuses.has(run.status) || run.status === "interrupted"
 
   return (
-    <main className="min-h-svh bg-background text-foreground">
-      <header className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-2 sm:px-6">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="grid size-7 shrink-0 place-items-center rounded-md bg-foreground font-mono text-xs font-semibold text-background">
-            S
-          </span>
-          <div className="min-w-0">
-            <h1 className="truncate text-sm font-semibold">Sentinel</h1>
-            <p className="font-mono text-[0.6875rem] text-muted-foreground">
-              Live agent activity
-            </p>
-          </div>
-        </div>
-        <nav
-          aria-label="Control plane"
-          className="flex items-center gap-1 text-xs"
-        >
-          <Link
-            href="/"
-            className="min-h-11 rounded-md px-3 leading-[2.75rem] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
-          >
-            Applications
-          </Link>
-          <Link
-            href="/knowledge"
-            className="min-h-11 rounded-md px-3 leading-[2.75rem] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
-          >
-            Knowledge
-          </Link>
-          <Link
-            href="/runs"
-            aria-current="page"
-            className="min-h-11 rounded-md bg-muted px-3 leading-[2.75rem] font-medium"
-          >
-            Activity
-          </Link>
-        </nav>
-        <div className="flex items-center gap-3">
-          <ConnectionStatus connection={feed.connection} slow={slow} />
-          <span
-            className={cn(
-              "rounded-sm border px-2 py-1 text-xs font-medium",
-              statusTone(run.status)
-            )}
-          >
-            {humanize(run.status)}
-          </span>
-        </div>
-      </header>
-
+    <main className="min-h-full bg-background text-foreground">
       <section className="border-b border-border px-4 py-4 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
@@ -809,6 +760,15 @@ export function RunActivityWorkspace({
             </p>
           </div>
           <div className="flex min-h-11 flex-wrap items-center justify-end gap-2">
+            <ConnectionStatus connection={feed.connection} slow={slow} />
+            <span
+              className={cn(
+                "rounded-sm border px-2 py-1 text-xs font-medium",
+                statusTone(run.status)
+              )}
+            >
+              {humanize(run.status)}
+            </span>
             {canPause || run.pauseRequestedAt !== undefined ? (
               <Button
                 type="button"
@@ -995,25 +955,26 @@ export function RunActivityWorkspace({
             className="grid grid-cols-3 border-b border-border md:hidden"
           >
             {laneDefinitions.map((lane, index) => (
-              <button
+              <Button
                 key={lane.id}
                 id={`${lane.id}-tab`}
                 type="button"
+                variant="ghost"
                 role="tab"
                 aria-selected={activeLane === lane.id}
                 aria-controls={`${lane.id}-mobile-panel`}
                 tabIndex={activeLane === lane.id ? 0 : -1}
                 className={cn(
-                  "min-h-11 border-r border-border px-2 text-xs font-medium last:border-r-0 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary",
+                  "h-auto min-h-11 rounded-none border-r border-border px-2 text-xs last:border-r-0 focus-visible:ring-inset",
                   activeLane === lane.id
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground"
+                    ? "bg-primary/10 text-primary hover:bg-primary/10"
+                    : "text-muted-foreground hover:bg-transparent"
                 )}
                 onClick={() => setActiveLane(lane.id)}
                 onKeyDown={(event) => handleLaneKeyDown(event, index)}
               >
                 {lane.label}
-              </button>
+              </Button>
             ))}
           </div>
 

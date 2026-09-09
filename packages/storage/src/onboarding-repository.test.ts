@@ -478,6 +478,7 @@ describe("onboarding repository", () => {
         knowledgeStale: false,
         inspectedAt: new Date(compatibility.inspectedAt),
         confirmedAt: null,
+        completedThrough: "safety",
         updatedAt: new Date("2026-09-08T00:02:00.000Z"),
       }
     )

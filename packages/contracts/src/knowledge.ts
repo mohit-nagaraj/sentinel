@@ -11,6 +11,7 @@ import {
   contentHashSchema,
   evidenceIdSchema,
   evidenceTierSchema,
+  entityKindSchema,
   persistedTextSchema,
   reasonCodeSchema,
   reviewStateSchema,
@@ -177,6 +178,39 @@ export const evidencePathSchema = z
     }
   })
 
+export const knowledgeGraphNodeSchema = z.strictObject({
+  id: stableEntityIdSchema,
+  kind: entityKindSchema,
+  label: z.string().trim().min(1).max(512),
+  detail: persistedTextSchema.optional(),
+  tier: evidenceTierSchema.exclude(["D"]),
+  reviewState: reviewStateSchema,
+  stale: z.boolean(),
+})
+
+export const knowledgeGraphRelationshipSchema = z.strictObject({
+  id: evidenceIdSchema,
+  fromId: stableEntityIdSchema,
+  toId: stableEntityIdSchema,
+  relationship: reasonCodeSchema,
+  tier: evidenceTierSchema.exclude(["D"]),
+  reviewState: reviewStateSchema,
+  stale: z.boolean(),
+})
+
+export const knowledgeGraphSearchResultSchema = z.strictObject({
+  schemaVersion: schemaVersionSchema,
+  items: z.array(knowledgeGraphNodeSchema).max(50),
+})
+
+export const knowledgeGraphNeighborhoodSchema = z.strictObject({
+  schemaVersion: schemaVersionSchema,
+  seedId: stableEntityIdSchema,
+  nodes: z.array(knowledgeGraphNodeSchema).min(1).max(200),
+  relationships: z.array(knowledgeGraphRelationshipSchema).max(400),
+  truncated: z.boolean(),
+})
+
 export const linkReviewRecordSchema = z.strictObject({
   id: databaseInterruptIdSchema,
   decision: z.enum(["accepted", "rejected"]),
@@ -261,6 +295,16 @@ export type WorkflowCoveragePage = z.infer<typeof workflowCoveragePageSchema>
 export type EvidencePath = z.infer<typeof evidencePathSchema>
 export type EvidencePathNode = z.infer<typeof evidencePathNodeSchema>
 export type EvidencePathLink = z.infer<typeof evidencePathLinkSchema>
+export type KnowledgeGraphNode = z.infer<typeof knowledgeGraphNodeSchema>
+export type KnowledgeGraphRelationship = z.infer<
+  typeof knowledgeGraphRelationshipSchema
+>
+export type KnowledgeGraphSearchResult = z.infer<
+  typeof knowledgeGraphSearchResultSchema
+>
+export type KnowledgeGraphNeighborhood = z.infer<
+  typeof knowledgeGraphNeighborhoodSchema
+>
 export type LinkReviewRecord = z.infer<typeof linkReviewRecordSchema>
 export type LinkReviewItem = z.infer<typeof linkReviewItemSchema>
 export type InterruptReviewItem = z.infer<typeof interruptReviewItemSchema>

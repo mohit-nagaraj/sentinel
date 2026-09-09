@@ -67,6 +67,11 @@ describe("knowledge workspace", () => {
       ).toBeGreaterThan(0)
     }
     expect(
+      screen.getByText(/Missing links are unknown until a bounded assessment/)
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("tab", { name: "Graph" }))
+    fireEvent.click(screen.getByText("Evidence path details"))
+    expect(
       screen.getByText("Cross-layer path reaches implementation evidence")
     ).toBeInTheDocument()
     expect(
@@ -74,9 +79,6 @@ describe("knowledge workspace", () => {
     ).toBeInTheDocument()
     expect(screen.getByText("OrderController.create")).toBeInTheDocument()
     expect(screen.getAllByTitle(/Evidence tier/).length).toBeGreaterThan(6)
-    expect(
-      screen.getByText(/Missing links are unknown until a bounded assessment/)
-    ).toBeInTheDocument()
   })
 
   it("switches to workflow coverage and exposes stale invalidation", async () => {
@@ -89,6 +91,7 @@ describe("knowledge workspace", () => {
     ).toBeGreaterThan(0)
     expect(screen.getByText("Buyer opens saved tickets")).toBeInTheDocument()
 
+    fireEvent.click(screen.getByRole("tab", { name: "Reviews" }))
     const candidateButton = screen.getByRole("button", {
       name: /Requirement to checkout workflow/,
     })
@@ -120,6 +123,7 @@ describe("knowledge workspace", () => {
     )
     render(<KnowledgeWorkspace {...props} />)
 
+    fireEvent.click(screen.getByRole("tab", { name: "Reviews" }))
     fireEvent.click(
       screen.getByRole("button", { name: /Requirement to checkout workflow/ })
     )
@@ -153,6 +157,8 @@ describe("knowledge workspace", () => {
     )
     render(<KnowledgeWorkspace {...props} />)
 
+    fireEvent.click(screen.getByRole("tab", { name: "Graph" }))
+    fireEvent.click(screen.getByText("Evidence path details"))
     const states = screen.getByText("States", { exact: true })
     fireEvent.click(states.closest("summary") ?? states)
     fireEvent.click(
@@ -189,6 +195,7 @@ describe("knowledge workspace", () => {
       />
     )
 
+    fireEvent.click(screen.getByRole("tab", { name: "Reviews" }))
     fireEvent.click(screen.getByRole("button", { name: "Load more reviews" }))
     expect(
       await screen.findByRole("button", {

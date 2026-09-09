@@ -56,6 +56,7 @@ const connectedApplication: PublicOnboardingApplication = {
     capabilityHints: ["Attendee checkout"],
   },
   confirmed: false,
+  completedThrough: "safety",
   updatedAt: "2026-09-08T00:00:00.000Z",
 }
 
@@ -112,33 +113,37 @@ describe("onboarding control plane page", () => {
   })
 
   it("renders generic fields from the selected authentication method", () => {
-    render(<OnboardingControlPlane initialApplications={[]} />)
+    render(
+      <OnboardingControlPlane initialApplications={[connectedApplication]} />
+    )
     fireEvent.click(screen.getByRole("tab", { name: "Access" }))
 
     fireEvent.click(screen.getByRole("radio", { name: "Credentials" }))
     expect(
-      screen.getByLabelText("Email secret value").getAttribute("type")
-    ).toBe("password")
-    expect(
-      screen
-        .getByLabelText("Password secret value")
-        .getAttribute("autocomplete")
-    ).toBe("new-password")
+      screen.getByLabelText("Email or username").getAttribute("type")
+    ).toBe("text")
+    expect(screen.getByLabelText("Password").getAttribute("autocomplete")).toBe(
+      "new-password"
+    )
     expect(
       screen.getByLabelText(
         "Automated login works without CAPTCHA or human verification"
       )
     ).toBeDefined()
-    fireEvent.click(screen.getByRole("button", { name: "Add field" }))
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add custom credential" })
+    )
     expect(screen.getByLabelText("Credential 3 secret value")).toBeDefined()
 
     fireEvent.click(screen.getByRole("radio", { name: "Storage state" }))
     expect(screen.getByLabelText("Encrypted storage state")).toBeDefined()
-    expect(screen.queryByLabelText("Email secret value")).toBeNull()
+    expect(screen.queryByLabelText("Email or username")).toBeNull()
   })
 
   it("keeps high-risk action classes visibly and immutably denied", () => {
-    render(<OnboardingControlPlane initialApplications={[]} />)
+    render(
+      <OnboardingControlPlane initialApplications={[connectedApplication]} />
+    )
     fireEvent.click(screen.getByRole("tab", { name: "Safety" }))
 
     const mandatoryDenials = screen.getByLabelText("Mandatory action denials")

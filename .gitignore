@@ -3,6 +3,7 @@ tools/php-indexer/vendor/
 .pnpm-store/
 .turbo/
 .next/
+.next-fixture/
 dist/
 out/
 _pagefind/

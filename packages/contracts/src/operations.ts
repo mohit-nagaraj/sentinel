@@ -464,6 +464,14 @@ export const publicOnboardingConfigurationSchema = z.strictObject({
   testDataResetReference: persistedTextSchema.optional(),
 })
 
+export const onboardingCompletedStepSchema = z.enum([
+  "none",
+  "sources",
+  "access",
+  "safety",
+  "review",
+])
+
 export const publicOnboardingApplicationSchema = z.strictObject({
   id: z.uuid(),
   name: shortTextSchema,
@@ -476,6 +484,7 @@ export const publicOnboardingApplicationSchema = z.strictObject({
   configuration: publicOnboardingConfigurationSchema,
   compatibility: compatibilityReportSchema.optional(),
   confirmed: z.boolean(),
+  completedThrough: onboardingCompletedStepSchema,
   updatedAt: timestampSchema,
 })
 
@@ -516,6 +525,7 @@ export const onboardingFormValuesSchema = z.strictObject({
 export const onboardingActionStateSchema = z.strictObject({
   status: z.enum([
     "idle",
+    "saved",
     "validation_error",
     "inspected",
     "confirmed",
@@ -687,6 +697,9 @@ export type PublicOnboardingConfiguration = z.infer<
 >
 export type PublicOnboardingApplication = z.infer<
   typeof publicOnboardingApplicationSchema
+>
+export type OnboardingCompletedStep = z.infer<
+  typeof onboardingCompletedStepSchema
 >
 export type OnboardingFormValues = z.infer<typeof onboardingFormValuesSchema>
 export type OnboardingActionState = z.infer<typeof onboardingActionStateSchema>

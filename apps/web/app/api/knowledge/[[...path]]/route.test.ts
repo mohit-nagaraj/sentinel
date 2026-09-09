@@ -3,6 +3,8 @@
 import {
   coveragePageSchema,
   knowledgeOverviewSchema,
+  knowledgeGraphNeighborhoodSchema,
+  knowledgeGraphSearchResultSchema,
   knowledgeReviewPageSchema,
   privateArtifactExcerptSchema,
 } from "@sentinel/contracts"
@@ -95,6 +97,51 @@ describe("knowledge API", () => {
       environment
     )
     expect(invalid.status).toBe(400)
+  })
+
+  it("returns bounded graph search and neighborhood data", async () => {
+    const service = createKnowledgeFixtureService()
+    const searchPath = [
+      "applications",
+      KNOWLEDGE_FIXTURE_APPLICATION_ID,
+      "graph",
+      "search",
+    ]
+    const searchResponse = await handleKnowledgeRequest(
+      request(
+        `applications/${KNOWLEDGE_FIXTURE_APPLICATION_ID}/graph/search?query=checkout&limit=5`
+      ),
+      searchPath,
+      service,
+      environment
+    )
+    const search = knowledgeGraphSearchResultSchema.parse(
+      await body(searchResponse)
+    )
+    expect(search.items.length).toBeGreaterThan(0)
+
+    const seedId = search.items[0]?.id
+    if (seedId === undefined) throw new Error("missing graph seed")
+    const neighborhoodPath = [
+      "applications",
+      KNOWLEDGE_FIXTURE_APPLICATION_ID,
+      "graph",
+      "neighborhood",
+    ]
+    const neighborhoodResponse = await handleKnowledgeRequest(
+      request(
+        `applications/${KNOWLEDGE_FIXTURE_APPLICATION_ID}/graph/neighborhood?seedId=${encodeURIComponent(seedId)}&depth=2`
+      ),
+      neighborhoodPath,
+      service,
+      environment
+    )
+    const neighborhood = knowledgeGraphNeighborhoodSchema.parse(
+      await body(neighborhoodResponse)
+    )
+    expect(neighborhood.seedId).toBe(seedId)
+    expect(neighborhood.nodes.length).toBeGreaterThan(1)
+    expect(neighborhood.relationships.length).toBeGreaterThan(0)
   })
 
   it("records link reviews once and invalidates a changed source identity", async () => {

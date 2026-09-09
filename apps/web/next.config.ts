@@ -10,6 +10,10 @@ loadEnvConfig(
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  distDir:
+    process.env["SENTINEL_CONTROL_PLANE_FIXTURE"] === "1"
+      ? ".next-fixture"
+      : ".next",
   reactStrictMode: true,
   transpilePackages: ["@sentinel/contracts"],
 }

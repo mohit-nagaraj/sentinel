@@ -13,12 +13,14 @@ import {
   onboardingAuthenticationConfigurationSchema,
   onboardingAuthenticationInputSchema,
   onboardingConfigurationSchema,
+  onboardingCompletedStepSchema,
   onboardingFormValuesSchema,
   secretReferenceSchema,
   type CompatibilityReport,
   type OnboardingActionState,
   type OnboardingAuthenticationConfiguration,
   type OnboardingConfiguration,
+  type OnboardingCompletedStep,
   type OnboardingFormValues,
   type PublicOnboardingApplication,
 } from "@sentinel/contracts"
@@ -44,6 +46,7 @@ export interface OnboardingStore {
     readonly operatorId: string
     readonly stableKey: string
     readonly configuration: OnboardingConfiguration
+    readonly completedThrough?: OnboardingCompletedStep
   }): Promise<SaveOnboardingDraftResult>
   recordInspection(input: {
     readonly operatorId: string
@@ -85,6 +88,22 @@ const operatorIdSchema = z.uuid()
 const databaseIdSchema = z.uuid()
 const secretValueLimit = 16_384
 const storageStateLimit = 256 * 1_024
+const onboardingStepOrder: readonly OnboardingCompletedStep[] = [
+  "none",
+  "sources",
+  "access",
+  "safety",
+  "review",
+]
+
+function furthestCompletedStep(
+  left: OnboardingCompletedStep,
+  right: OnboardingCompletedStep
+): OnboardingCompletedStep {
+  return onboardingStepOrder.indexOf(left) >= onboardingStepOrder.indexOf(right)
+    ? left
+    : right
+}
 
 export const emptyOnboardingFormValues = onboardingFormValuesSchema.parse({
   name: "",
@@ -511,7 +530,24 @@ export class ControlPlane {
   }
 
   async inspect(formData: FormData): Promise<OnboardingActionState> {
-    const values = readSafeOnboardingValues(formData)
+    const submittedValues = readSafeOnboardingValues(formData)
+    const completedThrough = onboardingCompletedStepSchema.parse(
+      readText(formData, "completedThrough", 16) || "safety"
+    )
+    const values =
+      completedThrough === "sources" &&
+      submittedValues.allowedHosts.trim().length === 0
+        ? {
+            ...submittedValues,
+            allowedHosts: (() => {
+              try {
+                return new URL(submittedValues.deploymentUrl).hostname
+              } catch {
+                return ""
+              }
+            })(),
+          }
+        : submittedValues
     const rawRecordId = readText(formData, "recordId", 64)
     if (rawRecordId.length > 0 && values.recordId === undefined) {
       return validationState(values, {
@@ -544,6 +580,7 @@ export class ControlPlane {
           operatorId: this.operatorId,
           stableKey,
           configuration: base,
+          completedThrough,
         })
         applicationId = provisional.record.id
         provisionalApplicationId = applicationId
@@ -579,6 +616,7 @@ export class ControlPlane {
         operatorId: this.operatorId,
         stableKey,
         configuration,
+        completedThrough,
       })
       committedConfiguration = true
       await Promise.allSettled(
@@ -586,6 +624,15 @@ export class ControlPlane {
           this.options.secrets.delete(saved.record.id, reference)
         )
       )
+      if (completedThrough !== "safety") {
+        return onboardingActionStateSchema.parse({
+          status: "saved",
+          message: `${completedThrough === "sources" ? "Sources" : "Access"} saved`,
+          fieldErrors: {},
+          values: { ...values, recordId: saved.record.id },
+          application: toPublicOnboardingApplication(saved.record),
+        })
+      }
       const compatibility = await this.options.inspector.inspect(
         saved.record.configuration
       )
@@ -778,6 +825,7 @@ class MemoryOnboardingStore implements OnboardingStore {
   async saveDraft(input: {
     readonly stableKey: string
     readonly configuration: OnboardingConfiguration
+    readonly completedThrough?: OnboardingCompletedStep
   }): Promise<SaveOnboardingDraftResult> {
     const current =
       input.configuration.recordId === undefined
@@ -791,6 +839,10 @@ class MemoryOnboardingStore implements OnboardingStore {
     const fingerprint = createOnboardingInputFingerprint(configuration)
     const relevantChanged =
       current === undefined || current.inputFingerprint !== fingerprint
+    const completedThrough = furthestCompletedStep(
+      current?.completedThrough ?? "none",
+      input.completedThrough ?? "safety"
+    )
     const now = new Date()
     const record: OnboardingRecord = {
       id,
@@ -798,7 +850,10 @@ class MemoryOnboardingStore implements OnboardingStore {
       name: configuration.name,
       deploymentUrl: configuration.deploymentUrl,
       status: relevantChanged
-        ? "inspecting"
+        ? onboardingStepOrder.indexOf(completedThrough) >=
+          onboardingStepOrder.indexOf("safety")
+          ? "inspecting"
+          : "not_configured"
         : (current?.status ?? "inspecting"),
       indexedCommitSha: current?.indexedCommitSha ?? null,
       graphRevision: current?.graphRevision ?? 0,
@@ -822,6 +877,7 @@ class MemoryOnboardingStore implements OnboardingStore {
       inspectedAt: relevantChanged ? null : (current?.inspectedAt ?? null),
       confirmedAt: relevantChanged ? null : (current?.confirmedAt ?? null),
       updatedAt: now,
+      completedThrough,
     }
     this.records.set(id, record)
     return { record, relevantChanged }
@@ -885,6 +941,7 @@ class MemoryOnboardingStore implements OnboardingStore {
       ...current,
       confirmationFingerprint: current.inputFingerprint,
       confirmedAt: new Date(),
+      completedThrough: "review",
       updatedAt: new Date(),
     }
     this.records.set(current.id, updated)

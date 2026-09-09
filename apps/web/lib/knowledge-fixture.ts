@@ -2,6 +2,9 @@ import {
   coverageItemSchema,
   evidencePathSchema,
   hashCanonical,
+  knowledgeGraphNeighborhoodSchema,
+  knowledgeGraphNodeSchema,
+  knowledgeGraphSearchResultSchema,
   linkReviewItemSchema,
   privateArtifactExcerptSchema,
   publicRunInterruptSchema,
@@ -512,6 +515,79 @@ class FixtureGraphStore implements KnowledgeGraphStore {
   evidencePath(input: { readonly requirementId: string }) {
     return Promise.resolve(
       input.requirementId === ids.observed ? selectedPath : null
+    )
+  }
+
+  search(input: {
+    readonly query: unknown
+    readonly kinds?: unknown
+    readonly limit?: unknown
+  }) {
+    const query = String(input.query).toLowerCase()
+    const kinds = Array.isArray(input.kinds) ? input.kinds.map(String) : []
+    const limit = typeof input.limit === "number" ? input.limit : 20
+    const items = pathNodes
+      .map((node, index) =>
+        knowledgeGraphNodeSchema.parse({
+          id: node.id,
+          kind: node.kind,
+          label: node.label,
+          ...("detail" in node ? { detail: node.detail } : {}),
+          tier: index === 2 ? "C" : "A",
+          reviewState: index === 2 ? "pending" : "not_required",
+          stale: false,
+        })
+      )
+      .filter(
+        (node) =>
+          node.label.toLowerCase().includes(query) &&
+          (kinds.length === 0 || kinds.includes(node.kind))
+      )
+      .slice(0, limit)
+    return Promise.resolve(
+      knowledgeGraphSearchResultSchema.parse({ schemaVersion: 1, items })
+    )
+  }
+
+  neighborhood(input: {
+    readonly seedId?: unknown
+    readonly nodeLimit?: unknown
+    readonly edgeLimit?: unknown
+  }) {
+    const nodes = pathNodes.map((node, index) =>
+      knowledgeGraphNodeSchema.parse({
+        id: node.id,
+        kind: node.kind,
+        label: node.label,
+        ...("detail" in node ? { detail: node.detail } : {}),
+        tier: index === 2 ? "C" : "A",
+        reviewState: index === 2 ? "pending" : "not_required",
+        stale: false,
+      })
+    )
+    const relationships = pathLinks.map((link, index) => ({
+      id: link.id,
+      fromId: nodes[index]?.id,
+      toId: nodes[index + 1]?.id,
+      relationship: link.relationship,
+      tier: link.tier,
+      reviewState: link.reviewState,
+      stale: link.stale,
+    }))
+    return Promise.resolve(
+      knowledgeGraphNeighborhoodSchema.parse({
+        schemaVersion: 1,
+        seedId: typeof input.seedId === "string" ? input.seedId : nodes[0]?.id,
+        nodes: nodes.slice(
+          0,
+          typeof input.nodeLimit === "number" ? input.nodeLimit : 100
+        ),
+        relationships: relationships.slice(
+          0,
+          typeof input.edgeLimit === "number" ? input.edgeLimit : 200
+        ),
+        truncated: false,
+      })
     )
   }
 

@@ -77,5 +77,11 @@ jobs:
       - if: ${{ matrix.php }}
         run: composer install --working-dir tools/php-indexer --no-interaction --no-plugins --no-scripts --prefer-dist
       - if: ${{ matrix.playwright }}
-        run: pnpm exec playwright install --with-deps chromium
+        run: |
+          # Playwright installs its own Chromium; the runner's Google Chrome
+          # repository can be mid-publish and make an unrelated apt update fail.
+          sudo rm -f \
+            /etc/apt/sources.list.d/google-chrome.list \
+            /etc/apt/sources.list.d/google-chrome.sources
+          pnpm exec playwright install --with-deps chromium
       - run: ${{ matrix.command }}

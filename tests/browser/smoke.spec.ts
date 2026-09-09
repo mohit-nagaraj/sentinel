@@ -4,7 +4,7 @@ test("renders the control application and health route", async ({ page }) => {
   await page.goto("/")
 
   await expect(
-    page.getByRole("heading", { level: 1, name: "Sentinel" })
+    page.getByText("Sentinel", { exact: true }).first()
   ).toBeVisible()
   await expect(page).toHaveTitle("Sentinel")
 

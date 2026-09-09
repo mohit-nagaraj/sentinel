@@ -95,6 +95,7 @@ function makeRecord(
     confirmedAt: null,
     updatedAt: new Date("2026-09-08T00:00:00.000Z"),
     ...overrides,
+    completedThrough: overrides.completedThrough ?? "safety",
   }
 }
 
@@ -127,6 +128,7 @@ class FakeStore implements OnboardingStore {
     readonly operatorId: string
     readonly stableKey: string
     readonly configuration: OnboardingConfiguration
+    readonly completedThrough?: OnboardingRecord["completedThrough"]
   }): Promise<SaveOnboardingDraftResult> {
     this.actorIds.push(input.operatorId)
     this.saveCalls.push(input.configuration)
@@ -149,6 +151,7 @@ class FakeStore implements OnboardingStore {
       status: relevantChanged
         ? "inspecting"
         : (previous?.status ?? "inspecting"),
+      completedThrough: input.completedThrough ?? "safety",
       compatibility: relevantChanged ? null : (previous?.compatibility ?? null),
       inspectedFingerprint: relevantChanged
         ? null
@@ -357,6 +360,25 @@ describe("onboarding control plane", () => {
     )
     expect(store.saveCalls).toHaveLength(0)
     expect(secrets.created).toHaveLength(0)
+  })
+
+  it("persists a completed source step without running compatibility inspection", async () => {
+    const inspector = new FakeInspector()
+    const controlPlane = createControlPlane({
+      operatorId,
+      store,
+      secrets,
+      inspector,
+    })
+    const form = validForm("none")
+    form.set("completedThrough", "sources")
+
+    const result = await controlPlane.inspect(form)
+
+    expect(result.status).toBe("saved")
+    expect(result.application?.completedThrough).toBe("sources")
+    expect(store.record?.completedThrough).toBe("sources")
+    expect(inspector.inputs).toHaveLength(0)
   })
 
   it("creates restricted credential references, inspects, and confirms safely", async () => {

@@ -1,22 +1,15 @@
-import type { PublicOnboardingApplication } from "@sentinel/contracts"
+import { redirect } from "next/navigation"
 
 import { listOnboardingApplications } from "@/app/actions"
-import { OnboardingControlPlane } from "@/components/onboarding-control-plane"
 
 export const dynamic = "force-dynamic"
 
 export default async function Page() {
-  let applications: readonly PublicOnboardingApplication[] = []
-  let configurationUnavailable = false
-  try {
-    applications = await listOnboardingApplications()
-  } catch {
-    configurationUnavailable = true
-  }
-  return (
-    <OnboardingControlPlane
-      initialApplications={applications}
-      configurationUnavailable={configurationUnavailable}
-    />
+  const applications = await listOnboardingApplications().catch(() => [])
+  const application = applications[0]
+  redirect(
+    application
+      ? `/applications/${application.id}/onboarding`
+      : "/applications/new/onboarding"
   )
 }
