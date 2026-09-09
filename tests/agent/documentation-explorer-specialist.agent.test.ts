@@ -320,6 +320,7 @@ describe("Documentation Explorer shared-kernel agent trajectories", () => {
       expect.objectContaining({ category: "setup" }),
     ])
     const modelContext = model.requests.map(({ input }) => input).join("\n")
+    expect(model.requests[1]?.input).toContain("Checkout")
     expect(modelContext).not.toContain(fixture.sections.marketing.sanitizedText)
     expect(modelContext).not.toContain(fixture.sections.setup.sanitizedText)
     expect(
@@ -340,7 +341,7 @@ describe("Documentation Explorer shared-kernel agent trajectories", () => {
     expect(replayed.idempotent).toBe(true)
     expect(replayModel.requests).toHaveLength(0)
     expect(tools.execute).toHaveBeenCalledTimes(8)
-  })
+  }, 10_000)
 
   it("cannot complete baseline discovery while root pagination is truncated", async () => {
     const fixture = createDocumentationExplorerFixture({
@@ -659,6 +660,68 @@ describe("Documentation Explorer shared-kernel agent trajectories", () => {
     expect(result.documentationMission.unresolved).toEqual([
       expect.objectContaining({ reasonCode: "contradictory_sources" }),
     ])
+  })
+
+  it("cannot complete by omitting one side of a known conflict", async () => {
+    const fixture = createDocumentationExplorerFixture({
+      mode: "conflict_resolution",
+      ordinal: 12,
+    })
+    const allowedId = fixture.requirementId("refund_allowed", "requirement")
+    const finish = finishDocumentMissionInputSchema.parse({
+      status: "complete",
+      selectedRequirementIds: [allowedId],
+      questionDispositions: [
+        {
+          questionIndex: 0,
+          question: fixture.mission.questions[0],
+          status: "covered",
+          requirementIds: [allowedId],
+          evidenceIds: [fixture.citation("refund_allowed").evidenceId],
+          reasonCode: "cited_requirement",
+          summary: "Only one side was selected.",
+        },
+      ],
+      exclusions: [],
+      suggestedFollowups: [],
+      stopReason: {
+        code: "criteria_met",
+        summary: "The model attempted to hide the contradictory source.",
+      },
+    })
+    const store = new InMemoryDocumentationExplorerSpecialistStoreForTesting()
+    const result = await createComposition({
+      fixture,
+      store,
+      model: new AgendaModel([
+        {
+          name: "read_document_section",
+          arguments: { sectionId: fixture.sections.refund_allowed.fact.id },
+        },
+        {
+          name: "submit_requirement_claim",
+          arguments: refundClaim(fixture, false),
+        },
+        {
+          name: "read_document_section",
+          arguments: { sectionId: fixture.sections.refund_denied.fact.id },
+        },
+        {
+          name: "submit_requirement_claim",
+          arguments: refundClaim(fixture, true),
+        },
+        { name: "finish_document_mission", arguments: finish },
+      ]),
+    }).service.start()
+
+    expect(result.status).not.toBe("complete")
+    expect(result.documentationMission.requirements).toHaveLength(2)
+    expect(result.documentationMission.conflicts).toHaveLength(1)
+    expect(
+      (await store.listToolResults(fixture.mission.id)).some(
+        ({ toolName }) => toolName === "finish_document_mission"
+      )
+    ).toBe(false)
   })
 
   it("rejects marketing, setup, architecture, and example prose as claims", async () => {
