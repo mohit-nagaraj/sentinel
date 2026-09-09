@@ -1,0 +1,19 @@
+{
+  "name": "@sentinel/evaluation",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "baseline": "node --no-warnings=ExperimentalWarning --experimental-strip-types scripts/generate-baseline.ts",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.17.0",
+    "typescript": "^5.9.0"
+  }
+}

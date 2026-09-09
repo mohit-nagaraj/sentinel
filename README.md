@@ -183,6 +183,29 @@ pnpm exec vitest run packages/contracts/src/github-app.test.ts packages/adapters
 RUN_SUPABASE_INTEGRATION_TESTS=1 SENTINEL_TEST_DATABASE_URL=postgresql://... pnpm exec vitest run tests/integration/github-app-assessment.integration.test.ts --project integration --maxWorkers=1
 ```
 
+## Evaluation harness
+
+`@sentinel/evaluation` validates the sanitized Hi.Events PR #1338 golden set and
+scores facts, citations, positive/negative graph links, evidence paths, visible
+unknowns, blast-radius impact and controls, tool trajectories, terminal behavior,
+and budgets. Targets can run at whole-graph, node, seeded-partial, or checkpoint
+scope; expected labels are not passed across the target boundary.
+
+Generate the no-network deterministic 100-run baseline and run focused checks:
+
+```sh
+pnpm --filter @sentinel/evaluation baseline
+pnpm exec vitest run --project unit packages/evaluation/src
+pnpm --filter @sentinel/evaluation typecheck
+```
+
+The committed reports in `docs/evaluation/` are harness-conformance evidence,
+not live-model quality claims. Model-backed runs require an estimated usage/cost
+record plus the exact `PAID_EVALUATION_CONFIRMATION` token before execution, and
+their actual usage is reported separately. See `docs/evaluation/README.md` for
+the split, repetition, and 100-run scaling protocol and
+`docs/evaluation/qa-report-rubric.md` for the human worksheet.
+
 ## Quality Commands
 
 ```sh

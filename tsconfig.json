@@ -6,6 +6,7 @@
     { "path": "./docs" },
     { "path": "./packages/adapters" },
     { "path": "./packages/contracts" },
+    { "path": "./packages/evaluation" },
     { "path": "./packages/orchestration" },
     { "path": "./packages/storage" },
     { "path": "./tsconfig.tools.json" }
