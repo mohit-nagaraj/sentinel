@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M3 — Specialist discovery agents |
-| Status | `not-started` |
+| Status | `done` |
 | Depends on | SNT-008, SNT-014 |
 | Blocks | Evidence linking, coverage, Curator, evaluation |
 | PRD references | §13.5, §15, FR-004 |

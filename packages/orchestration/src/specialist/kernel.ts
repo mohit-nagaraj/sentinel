@@ -562,8 +562,10 @@ function nextFailureDecisionId(state: SpecialistStateValue): string {
 
 function failedModelUpdate(
   state: SpecialistStateValue,
-  estimate: MissionBudget,
-  reasonCode: string
+  usage: MissionBudget,
+  reasonCode: string,
+  status: "budget_exhausted" | "failed" = "failed",
+  summary = "Specialist model decision failed validation."
 ): SpecialistStateUpdate {
   const decisionId = nextFailureDecisionId(state)
   const failureProgress = hashCanonical({ decisionId, reasonCode })
@@ -576,19 +578,13 @@ function failedModelUpdate(
     kind: "continue",
     progressFingerprint: failureProgress,
   })
-  const budgetUsed = addBudget(state.budgetLedger.total, estimate)
+  const budgetUsed = addBudget(state.budgetLedger.total, usage)
   return validateSpecialistUpdate(state, {
     decisions: decision,
     pendingDecisionEventId: decision.decisionId,
-    budgetLedger: modelLedgerEntry(state, decisionId, estimate),
+    budgetLedger: modelLedgerEntry(state, decisionId, usage),
     progress: progressEntry(state, decisionId, failureProgress, false),
-    terminalResult: resultFor(
-      state,
-      "failed",
-      reasonCode,
-      "Specialist model decision failed validation.",
-      budgetUsed
-    ),
+    terminalResult: resultFor(state, status, reasonCode, summary, budgetUsed),
   })
 }
 
@@ -739,10 +735,20 @@ function buildKernelGraph(
           signal: runtime.signal,
         })
         parsed = specialistModelDecisionSchema.parse(raw)
+      } catch {
+        return failedModelUpdate(state, estimate, "model_decision_invalid")
+      }
+      try {
         assertModelUsage(parsed.usage, estimate, executionKind)
         assertModelUsage(parsed.usage, remaining, executionKind)
       } catch {
-        return failedModelUpdate(state, estimate, "model_decision_invalid")
+        return failedModelUpdate(
+          state,
+          parsed.usage,
+          "model_usage_exceeded_preflight",
+          "budget_exhausted",
+          "The model reported actual usage outside its authorized budget reservation."
+        )
       }
 
       if (

@@ -1,5 +1,6 @@
 export * from "./browser/index.ts"
 export * from "./code-explorer/index.ts"
+export * from "./documentation-explorer/index.ts"
 export * from "./model-gateway/azure.ts"
 export * from "./model-gateway/contracts.ts"
 export * from "./model-gateway/environment.ts"

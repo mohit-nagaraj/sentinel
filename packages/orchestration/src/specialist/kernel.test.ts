@@ -990,6 +990,56 @@ describe("shared specialist kernel", () => {
     expect(execute).toHaveBeenCalledOnce()
   })
 
+  it("records actual provider usage when it exceeds model preflight", async () => {
+    const test = harness()
+    const estimate = {
+      ...EMPTY_BUDGET_USAGE,
+      modelCalls: 1,
+      modelInputTokens: 12_000,
+      modelOutputTokens: 512,
+    }
+    const actual = {
+      ...estimate,
+      modelInputTokens: 12_001,
+    }
+    const decide = vi.fn(async () =>
+      specialistModelDecisionSchema.parse({
+        decisionId: "decision_provider_overrun",
+        usage: actual,
+        action: { kind: "continue" },
+      })
+    )
+    const model: SpecialistDecisionModel = {
+      estimate: () => estimate,
+      decide,
+    }
+    const specialist = createSpecialistKernel(
+      kernelConfig(model),
+      test.dependencies,
+      new MemorySaver()
+    )
+    const result = await new SpecialistOrchestrationService(
+      specialist,
+      test.dependencies
+    ).start(
+      mission({
+        budget: budget({
+          modelCalls: 1,
+          modelInputTokens: 12_000,
+          modelOutputTokens: 512,
+        }),
+      })
+    )
+
+    expect(result.status).toBe("budget_exhausted")
+    expect(result.mission.stopReason.code).toBe(
+      "model_usage_exceeded_preflight"
+    )
+    expect(result.mission.budgetUsed.modelInputTokens).toBe(12_001)
+    expect(result.state.budgetLedger.total.modelInputTokens).toBe(12_001)
+    expect(decide).toHaveBeenCalledOnce()
+  })
+
   it("finalizes a tool revalidation denial without a committed-event cursor", async () => {
     const test = harness()
     let estimates = 0
