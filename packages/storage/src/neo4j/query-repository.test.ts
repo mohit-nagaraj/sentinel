@@ -292,4 +292,49 @@ describe("Neo4j graph query repository", () => {
     ).rejects.toThrow("PR impact seeds")
     expect(database.queries).toHaveLength(1)
   })
+
+  it("queries bounded acyclic blast-radius candidates with fixed targets", async () => {
+    const database = new QueryDatabase()
+    const repository = new Neo4jGraphQueryRepository(database)
+
+    await expect(
+      repository.findBlastRadiusCandidates({
+        applicationId,
+        graphRevision: 3,
+        seedIds: [symbolId],
+        evidenceTiers: ["A", "B", "C"],
+        maxDepth: 10,
+        limit: 200,
+      })
+    ).resolves.toHaveLength(1)
+
+    const query = database.queries[0]!
+    expect(query.context.operation).toBe("query_blast_radius_candidates")
+    expect(query.parameters).toMatchObject({
+      seedIds: [symbolId],
+      targetKinds: ["ui-element", "screen", "workflow", "requirement"],
+      maxDepth: 10,
+      limit: 200,
+    })
+    expect(query.parameters["relationshipTypes"]).toContain("NEXT")
+    expect(query.parameters["relationshipTypes"]).not.toContain("STATES")
+    expect(query.parameters["relationshipTypes"]).not.toContain("REQUIRES")
+    expect(query.cypher).toContain("allShortestPaths")
+    expect(query.cypher).toContain(":COVERED_BY|HAS_STEP|NEXT")
+    expect(query.cypher).toContain(
+      "single(other IN nodes(path) WHERE other = n)"
+    )
+    expect(query.cypher).not.toContain(symbolId)
+    await expect(
+      repository.findBlastRadiusCandidates({
+        applicationId,
+        graphRevision: 3,
+        seedIds: [symbolId],
+        evidenceTiers: ["D" as "A"],
+        maxDepth: 11,
+        limit: 501,
+      })
+    ).rejects.toThrow()
+    expect(database.queries).toHaveLength(1)
+  })
 })

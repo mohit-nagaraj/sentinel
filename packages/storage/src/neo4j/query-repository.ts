@@ -1,5 +1,7 @@
 import {
   entityKindSchema,
+  blastRadiusRelationshipTypes,
+  graphBlastRadiusQuerySchema,
   graphCoverageViewSchema,
   graphEntitySummarySchema,
   graphEvidencePathSchema,
@@ -9,6 +11,7 @@ import {
   graphReadScopeSchema,
   provenanceSchema,
   type EntityKind,
+  type GraphBlastRadiusQuery,
   type GraphCoverageView,
   type GraphEntitySummary,
   type GraphEvidencePath,
@@ -42,6 +45,15 @@ const prSeedRelationshipTypes = [
   "READS",
   "WRITES",
 ] as const
+
+const blastRadiusTargetKinds = [
+  "ui-element",
+  "screen",
+  "workflow",
+  "requirement",
+] as const
+
+const blastRadiusRelationshipPattern = blastRadiusRelationshipTypes.join("|")
 
 function nativeRecord(
   value: unknown
@@ -480,6 +492,67 @@ export class Neo4jGraphQueryRepository {
             graphRevision: input.graphRevision,
             seedIds: input.seedIds,
             relationshipTypes: prSeedRelationshipTypes,
+            evidenceTiers: input.evidenceTiers,
+            maxDepth: input.maxDepth,
+            limit: input.limit,
+          }
+        )
+        return result.records.map((record) =>
+          mapEvidencePath(record.get("evidencePath"))
+        )
+      }
+    )
+  }
+
+  async findBlastRadiusCandidates(
+    inputValue: GraphBlastRadiusQuery
+  ): Promise<readonly GraphEvidencePath[]> {
+    const input = graphBlastRadiusQuerySchema.parse(inputValue)
+    return this.database.read(
+      {
+        applicationId: input.applicationId,
+        operation: "query_blast_radius_candidates",
+      },
+      async (transaction) => {
+        const result = await transaction.run(
+          `UNWIND $seedIds AS seedId
+           MATCH (seed {
+             application_id: $applicationId,
+             stable_key: seedId,
+             graph_revision: $graphRevision
+           })
+           MATCH (target {
+             application_id: $applicationId,
+             graph_revision: $graphRevision
+           })
+           WHERE target.entity_kind IN $targetKinds
+           MATCH path = allShortestPaths(
+             (seed)-[:${blastRadiusRelationshipPattern}*1..10]-(target)
+           )
+           WHERE length(path) <= $maxDepth
+             AND all(n IN nodes(path) WHERE
+               n.application_id = $applicationId AND
+               n.graph_revision = $graphRevision AND
+               single(other IN nodes(path) WHERE other = n)
+             )
+             AND all(r IN relationships(path) WHERE
+               r.application_id = $applicationId AND
+               r.graph_revision = $graphRevision AND
+               type(r) IN $relationshipTypes AND
+               r.evidence_tier IN $evidenceTiers AND
+               r.review_state IN ['not_required', 'accepted']
+             )
+           RETURN ${pathProjection} AS evidencePath
+           ORDER BY target.entity_kind, target.stable_key, length(path),
+             [n IN nodes(path) | n.stable_key],
+             [r IN relationships(path) | r.stable_key]
+           LIMIT $limit`,
+          {
+            applicationId: input.applicationId,
+            graphRevision: input.graphRevision,
+            seedIds: input.seedIds,
+            targetKinds: blastRadiusTargetKinds,
+            relationshipTypes: blastRadiusRelationshipTypes,
             evidenceTiers: input.evidenceTiers,
             maxDepth: input.maxDepth,
             limit: input.limit,

@@ -142,7 +142,7 @@ graph LR
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ----------- |
 | SNT-026 | [GitHub App webhook ingestion and check lifecycle](./.tasks/milestone-06-pr-impact/SNT-026-github-app-checks.md)                   | SNT-003, SNT-007, SNT-023                   | done        |
 | SNT-027 | [Agentic PR investigation workflow](./.tasks/milestone-06-pr-impact/SNT-027-pr-investigation-workflow.md)                          | SNT-013, SNT-016, SNT-019, SNT-021, SNT-026 | done        |
-| SNT-028 | [Blast-radius traversal, scoring, and unknown handling](./.tasks/milestone-06-pr-impact/SNT-028-blast-radius-engine.md)            | SNT-021, SNT-027                            | not-started |
+| SNT-028 | [Blast-radius traversal, scoring, and unknown handling](./.tasks/milestone-06-pr-impact/SNT-028-blast-radius-engine.md)            | SNT-021, SNT-027                            | done        |
 | SNT-029 | [Grounded report generation, dashboard, and GitHub summary](./.tasks/milestone-06-pr-impact/SNT-029-assessment-report-delivery.md) | SNT-005, SNT-025, SNT-026, SNT-028          | not-started |
 
 ---

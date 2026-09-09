@@ -48,6 +48,25 @@ export const MAX_GRAPH_PUBLICATION_BATCH_SIZE = 1_000 as const
 export const MAX_GRAPH_QUERY_DEPTH = 12 as const
 export const MAX_GRAPH_QUERY_RESULTS = 200 as const
 export const MAX_PR_GRAPH_QUERY_SEEDS = 500 as const
+export const MAX_BLAST_RADIUS_QUERY_DEPTH = 10 as const
+export const MAX_BLAST_RADIUS_QUERY_RESULTS = 500 as const
+export const blastRadiusRelationshipTypes = [
+  "COVERED_BY",
+  "HAS_STEP",
+  "NEXT",
+  "ON_SCREEN",
+  "ACTS_ON",
+  "CONTAINS",
+  "MATCHES_ROUTE",
+  "RENDERED_BY",
+  "BINDS",
+  "TRIGGERS_API",
+  "CALLS_API",
+  "HANDLED_BY",
+  "CALLS",
+  "READS",
+  "WRITES",
+] as const satisfies readonly z.infer<typeof evidenceRelationshipSchema>[]
 
 const acceptedEvidenceTierSchema = evidenceTierSchema.exclude(["D"])
 const graphIdentitySchema = z.union([stableEntityIdSchema, evidenceIdSchema])
@@ -513,6 +532,49 @@ export const graphPullRequestImpactQuerySchema = z.strictObject({
   limit: z.number().int().positive().max(MAX_GRAPH_QUERY_RESULTS).default(50),
 })
 
+export const graphBlastRadiusQuerySchema = z.strictObject({
+  ...graphReadScopeSchema.shape,
+  seedIds: z
+    .array(stableEntityIdSchema)
+    .min(1)
+    .max(MAX_PR_GRAPH_QUERY_SEEDS)
+    .refine(
+      (ids) =>
+        ids.every((id) =>
+          [
+            "code-file:v1:",
+            "code-symbol:v1:",
+            "api-endpoint:v1:",
+            "domain-entity:v1:",
+          ].some((prefix) => String(id).startsWith(prefix))
+        ),
+      {
+        message:
+          "Blast-radius seeds must be code, endpoint, or domain identities",
+      }
+    )
+    .refine((ids) => new Set(ids).size === ids.length, {
+      message: "Blast-radius seed identities must be unique",
+    }),
+  evidenceTiers: z
+    .array(acceptedEvidenceTierSchema)
+    .min(1)
+    .max(3)
+    .default(["A", "B", "C"]),
+  maxDepth: z
+    .number()
+    .int()
+    .positive()
+    .max(MAX_BLAST_RADIUS_QUERY_DEPTH)
+    .default(8),
+  limit: z
+    .number()
+    .int()
+    .positive()
+    .max(MAX_BLAST_RADIUS_QUERY_RESULTS)
+    .default(200),
+})
+
 export type GraphApplicationFact = z.infer<typeof graphApplicationFactSchema>
 export type GraphPublicationNode = z.infer<typeof graphPublicationNodeSchema>
 export type GraphPublicationInput = z.infer<typeof graphPublicationInputSchema>
@@ -532,3 +594,4 @@ export type GraphPullRequestSeedQuery = z.infer<
 export type GraphPullRequestImpactQuery = z.infer<
   typeof graphPullRequestImpactQuerySchema
 >
+export type GraphBlastRadiusQuery = z.infer<typeof graphBlastRadiusQuerySchema>
