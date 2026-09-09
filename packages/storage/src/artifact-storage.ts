@@ -14,6 +14,7 @@ import {
   artifactIdSchema,
   contentHashSchema,
   createArtifactId,
+  redactPersistedText,
   reasonCodeSchema,
   type ArtifactId,
   type ContentHash,
@@ -291,6 +292,11 @@ export interface PrivateObjectStore {
     mimeType: string
   ): Promise<void>
   get(bucket: string, key: string): Promise<Uint8Array>
+  getRange?(
+    bucket: string,
+    key: string,
+    maximumBytes: number
+  ): Promise<Uint8Array>
   signedDownloadUrl(
     bucket: string,
     key: string,
@@ -374,6 +380,25 @@ export class S3PrivateObjectStore implements PrivateObjectStore {
     )
     if (response.Body === undefined) {
       throw new Error("Artifact download returned no body")
+    }
+    return response.Body.transformToByteArray()
+  }
+
+  async getRange(
+    bucket: string,
+    key: string,
+    maximumBytes: number
+  ): Promise<Uint8Array> {
+    const size = z.number().int().min(1).max(262_144).parse(maximumBytes)
+    const response = await this.client.send(
+      new GetObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Range: `bytes=0-${size - 1}`,
+      })
+    )
+    if (response.Body === undefined) {
+      throw new Error("Artifact excerpt returned no body")
     }
     return response.Body.transformToByteArray()
   }
@@ -550,6 +575,74 @@ export class ArtifactService {
       artifact.objectKey,
       expires
     )
+  }
+
+  async readTextExcerpt(
+    applicationIdInput: string,
+    id: string,
+    maximumCharactersInput: number = 8_192
+  ): Promise<{
+    readonly artifactId: ArtifactId
+    readonly mimeType:
+      "application/json" | "text/html" | "text/markdown" | "text/plain"
+    readonly excerpt: string
+    readonly truncated: boolean
+  } | null> {
+    const applicationId = databaseIdSchema.parse(applicationIdInput)
+    const artifactId = artifactIdSchema.parse(id)
+    const maximumCharacters = z
+      .number()
+      .int()
+      .min(256)
+      .max(16_384)
+      .parse(maximumCharactersInput)
+    const artifact = await this.metadata.find(applicationId, artifactId)
+    const allowedMimeTypes = new Set([
+      "application/json",
+      "text/html",
+      "text/markdown",
+      "text/plain",
+    ] as const)
+    if (
+      artifact === null ||
+      !allowedMimeTypes.has(
+        artifact.mimeType as
+          "application/json" | "text/html" | "text/markdown" | "text/plain"
+      )
+    ) {
+      return null
+    }
+    await this.metadata.assertPrivateBucket(artifact.bucket)
+    await this.objects.assertPrivateBucket(artifact.bucket)
+    const maximumBytes = Math.min(maximumCharacters * 4, 262_144)
+    if (
+      this.objects.getRange === undefined &&
+      artifact.sizeBytes > maximumBytes
+    ) {
+      throw new Error("Artifact store cannot provide a bounded excerpt")
+    }
+    const body =
+      this.objects.getRange === undefined
+        ? await this.objects.get(artifact.bucket, artifact.objectKey)
+        : await this.objects.getRange(
+            artifact.bucket,
+            artifact.objectKey,
+            maximumBytes
+          )
+    const decoded = new TextDecoder().decode(body).replaceAll("\0", "")
+    const excerpt = redactPersistedText(
+      decoded.slice(0, maximumCharacters)
+    ).trim()
+    return {
+      artifactId,
+      mimeType: artifact.mimeType as
+        "application/json" | "text/html" | "text/markdown" | "text/plain",
+      excerpt:
+        excerpt.length === 0 ? "No textual excerpt is available." : excerpt,
+      truncated:
+        artifact.sizeBytes > body.byteLength ||
+        decoded.length > maximumCharacters,
+    }
   }
 
   async delete(applicationIdInput: string, id: string): Promise<boolean> {
