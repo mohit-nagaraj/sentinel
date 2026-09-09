@@ -1,12 +1,12 @@
 # SNT-027 — Agentic PR investigation workflow
 
-| Field | Value |
-|---|---|
-| Milestone | M6 — Pull-request blast-radius product loop |
-| Status | `ready` |
-| Depends on | SNT-013, SNT-016, SNT-019, SNT-021, SNT-026 |
-| Blocks | Blast-radius engine, verification planning |
-| PRD references | §7.2, §13.13, §16, FR-012 |
+| Field          | Value                                       |
+| -------------- | ------------------------------------------- |
+| Milestone      | M6 — Pull-request blast-radius product loop |
+| Status         | `done`                                      |
+| Depends on     | SNT-013, SNT-016, SNT-019, SNT-021, SNT-026 |
+| Blocks         | Blast-radius engine, verification planning  |
+| PRD references | §7.2, §13.13, §16, FR-012                   |
 
 ## Background
 
@@ -27,16 +27,16 @@ Static diff mapping is the seed, not the conclusion. The PR workflow must run th
 
 ## Implementation tasks
 
-- [ ] Define PR graph state and reducers for parallel symbol-group results.
-- [ ] Implement baseline compatibility gate and action-required outcome.
-- [ ] Group changes by structural/endpoints/domain relationships with limits.
-- [ ] Dispatch `pr_change_investigation` Code missions using dynamic workers.
-- [ ] Retrieve bounded current graph paths seeded by changed symbols/files/endpoints.
-- [ ] Validate/merge assessment-specific evidence and unresolved boundaries.
-- [ ] Invoke Curator in PR-impact mode for missing paths/conflicts.
-- [ ] Create typed impact hypotheses and verification mission candidates.
-- [ ] Check cancellation/current-head identity before expensive calls and finalization.
-- [ ] Emit GitHub/UI-safe progress events.
+- [x] Define PR graph state and reducers for parallel symbol-group results.
+- [x] Implement baseline compatibility gate and action-required outcome.
+- [x] Group changes by structural/endpoints/domain relationships with limits.
+- [x] Dispatch `pr_change_investigation` Code missions using dynamic workers.
+- [x] Retrieve bounded current graph paths seeded by changed symbols/files/endpoints.
+- [x] Validate/merge assessment-specific evidence and unresolved boundaries.
+- [x] Invoke Curator in PR-impact mode for missing paths/conflicts.
+- [x] Create typed impact hypotheses and verification mission candidates.
+- [x] Check cancellation/current-head identity before expensive calls and finalization.
+- [x] Emit GitHub/UI-safe progress events.
 
 ## Acceptance criteria
 
@@ -65,4 +65,41 @@ Final risk score, report prose, running browser verification, and updating basel
 
 ## Implementation notes
 
-_Populate during implementation with final paths, commands, decisions, test evidence, and any explicitly deferred acceptance item._
+- `packages/contracts/src/pr-investigation.ts` defines bounded change groups,
+  per-symbol unknowns, baseline action outcomes, assessment-only overlays,
+  validated/rejected/conflicted claim references, worker receipts, impact
+  hypotheses, trusted-head verification candidates, and immutable final results.
+- `packages/orchestration/src/pr-investigation-grouping.ts` deterministically
+  groups changed symbols through same-file, structural-parent, shared-endpoint,
+  and shared-domain relationships. Group/symbol caps retain overflow and
+  unsupported/configuration/schema changes as explicit unknowns.
+- `packages/orchestration/src/pr-investigation.ts` compiles
+  `assess_pull_request` with reducer-backed LangGraph `Send` workers, durable
+  external result references, exact/safe-ancestor/stale/unrelated baseline
+  policy, repeated current-head/current-graph ownership gates, active-revision
+  graph queries, assessment-only validation, bounded PR-impact Curator work,
+  trusted-head mission candidates, idempotent progress events, and atomic
+  current-result publication. `createPrInvestigationCompiledRunGraph` adapts it
+  to the worker `assess_pr` registry contract.
+- `packages/orchestration/src/pr-investigation-support.ts` provides canonical
+  content-addressed worker results, bounded aggregate claim selection,
+  deterministic baseline/file/symbol/endpoint/domain seed construction,
+  per-symbol missing-path retention, overlay construction, hypotheses, and
+  candidate verification missions. Code missions receive explicit changed
+  symbol IDs while using configured application roots so callers, callees,
+  handlers, and tests outside edited files remain investigable.
+- `packages/storage/src/neo4j/query-repository.ts` adds a typed, parameterized
+  PR-impact query over at most 500 code-file, code-symbol, endpoint, and domain
+  seeds. It remains application/revision/tier/depth/result constrained and uses
+  deterministic ordering across all tied shortest paths.
+- Focused verification on 2026-09-09: 30 tests passed across PR contracts,
+  grouping/reducers, whole-graph golden execution, baseline matrix, unknown
+  retention, Curator no-progress/budget/reconciled evidence, cancellation and
+  graph-supersession races, checkpoint resume, run-dispatch adaptation, and
+  Neo4j query constraints. Contracts, orchestration, and storage package
+  typechecks passed; scoped ESLint, Prettier, and `git diff --check` passed.
+- The ystack `/review` found worker-scope, mixed-group unknown, post-Curator
+  output, graph-revision race, path-tie determinism, aggregate-bound,
+  worker-result canonicalization, and committed-event retry issues. All were
+  fixed and covered by focused regression tests. No acceptance item is deferred.
+- Full CI remains pending GitHub Actions and is the complete non-live gate.
