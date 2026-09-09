@@ -154,6 +154,34 @@ describe("DeploymentValidationService", () => {
     expect(events).toEqual(["attest", "readiness", "credentials"])
   })
 
+  it("accepts a trusted baseline-role deployment for post-deployment refresh", async () => {
+    const baseline = registration({ role: "baseline" })
+    const current = request(baseline)
+    const {
+      assessmentId: _assessmentId,
+      pullRequestId: _pullRequestId,
+      purpose: _purpose,
+      ...shared
+    } = current
+    void _assessmentId
+    void _pullRequestId
+    void _purpose
+    const result = await service({}).validate(
+      deploymentValidationRequestSchema.parse({
+        ...shared,
+        purpose: "post_deployment_refresh",
+      })
+    )
+
+    expect(result).toMatchObject({
+      purpose: "post_deployment_refresh",
+      identityState: "exact",
+      trustState: "trusted",
+      readinessState: "ready",
+      reason: "deployment_ready",
+    })
+  })
+
   it.each([
     ["commit", proof({ commitSha: otherSha }), "deployment_commit_mismatch"],
     [

@@ -33,6 +33,7 @@ export const deploymentProviderSchema = z.literal("render")
 export const deploymentPurposeSchema = z.enum([
   "baseline_observation",
   "pr_head_verification",
+  "post_deployment_refresh",
 ])
 
 const providerResourceIdSchema = z.string().trim().min(1).max(256)
