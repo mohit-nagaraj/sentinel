@@ -2,10 +2,11 @@
 
 ## Module Status
 
-| Module            | Done | Total | Status      |
-| ----------------- | ---- | ----- | ----------- |
-| Control plane     | 3    | 3     | complete    |
-| Specialist agents | 3    | 4     | in-progress |
+| Module               | Done | Total | Status      |
+| -------------------- | ---- | ----- | ----------- |
+| Control plane        | 3    | 3     | complete    |
+| Specialist agents    | 3    | 4     | in-progress |
+| Graph reconciliation | 1    | 4     | in-progress |
 
 ## Ready Front
 

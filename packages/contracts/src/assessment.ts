@@ -840,6 +840,7 @@ export const verificationResultSchema = z
   })
 
 export type EvidenceLink = z.infer<typeof evidenceLinkSchema>
+export type EvidenceRelationship = z.infer<typeof evidenceRelationshipSchema>
 export type CoverageAssessment = z.infer<typeof coverageAssessmentSchema>
 export type PullRequest = z.infer<typeof pullRequestSchema>
 export type PrChange = z.infer<typeof prChangeSchema>
