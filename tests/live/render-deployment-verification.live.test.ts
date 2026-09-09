@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import {
-  RenderApiDeploymentAttestor,
-} from "@sentinel/adapters"
+import { RenderApiDeploymentAttestor } from "@sentinel/adapters"
 import { deploymentRegistrationSchema } from "@sentinel/contracts"
 
 const required = [
