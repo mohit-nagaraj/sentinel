@@ -21,7 +21,8 @@ known. Keep the repository and `DESIGN.md` open in separate tabs.
 
 Show the repository and the design-document opening. Say: Sentinel connects
 product intent, observed UI behavior, and code evidence to explain the blast
-radius of a real pull request. The deep slice is Hi.Events attribution/checkout;
+radius of a real pull request. The deep slice is Hi.Events attribution; checkout
+is retained only as an explicitly excluded environment control.
 the implemented report, verification, and refresh engines are demonstrated with
 deterministic data because no trusted external PR-head deployment was registered.
 

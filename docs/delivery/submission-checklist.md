@@ -16,12 +16,12 @@ the intended `main` locations after this issue merges.
 
 - [ ] Final pull request CI is green for quality, build, unit, integration,
       agent, graph, browser, security, delivery, and GitGuardian checks.
-- [ ] `pnpm delivery:check` regenerates no sample-report diff and all delivery
+- [x] `pnpm delivery:check` regenerates no sample-report diff and all delivery
       contract/link/Markdown tests pass.
-- [ ] `pnpm security` passes secret, ignored-file, dependency, license,
+- [x] `pnpm security` passes secret, ignored-file, dependency, license,
       malicious-input, and deterministic evaluation gates.
-- [ ] Clean-copy `pnpm install --frozen-lockfile` and focused demo smoke pass.
-- [ ] Git diff and tracked files contain no `.env`, key, credential, private
+- [x] Clean-copy `pnpm install --frozen-lockfile` and focused demo smoke pass.
+- [x] Git diff and tracked files contain no `.env`, key, credential, private
       artifact URL, or provider response.
 
 ## Assignment review

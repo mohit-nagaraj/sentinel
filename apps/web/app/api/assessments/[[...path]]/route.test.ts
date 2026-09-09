@@ -4,6 +4,7 @@ import {
   REPORT_FIXTURE_ASSESSMENT_ID,
   REPORT_FIXTURE_EVIDENCE_ARTIFACT_ID,
   FixtureAssessmentReportService,
+  type AssessmentReportWebService,
 } from "@/lib/assessment-report-service"
 
 import { handleAssessmentReportRequest } from "./route"
@@ -53,8 +54,38 @@ describe("assessment report API", () => {
     })
   })
 
-  it("redirects authorized downloads without exposing object keys", async () => {
-    const spy = vi.spyOn(reports, "signedDownload")
+  it("serves the canonical fixture Markdown as a local attachment", async () => {
+    const spy = vi.spyOn(reports, "download")
+    const response = await handleAssessmentReportRequest(
+      request(
+        `/api/assessments/${REPORT_FIXTURE_ASSESSMENT_ID}/download`,
+        token
+      ),
+      [REPORT_FIXTURE_ASSESSMENT_ID, "download"],
+      reports,
+      environment
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("text/markdown")
+    expect(response.headers.get("content-disposition")).toBe(
+      'attachment; filename="sentinel-hi-events-pr-1338.md"'
+    )
+    expect(spy).toHaveBeenCalledWith(REPORT_FIXTURE_ASSESSMENT_ID, 300)
+    const body = await response.text()
+    expect(body).toContain("# Sentinel assessment - PR #1338")
+    expect(body).toContain("Date and grouping filters")
+    expect(body).not.toContain("signed.example")
+  })
+
+  it("redirects production downloads without exposing object keys", async () => {
+    vi.spyOn(
+      reports as AssessmentReportWebService,
+      "download"
+    ).mockResolvedValue({
+      kind: "redirect",
+      url: "https://storage.example/report.md?expires=300",
+    })
     const response = await handleAssessmentReportRequest(
       request(
         `/api/assessments/${REPORT_FIXTURE_ASSESSMENT_ID}/download`,
@@ -68,7 +99,6 @@ describe("assessment report API", () => {
     expect(response.status).toBe(307)
     expect(response.headers.get("location")).toContain("expires=300")
     expect(response.headers.get("referrer-policy")).toBe("no-referrer")
-    expect(spy).toHaveBeenCalledWith(REPORT_FIXTURE_ASSESSMENT_ID, 300)
     expect(await response.text()).not.toContain("applications/")
   })
 

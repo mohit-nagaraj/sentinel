@@ -81,13 +81,27 @@ export async function handleAssessmentReportRequest(
       path.length === 2 &&
       path[1] === "download"
     ) {
-      const url = await reports.signedDownload(assessmentId, 300)
-      return url === null
-        ? json({ schemaVersion: 1, error: { code: "report_not_found" } }, 404)
+      const download = await reports.download(assessmentId, 300)
+      if (download === null) {
+        return json(
+          { schemaVersion: 1, error: { code: "report_not_found" } },
+          404
+        )
+      }
+      return download.kind === "content"
+        ? new Response(download.body, {
+            status: 200,
+            headers: {
+              "cache-control": "private, no-store",
+              "content-disposition": `attachment; filename="${download.filename}"`,
+              "content-type": "text/markdown; charset=utf-8",
+              "x-content-type-options": "nosniff",
+            },
+          })
         : new Response(null, {
             status: 307,
             headers: {
-              location: url,
+              location: download.url,
               "cache-control": "private, no-store",
               "referrer-policy": "no-referrer",
             },
