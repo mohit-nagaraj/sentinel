@@ -2463,14 +2463,13 @@ Harden change-aware recrawl/re-index reconciliation, then validate the adapter i
 
 These must be resolved before or during implementation. They are deliberately not invented in this PRD.
 
-1. **Baseline/head deployment:** Which public sandbox/preview mechanism will run the exact baseline and PR-head commits? This remains deliberately unresolved while sandbox options are evaluated; local-only execution is not the final assignment story.
-2. **Demo PR fixture:** Which real public PR will be used to evaluate the chosen event/product/checkout/order slice? The product itself is not restricted to that PR; the GitHub App accepts any PR on the connected fork and reports unknown/unmapped impact honestly.
-3. **Frontend/worker hosting:** Where will the Next.js control plane and long-running Node/browser/LangGraph worker run?
-4. **Azure OpenAI deployment:** What are the Azure resource endpoint, deployment name, supported model/version, authentication mode, and per-run budget? The selected deployment must pass structured-output, strict-tool, streaming, and repeated tool-loop compatibility checks.
-5. **GitHub App registration:** What are the App ID, installation ID, webhook secret, and private-key secret references after the app is registered?
-6. **Supabase artifact policy:** What private bucket name and retention periods will apply to screenshots, traces, reports, and encrypted browser state?
-7. **Report format:** Markdown is mandatory; whether HTML/PDF export is also useful for submission remains open.
-8. **Internal graph update strategy:** Implement full revision staging or a simpler transactionally replaced application namespace while retaining the same external semantics?
+1. **Demo PR fixture:** Which real public PR will be used to evaluate the chosen event/product/checkout/order slice? The product itself is not restricted to that PR; the GitHub App accepts any PR on the connected fork and reports unknown/unmapped impact honestly.
+2. **Frontend/worker hosting:** Where will the Next.js control plane and long-running Node/browser/LangGraph worker run?
+3. **Azure OpenAI deployment:** What are the Azure resource endpoint, deployment name, supported model/version, authentication mode, and per-run budget? The selected deployment must pass structured-output, strict-tool, streaming, and repeated tool-loop compatibility checks.
+4. **GitHub App registration:** What are the App ID, installation ID, webhook secret, and private-key secret references after the app is registered?
+5. **Supabase artifact policy:** What private bucket name and retention periods will apply to screenshots, traces, reports, and encrypted browser state?
+6. **Report format:** Markdown is mandatory; whether HTML/PDF export is also useful for submission remains open.
+7. **Internal graph update strategy:** Implement full revision staging or a simpler transactionally replaced application namespace while retaining the same external semantics?
 
 ---
 
@@ -2495,6 +2494,7 @@ These must be resolved before or during implementation. They are deliberately no
 | Preserve run/audit metadata and immutable reports | Decided | Reproducibility without duplicate graph copies |
 | Playwright has discovery and verification modes | Decided | Exploratory graph building and deterministic QA replay have different reliability requirements |
 | Verification is optional and needs a PR-head deployment | Decided | A base run cannot verify changed code |
+| Render Blueprint previews provide assignment deployments | Decided | Manual, expiring PR previews build the public fork commit from source; authenticated Render service/deploy metadata proves repository and SHA before health, credentials, or browser access |
 | Mermaid is the PRD diagram format | Decided | GitHub-rendered, version-controlled, diffable, and easy for coding agents to understand |
 | TypeScript/Node is Sentinel's implementation language | Decided | Best integration fit for web UI, Playwright, parsers, Neo4j, Supabase, and AI SDK |
 | Azure OpenAI is the AI provider | Decided | Available Azure credits and first-class Responses API structured-output/function-tool support |
