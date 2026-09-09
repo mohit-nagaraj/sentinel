@@ -87,14 +87,12 @@ graph LR
 
 **Exit gate:** Each specialist completes golden missions, obeys scope and budgets, rejects unsafe/unavailable tools, produces no uncited claims, and can checkpoint/resume without replaying unsafe effects.
 
-| ID      | Issue                                                                                                        | Depends on                         | Status      |
-| ------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------- | ----------- |
-| SNT-014 | [Shared specialist agent kernel](./.tasks/milestone-03-specialist-agents/SNT-014-specialist-agent-kernel.md) | SNT-005, SNT-006                   | done        |
-| SNT-015 | [Documentation Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-015-documentation-explorer.md)    | SNT-008, SNT-014                   | not-started |
-| SNT-016 | [Code Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-016-code-explorer.md)                      | SNT-009, SNT-010, SNT-011, SNT-014 | done        |
-| SNT-017 | [Application Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-017-application-explorer.md)        | SNT-012, SNT-014                   | done        |
-
-SNT-014 now provides the common specialist lifecycle and reviewed Code/Application compositions. SNT-015 begins after the kernel PR merges; SNT-018 waits for the completed Documentation specialist.
+| ID      | Issue                                                                                                        | Depends on                         | Status |
+| ------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------- | ------ |
+| SNT-014 | [Shared specialist agent kernel](./.tasks/milestone-03-specialist-agents/SNT-014-specialist-agent-kernel.md) | SNT-005, SNT-006                   | done   |
+| SNT-015 | [Documentation Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-015-documentation-explorer.md)    | SNT-008, SNT-014                   | done   |
+| SNT-016 | [Code Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-016-code-explorer.md)                      | SNT-009, SNT-010, SNT-011, SNT-014 | done   |
+| SNT-017 | [Application Explorer agent](./.tasks/milestone-03-specialist-agents/SNT-017-application-explorer.md)        | SNT-012, SNT-014                   | done   |
 
 ---
 
@@ -106,12 +104,12 @@ SNT-014 now provides the common specialist lifecycle and reviewed Code/Applicati
 
 **Exit gate:** A Hi.Events fixture yields at least one complete `DocumentSection → Requirement → Workflow → UIElement → APIEndpoint → CodeSymbol` path, one scoped coverage gap, and one Curator-driven follow-up mission, with no Tier-D claim entering confident traversal.
 
-| ID      | Issue                                                                                                                                    | Depends on                         | Status      |
-| ------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ----------- |
-| SNT-018 | [Evidence validation, tiers, and candidate linking](./.tasks/milestone-04-graph-reconciliation/SNT-018-evidence-validation-linking.md)   | SNT-004, SNT-015, SNT-016, SNT-017 | not-started |
-| SNT-019 | [Evidence Curator and bounded reconciliation](./.tasks/milestone-04-graph-reconciliation/SNT-019-evidence-curator.md)                    | SNT-014, SNT-018                   | not-started |
-| SNT-020 | [Coverage assessments and absence semantics](./.tasks/milestone-04-graph-reconciliation/SNT-020-coverage-absence.md)                     | SNT-015, SNT-017, SNT-018          | not-started |
-| SNT-021 | [Atomic current-graph publication and evidence queries](./.tasks/milestone-04-graph-reconciliation/SNT-021-graph-publication-queries.md) | SNT-004, SNT-018, SNT-019, SNT-020 | not-started |
+| ID      | Issue                                                                                                                                    | Depends on                         | Status |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ------ |
+| SNT-018 | [Evidence validation, tiers, and candidate linking](./.tasks/milestone-04-graph-reconciliation/SNT-018-evidence-validation-linking.md)   | SNT-004, SNT-015, SNT-016, SNT-017 | done   |
+| SNT-019 | [Evidence Curator and bounded reconciliation](./.tasks/milestone-04-graph-reconciliation/SNT-019-evidence-curator.md)                    | SNT-014, SNT-018                   | done   |
+| SNT-020 | [Coverage assessments and absence semantics](./.tasks/milestone-04-graph-reconciliation/SNT-020-coverage-absence.md)                     | SNT-015, SNT-017, SNT-018          | done   |
+| SNT-021 | [Atomic current-graph publication and evidence queries](./.tasks/milestone-04-graph-reconciliation/SNT-021-graph-publication-queries.md) | SNT-004, SNT-018, SNT-019, SNT-020 | done   |
 
 ---
 
@@ -142,8 +140,8 @@ SNT-014 now provides the common specialist lifecycle and reviewed Code/Applicati
 
 | ID      | Issue                                                                                                                              | Depends on                                  | Status      |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ----------- |
-| SNT-026 | [GitHub App webhook ingestion and check lifecycle](./.tasks/milestone-06-pr-impact/SNT-026-github-app-checks.md)                   | SNT-003, SNT-007, SNT-023                   | not-started |
-| SNT-027 | [Agentic PR investigation workflow](./.tasks/milestone-06-pr-impact/SNT-027-pr-investigation-workflow.md)                          | SNT-013, SNT-016, SNT-019, SNT-021, SNT-026 | not-started |
+| SNT-026 | [GitHub App webhook ingestion and check lifecycle](./.tasks/milestone-06-pr-impact/SNT-026-github-app-checks.md)                   | SNT-003, SNT-007, SNT-023                   | done        |
+| SNT-027 | [Agentic PR investigation workflow](./.tasks/milestone-06-pr-impact/SNT-027-pr-investigation-workflow.md)                          | SNT-013, SNT-016, SNT-019, SNT-021, SNT-026 | ready       |
 | SNT-028 | [Blast-radius traversal, scoring, and unknown handling](./.tasks/milestone-06-pr-impact/SNT-028-blast-radius-engine.md)            | SNT-021, SNT-027                            | not-started |
 | SNT-029 | [Grounded report generation, dashboard, and GitHub summary](./.tasks/milestone-06-pr-impact/SNT-029-assessment-report-delivery.md) | SNT-005, SNT-025, SNT-026, SNT-028          | not-started |
 
@@ -187,32 +185,28 @@ SNT-014 now provides the common specialist lifecycle and reviewed Code/Applicati
 | ---------------------------------------- | -----: | -----: | ------------------------------ |
 | M1 Foundation and durable execution      |      6 |      6 | done                           |
 | M2 Deterministic source evidence         |      7 |      7 | done                           |
-| M3 Specialist discovery agents           |      3 |      4 | in-progress                    |
-| M4 Graph construction and reconciliation |      0 |      4 | not-started                    |
-| M5 Onboarding and control plane          |      1 |      4 | in-progress                    |
-| M6 PR blast-radius loop                  |      0 |      4 | not-started                    |
+| M3 Specialist discovery agents           |      4 |      4 | done                           |
+| M4 Graph construction and reconciliation |      4 |      4 | done                           |
+| M5 Onboarding and control plane          |      4 |      4 | done                           |
+| M6 PR blast-radius loop                  |      1 |      4 | in-progress                    |
 | M7 Verification and refresh              |      0 |      3 | blocked on deployment decision |
 | M8 Evaluation and delivery               |      0 |      3 | not-started                    |
-| **Overall**                              | **17** | **35** | **in-progress**                |
+| **Overall**                              | **26** | **35** | **in-progress**                |
 
 ## Active front
 
-- SNT-014 is done with implementation, QA, P0/P1 review, and PR CI complete; merge remains.
-- SNT-015 is the next specialist issue after SNT-014 merges.
-- SNT-025 is the next control-plane issue after SNT-024 merges.
-- External preparation can proceed without implementation ownership conflicts:
-  - GitHub App registration inputs for SNT-026;
-  - public baseline/head deployment decision for SNT-030.
+- M1 through M5 are complete, including Documentation Explorer, graph publication, and the knowledge review UI.
+- SNT-026 is done; GitHub App credentials are configured, but the webhook URL still needs to be saved in GitHub.
+- SNT-027 is the next implementation issue: PR investigation against the published graph.
+- SNT-030 remains blocked on a trusted public baseline/PR-head deployment decision.
 
 ## Next ready fronts after dependencies complete
 
-These are not currently `ready`; they identify safe future parallelism:
-
-- After **SNT-001 + SNT-002**: SNT-003 (Supabase), SNT-004 (Neo4j), and SNT-005 (Azure spike, once credentials exist) can proceed in parallel.
-- After **SNT-003**: SNT-007 (GitHub source) and SNT-012 (Playwright substrate) can proceed in parallel; SNT-006 can proceed once SNT-005 is also complete.
-- After **SNT-007**: SNT-008 (docs map), SNT-009 (TypeScript index), and SNT-010 (PHP index) can proceed in parallel.
-- After **SNT-014 plus substrates**: SNT-015, SNT-016, and SNT-017 can proceed in parallel.
-- Integrate/review those branches one issue at a time before starting SNT-018; do not let parallel agents redefine shared contracts independently.
+- **SNT-027** is `ready` now that SNT-013, SNT-016, SNT-019, SNT-021, and SNT-026 are done.
+- After **SNT-027**: SNT-028 (blast-radius scoring) can start.
+- After **SNT-028**: SNT-029 (report delivery) can start.
+- **SNT-030** stays blocked on the deployment decision; SNT-031 and SNT-032 wait on that plus later M6 work.
+- After **SNT-028**: SNT-033 (evaluation harness) can start; SNT-034 and SNT-035 remain last.
 
 ## Required regression gates
 

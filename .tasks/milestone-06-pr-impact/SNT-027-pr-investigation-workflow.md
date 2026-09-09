@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Milestone | M6 — Pull-request blast-radius product loop |
-| Status | `not-started` |
+| Status | `ready` |
 | Depends on | SNT-013, SNT-016, SNT-019, SNT-021, SNT-026 |
 | Blocks | Blast-radius engine, verification planning |
 | PRD references | §7.2, §13.13, §16, FR-012 |
