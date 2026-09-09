@@ -217,6 +217,33 @@ describe("artifact service", () => {
     ).resolves.toBeNull()
   })
 
+  it("signs only private Markdown assessment reports for at most five minutes", async () => {
+    const objects = new FakeObjects()
+    const metadata = new FakeMetadata()
+    const service = new ArtifactService("sentinel-artifacts", objects, metadata)
+    const saved = await service.persist({
+      applicationId,
+      applicationStableId,
+      runId: null,
+      artifactType: "assessment_report_markdown",
+      mimeType: "text/markdown",
+      body: new TextEncoder().encode("# Assessment report"),
+      retainUntil: null,
+    })
+
+    await expect(
+      service.signedReportDownloadUrl(applicationId, saved.id, 300)
+    ).resolves.toContain("https://signed.example/")
+    expect(objects.signed).toEqual([saved.objectKey])
+    await expect(
+      service.signedReportDownloadUrl(applicationId, saved.id, 301)
+    ).rejects.toThrow()
+    metadata.privateBucket = false
+    await expect(
+      service.signedReportDownloadUrl(applicationId, saved.id, 300)
+    ).rejects.toThrow("not private")
+  })
+
   it("does not sign non-screenshot run artifacts", async () => {
     const objects = new FakeObjects()
     const metadata = new FakeMetadata()

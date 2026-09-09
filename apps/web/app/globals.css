@@ -127,3 +127,103 @@
     @apply font-sans;
   }
 }
+
+@media print {
+  @page {
+    size: auto;
+    margin: 14mm 13mm 16mm;
+  }
+
+  :root,
+  .dark {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.148 0.004 228.8);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.38 0 0);
+    --border: oklch(0.8 0 0);
+    --primary: oklch(0.34 0.09 165.612);
+  }
+
+  html {
+    font-size: 10pt;
+  }
+
+  body {
+    background: white !important;
+    color: #171717 !important;
+    print-color-adjust: exact;
+  }
+
+  .report-screen-only {
+    display: none !important;
+  }
+
+  .report-layout {
+    display: block !important;
+    width: auto !important;
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  .report-document {
+    max-width: none !important;
+    color: #171717 !important;
+  }
+
+  .report-document a {
+    color: inherit !important;
+    text-decoration: underline;
+  }
+
+  .report-section {
+    scroll-margin: 0;
+    padding-block: 6mm !important;
+  }
+
+  .report-section > div {
+    display: grid !important;
+    grid-template-columns: 32mm minmax(0, 1fr) !important;
+    gap: 7mm !important;
+  }
+
+  .report-finding,
+  .report-evidence-path,
+  .report-generation dl > div,
+  table tr {
+    break-inside: avoid;
+  }
+
+  .report-details > summary {
+    cursor: default !important;
+    list-style: none !important;
+  }
+
+  .report-details > summary::-webkit-details-marker,
+  .report-details > summary svg {
+    display: none !important;
+  }
+
+  .report-details:not([open]) > :not(summary) {
+    display: block !important;
+  }
+
+  .report-details::details-content {
+    display: block !important;
+    block-size: auto !important;
+    overflow: visible !important;
+    content-visibility: visible !important;
+  }
+
+  .report-document h1,
+  .report-document h2,
+  .report-document h3,
+  .report-document summary {
+    break-after: avoid;
+  }
+
+  .report-document p,
+  .report-document li {
+    orphans: 3;
+    widows: 3;
+  }
+}

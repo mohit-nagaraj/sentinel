@@ -238,14 +238,20 @@ describe("blast-radius engine", () => {
           applicationId: selectedApplicationId,
           conflictIds,
           provenance,
+          sourceUris,
+          artifactIds,
           stale,
           ...value
         }) => {
           expect(selectedApplicationId).toBe(applicationId)
           expect(conflictIds).toEqual([])
+          expect(sourceUris).toEqual([])
+          expect(artifactIds).toEqual([])
           expect(stale).toBe(false)
           return {
             ...value,
+            sourceUri: "repository://src/order-service.ts",
+            artifactId: `artifact:v1:${"9".repeat(64)}`,
             evidence: value.evidenceIds.map((selectedEvidenceId) => ({
               evidenceId: selectedEvidenceId,
               extractionMethod: value.extractionMethod,
@@ -274,6 +280,10 @@ describe("blast-radius engine", () => {
     expect(
       candidates.every(({ operations }) => operations[0] === "deleted")
     ).toBe(true)
+    expect(candidates[0]?.relationships[0]).toMatchObject({
+      sourceUris: ["repository://src/order-service.ts"],
+      artifactIds: [`artifact:v1:${"9".repeat(64)}`],
+    })
   })
 
   it("aggregates shared-symbol seeds instead of multiplying candidates", () => {

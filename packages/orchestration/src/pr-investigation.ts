@@ -75,6 +75,7 @@ import type {
   GraphRunInput,
   RunExecutionContext,
 } from "./run-dispatch.ts"
+import type { AssessmentReportRunFinalizerPort } from "./report.ts"
 
 export const PR_INVESTIGATION_GRAPH_NAME = "assess_pull_request" as const
 
@@ -1196,6 +1197,7 @@ function stableRunId(databaseRunId: string) {
 export function createPrInvestigationCompiledRunGraph(input: {
   readonly service: PrInvestigationService
   readonly resolver: PrInvestigationRunInputResolver
+  readonly reports: AssessmentReportRunFinalizerPort
 }): CompiledRunGraph {
   const resolve = async (
     graphInput: GraphRunInput,
@@ -1227,6 +1229,17 @@ export function createPrInvestigationCompiledRunGraph(input: {
     const resolved = await resolve(graphInput, context)
     const result = await input.service.start(resolved)
     await context.assertActive()
+    if (
+      result.status === "completed" &&
+      result.result?.status === "completed"
+    ) {
+      const report = await input.reports.finalize(
+        { investigation: result.result },
+        context.signal
+      )
+      await context.assertActive()
+      if (report === "superseded") return { status: "cancelled" }
+    }
     return result.status === "superseded"
       ? { status: "cancelled" }
       : {

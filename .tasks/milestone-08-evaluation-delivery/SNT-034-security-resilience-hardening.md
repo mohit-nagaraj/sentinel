@@ -106,15 +106,15 @@ Formal penetration-test certification, production SOC controls, arbitrary hostil
   adapter, and orchestration tests also passed on the combined branch.
   Web, docs, and tools typechecks passed; all three security inventory gates and
   deterministic eval regeneration passed. Full CI remains pending GitHub Actions.
-- The combined base does not implement SNT-029 report delivery, SNT-031
-  trusted-head execution, or SNT-032 incremental refresh. SNT-030 now defines
+- The base reviewed for SNT-034 did not implement SNT-029 report delivery,
+  SNT-031 trusted-head execution, or SNT-032 incremental refresh. SNT-030 defines
   Render preview identity and bounded verification planning, and its focused
   security/identity tests join this issue's gate, but no trusted PR-head
   deployment is registered. This issue hardens all currently reachable surfaces
   but makes no claim for absent execution paths. The demo must report verification
-  as unavailable and must not imply deployed refresh or final report delivery
-  occurred; those limitations are explicit in the threat model for incorporation
-  into the SNT-035 design document.
+  as unavailable and must not imply deployed refresh occurred. Subsequent
+  SNT-029 and SNT-032 delivery updates supersede the report and refresh portions
+  of this historical limitation; the current threat model remains authoritative.
 - The ystack `/review` found that the secret scanner missed current
   `github_pat_` fine-grained PATs and stateless `ghs_APPID_JWT` installation
   tokens. Detection now treats GitHub token bodies as opaque variable-length

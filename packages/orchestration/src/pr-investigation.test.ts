@@ -20,7 +20,7 @@ import {
   type PrInvestigationResult,
 } from "@sentinel/contracts"
 import { MemorySaver } from "@langchain/langgraph"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import {
   InMemoryPrInvestigationStore,
@@ -712,9 +712,11 @@ describe("PR investigation graph", () => {
 
   it("adapts assess_pr run commands to the compiled run-graph contract", async () => {
     const fixture = harness()
+    const finalizeReport = vi.fn().mockResolvedValue("published" as const)
     const compiled = createPrInvestigationCompiledRunGraph({
       service: fixture.service,
       resolver: { resolve: async () => start() },
+      reports: { finalize: finalizeReport },
     })
     const graphInput = {
       runId: assessmentId,
@@ -734,6 +736,10 @@ describe("PR investigation graph", () => {
       status: "succeeded",
       publication: { kind: "assessment", assessmentId },
     })
+    expect(finalizeReport).toHaveBeenCalledWith(
+      { investigation: expect.objectContaining({ status: "completed" }) },
+      context.signal
+    )
     await expect(compiled.hasCheckpoint(graphInput)).resolves.toBe(true)
     await expect(
       compiled.hasPendingInterrupt(graphInput, "unused")

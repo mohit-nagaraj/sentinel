@@ -84,6 +84,18 @@ function stringValue(
   return value
 }
 
+function optionalStringValue(
+  record: Readonly<Record<string, NativeGraphValue>>,
+  key: string
+): string | undefined {
+  const value = record[key]
+  if (value === null || value === undefined) return undefined
+  if (typeof value !== "string") {
+    throw new Error(`Neo4j query returned invalid ${key}`)
+  }
+  return value
+}
+
 function stringArrayValue(
   record: Readonly<Record<string, NativeGraphValue>>,
   key: string
@@ -136,6 +148,8 @@ function mapEvidencePath(value: unknown): GraphEvidencePath {
   const nodes = nativeArray(record["nodes"]).map(mapEntity)
   const relationships = nativeArray(record["relationships"]).map((value) => {
     const relationship = nativeRecord(value)
+    const sourceUri = optionalStringValue(relationship, "sourceUri")
+    const artifactId = optionalStringValue(relationship, "artifactId")
     return {
       id: stringValue(relationship, "id"),
       type: stringValue(relationship, "type"),
@@ -145,6 +159,8 @@ function mapEvidencePath(value: unknown): GraphEvidencePath {
       extractionMethod: stringValue(relationship, "extractionMethod"),
       evidenceIds: stringArrayValue(relationship, "evidenceIds"),
       evidence: stringArrayValue(relationship, "evidenceJson").map(parseJson),
+      ...(sourceUri === undefined ? {} : { sourceUri }),
+      ...(artifactId === undefined ? {} : { artifactId }),
       reviewState: stringValue(relationship, "reviewState"),
       graphRevision: numberValue(relationship, "graphRevision"),
     }
@@ -207,6 +223,8 @@ const pathProjection = `{
     extractionMethod: r.extraction_method,
     evidenceIds: r.evidence_ids,
     evidenceJson: r.evidence_provenance_json,
+    sourceUri: r.source_uri,
+    artifactId: r.artifact_id,
     reviewState: r.review_state,
     graphRevision: r.graph_revision
   }]

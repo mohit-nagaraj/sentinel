@@ -605,6 +605,33 @@ export class ArtifactService {
     )
   }
 
+  async signedReportDownloadUrl(
+    applicationIdInput: string,
+    id: string,
+    expiresInSeconds = 300
+  ): Promise<string | null> {
+    const applicationId = databaseIdSchema.parse(applicationIdInput)
+    const artifact = await this.metadata.find(
+      applicationId,
+      artifactIdSchema.parse(id)
+    )
+    if (
+      artifact === null ||
+      artifact.artifactType !== "assessment_report_markdown" ||
+      artifact.mimeType !== "text/markdown"
+    ) {
+      return null
+    }
+    await this.metadata.assertPrivateBucket(artifact.bucket)
+    await this.objects.assertPrivateBucket(artifact.bucket)
+    const expires = z.number().int().min(1).max(300).parse(expiresInSeconds)
+    return this.objects.signedDownloadUrl(
+      artifact.bucket,
+      artifact.objectKey,
+      expires
+    )
+  }
+
   async readTextExcerpt(
     applicationIdInput: string,
     id: string,
