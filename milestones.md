@@ -155,11 +155,11 @@ graph LR
 
 **Exit gate:** A trusted fixture/head environment shows one affected flow and one control, setup is separated from behavior under test, observed results remain distinct from predicted risk, and a successful refresh advances the indexed commit atomically.
 
-| ID      | Issue                                                                                                                                           | Depends on                                                    | Status      |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ----------- |
-| SNT-030 | [Trusted deployment identity and verification planning](./.tasks/milestone-07-verification-refresh/SNT-030-deployment-verification-planning.md) | SNT-022, SNT-027, SNT-028                                     | done        |
-| SNT-031 | [Agentic targeted verification and deterministic verdicts](./.tasks/milestone-07-verification-refresh/SNT-031-agentic-targeted-verification.md) | SNT-017, SNT-024, SNT-029, SNT-030                            | not-started |
-| SNT-032 | [Incremental post-deployment knowledge refresh](./.tasks/milestone-07-verification-refresh/SNT-032-incremental-knowledge-refresh.md)            | SNT-008, SNT-013, SNT-017, SNT-019, SNT-021, SNT-027, SNT-030 | done        |
+| ID      | Issue                                                                                                                                           | Depends on                                                    | Status |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------ |
+| SNT-030 | [Trusted deployment identity and verification planning](./.tasks/milestone-07-verification-refresh/SNT-030-deployment-verification-planning.md) | SNT-022, SNT-027, SNT-028                                     | done   |
+| SNT-031 | [Agentic targeted verification and deterministic verdicts](./.tasks/milestone-07-verification-refresh/SNT-031-agentic-targeted-verification.md) | SNT-017, SNT-024, SNT-029, SNT-030                            | done   |
+| SNT-032 | [Incremental post-deployment knowledge refresh](./.tasks/milestone-07-verification-refresh/SNT-032-incremental-knowledge-refresh.md)            | SNT-008, SNT-013, SNT-017, SNT-019, SNT-021, SNT-027, SNT-030 | done   |
 
 ---
 
@@ -204,9 +204,8 @@ graph LR
 
 - **SNT-027** is `ready` now that SNT-013, SNT-016, SNT-019, SNT-021, and SNT-026 are done.
 - After **SNT-027**: SNT-028 (blast-radius scoring) can start.
-- After **SNT-028**: SNT-029 (report delivery) can start.
-- **SNT-031** can start after SNT-029 provides report delivery; SNT-032 can build on SNT-030's trusted deployment contract.
-- After **SNT-028**: SNT-033 (evaluation harness) can start; SNT-034 and SNT-035 remain last.
+- M6 report delivery and all M7 verification/refresh issues are complete.
+- **SNT-035** is ready after SNT-029, SNT-033, and SNT-034; it remains the final assignment-delivery issue.
 
 ## Required regression gates
 

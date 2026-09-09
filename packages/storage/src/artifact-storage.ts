@@ -216,6 +216,29 @@ export class ArtifactMetadataRepository {
     )
   }
 
+  async updateRetention(
+    applicationIdInput: string,
+    idInput: ArtifactId,
+    retainUntil: Date
+  ): Promise<ArtifactMetadata | null> {
+    const rows = await this.database.query<ArtifactRow>(
+      `update sentinel.artifacts
+       set retain_until = greatest(
+         coalesce(retain_until, '-infinity'::timestamptz),
+         $3::timestamptz
+       )
+       where application_id = $1::uuid and stable_key = $2
+         and deleted_at is null
+       returning *`,
+      [
+        databaseIdSchema.parse(applicationIdInput),
+        artifactIdSchema.parse(idInput),
+        z.date().parse(retainUntil),
+      ]
+    )
+    return rows[0] === undefined ? null : mapArtifact(rows[0])
+  }
+
   async changeReferenceCount(
     id: string,
     delta: 1 | -1
@@ -323,6 +346,11 @@ export interface ArtifactMetadataStore {
   ): Promise<boolean>
   markDeleted(id: string): Promise<boolean>
   restore(id: string): Promise<void>
+  updateRetention?(
+    applicationId: string,
+    id: ArtifactId,
+    retainUntil: Date
+  ): Promise<ArtifactMetadata | null>
   assertPrivateBucket(bucket: string): Promise<void>
   ensurePrivateBucket(bucket: string): Promise<void>
   assertApplicationIdentity(
@@ -687,5 +715,29 @@ export class ArtifactService {
       await this.metadata.restore(artifact.databaseId)
       throw error
     }
+  }
+
+  async retainUntil(
+    applicationIdInput: string,
+    id: string,
+    retainUntilInput: Date
+  ): Promise<boolean> {
+    const applicationId = databaseIdSchema.parse(applicationIdInput)
+    const artifactId = artifactIdSchema.parse(id)
+    const retainUntil = z.date().parse(retainUntilInput)
+    if (this.metadata.updateRetention === undefined) {
+      throw new Error("Artifact metadata store cannot update retention")
+    }
+    const artifact = await this.metadata.find(applicationId, artifactId)
+    if (artifact === null) return false
+    await this.metadata.assertPrivateBucket(artifact.bucket)
+    await this.objects.assertPrivateBucket(artifact.bucket)
+    return (
+      (await this.metadata.updateRetention(
+        applicationId,
+        artifactId,
+        retainUntil
+      )) !== null
+    )
   }
 }

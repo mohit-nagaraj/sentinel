@@ -81,11 +81,12 @@ flowchart LR
   choices, finalizes immutable report artifacts with current-head checks, and
   owner-scopes dashboard, download, and evidence-excerpt access. The complete CI
   security matrix remains the authoritative hardening gate.
-- SNT-030 defines Render preview identity and bounded verification planning, and
-  SNT-032 provides incremental refresh contracts. No trusted PR-head deployment
-  is registered for the assignment and SNT-031 dynamic verification is not
-  implemented. The demo must show `verification_unavailable`; it must not imply
-  a baseline deployment was verified against a PR head or that deployed
+- SNT-030 through SNT-032 provide Render preview identity, bounded planning,
+  exact-head targeted execution with deterministic verdicts, private evidence
+  retention/report enrichment, and incremental refresh contracts. No trusted
+  PR-head deployment is registered for the assignment. Until one is explicitly
+  supplied and attested, the demo must show `verification_unavailable`; it must
+  not imply that a baseline was verified against a PR head or that deployed
   knowledge refresh ran.
 - Arbitrary hostile code execution is out of scope. Sentinel parses supported
   source and Git metadata but does not build, boot, or execute target code.

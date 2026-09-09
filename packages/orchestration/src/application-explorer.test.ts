@@ -603,6 +603,42 @@ describe("Application Explorer mission runtime", () => {
     }
   })
 
+  it("adapts to a changed head label through the current opaque action", async () => {
+    const renamedAction = candidate({
+      id: "a",
+      signature: "b",
+      name: "Next step",
+    })
+    const head = observation("c", "d", "/checkout", "Attendee", [renamedAction])
+    const confirmation = observation("e", "f", "/orders/1", "Confirmation", [])
+    const output = await createApplicationExplorer({
+      browser: new ScriptedBrowser(head, [
+        transition("1", head, renamedAction, confirmation),
+      ]),
+      planner: new ScriptedPlanner([
+        actionDecision("perform_observed_action", head, renamedAction),
+        finishDecision("goal_completed"),
+      ]),
+    }).run({
+      mission: mission({
+        mode: "pr_change_validation",
+        goal: "Reach order confirmation despite changed presentation" as never,
+        questions: ["Does the checkout transition still complete?" as never],
+        successCriteria: ["Observe order confirmation" as never],
+      }),
+      browserOptions: browserOptions(),
+      requirementHintLabels: ["order confirmation"],
+    })
+
+    expect(output.result.status).toBe("complete")
+    expect(output.checkpoint.path).toEqual([
+      expect.objectContaining({ actionSignature: renamedAction.signature }),
+    ])
+    expect(output.checkpoint.currentStateFingerprint).toBe(
+      confirmation.stateFingerprint
+    )
+  })
+
   it("keeps backtracked alternatives as separate evidence workflows", async () => {
     const branchA = candidate({ id: "1", signature: "2", name: "Branch A" })
     const back = candidate({

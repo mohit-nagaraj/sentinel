@@ -21,6 +21,11 @@ Authoritative references:
 - [GitHub Actions secure use](https://docs.github.com/en/actions/reference/security/secure-use)
 - [Hi.Events source deployment](https://github.com/HiEventsDev/Hi.Events)
 - [Hi.Events Render one-click wrapper](https://github.com/HiEventsDev/hi.events-render.com)
+- [LangGraph persistence](https://docs.langchain.com/oss/javascript/langgraph/persistence)
+- [LangGraph interrupts and replay](https://docs.langchain.com/oss/javascript/langgraph/interrupts)
+- [Playwright browser contexts](https://playwright.dev/docs/api/class-browsercontext)
+- [Playwright network events](https://playwright.dev/docs/network)
+- [Playwright tracing](https://playwright.dev/docs/api/class-tracing)
 
 ## Preview configuration
 
@@ -118,3 +123,62 @@ Render API key if exposed, rotate scoped test credentials, invalidate browser
 state and signed artifacts, preserve sanitized audit identifiers, and require a
 new service/deploy registration before resuming. Provider/API failure remains
 `verification_unavailable`; static assessment remains usable.
+
+## Targeted execution and verdicts
+
+`verifyPullRequestGraph` checkpoints only compact identities, record IDs,
+mission completion receipts, budget totals, and terminal state. Rich deployment
+registrations, validation proofs, setup receipts, browser observations,
+transitions, network/console evidence, artifacts, and verdicts live in the
+private content-addressed verification store. This follows LangGraph's replay
+model: a node can start again after failure, so every setup, browser execution,
+cleanup, retention, report append, and check update uses an idempotency key.
+
+For each planned affected mission and optional control, the graph:
+
+1. Confirms the assessment/head is still current.
+2. Revalidates provider identity before any fixture credential can be used.
+3. Prepares matching baseline/head fixtures through the trusted adapter only
+   when setup is outside the blast radius. Impacted setup remains inside the UI
+   mission.
+4. Optionally executes the baseline within the total verification budget.
+5. Revalidates the head again immediately before opening its browser context.
+6. Runs Application Explorer with the planned origin, entry path, action/model
+   budgets, and opaque observed-action API.
+7. Closes the browser context on success or failure and reuses cached evidence
+   if a checkpoint retry repeats the same execution key.
+8. Evaluates every checkpoint deterministically, applies private artifact
+   retention, and cleans fixture state in `finally`.
+
+The assertion catalog covers reachability, visible/enabled state, transitions,
+exact request method/path/status, deterministic values, and console/page/policy
+error absence. HTTP error responses are evaluated by status; Playwright request
+failure is reserved for transport failures. Model explanations are retained as
+non-authoritative context and cannot change assertion or aggregate status.
+
+A head checkpoint that fails while its baseline passes is `failed`. If the same
+checkpoint fails on baseline, Sentinel reports `blocked` environment instability
+instead of blaming the PR. A failed/blocked control also blocks aggregate
+attribution. Passing checkpoints with a changed deterministic semantic
+fingerprint are `behavior_changed`; label text alone does not change the verdict
+when semantic checkpoints remain preserved.
+
+The Curator may request one additional mission only for named blocked checkpoint
+IDs and only when its entire mission budget fits the remaining total. Successful
+follow-up evidence can resolve those named `agent_block` gaps, but the original
+observation remains in the result. It cannot override a deterministic failure,
+setup failure, policy denial, or failed control.
+
+Screenshots, traces, network evidence, console evidence, and state evidence are
+always private. Failure artifacts receive the failure retention window; selected
+report screenshots receive the report window; successful diagnostic artifacts
+are deleted unless an explicit short success window is configured. A missing
+artifact that was selected for retention fails publication rather than claiming
+that evidence was preserved.
+
+Publication appends a versioned verification enrichment to the immutable report
+under an assessment/head compare-and-set, then updates the existing GitHub check.
+If the external check update fails, retry reuses the existing append and resumes
+the check update. Predicted finding IDs are copied into every enrichment and are
+never removed by a passing scenario; the result says only what the bounded
+missions observed.
