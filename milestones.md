@@ -159,7 +159,7 @@ graph LR
 | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ----------- |
 | SNT-030 | [Trusted deployment identity and verification planning](./.tasks/milestone-07-verification-refresh/SNT-030-deployment-verification-planning.md) | SNT-022, SNT-027, SNT-028                                     | done        |
 | SNT-031 | [Agentic targeted verification and deterministic verdicts](./.tasks/milestone-07-verification-refresh/SNT-031-agentic-targeted-verification.md) | SNT-017, SNT-024, SNT-029, SNT-030                            | not-started |
-| SNT-032 | [Incremental post-deployment knowledge refresh](./.tasks/milestone-07-verification-refresh/SNT-032-incremental-knowledge-refresh.md)            | SNT-008, SNT-013, SNT-017, SNT-019, SNT-021, SNT-027, SNT-030 | not-started |
+| SNT-032 | [Incremental post-deployment knowledge refresh](./.tasks/milestone-07-verification-refresh/SNT-032-incremental-knowledge-refresh.md)            | SNT-008, SNT-013, SNT-017, SNT-019, SNT-021, SNT-027, SNT-030 | done        |
 
 ---
 
@@ -189,9 +189,9 @@ graph LR
 | M4 Graph construction and reconciliation |      4 |      4 | done            |
 | M5 Onboarding and control plane          |      4 |      4 | done            |
 | M6 PR blast-radius loop                  |      1 |      4 | in-progress     |
-| M7 Verification and refresh              |      1 |      3 | in-progress     |
+| M7 Verification and refresh              |      2 |      3 | in-progress     |
 | M8 Evaluation and delivery               |      2 |      3 | in-progress     |
-| **Overall**                              | **29** | **35** | **in-progress** |
+| **Overall**                              | **30** | **35** | **in-progress** |
 
 ## Active front
 

@@ -1,12 +1,12 @@
 # SNT-032 — Incremental post-deployment knowledge refresh
 
-| Field | Value |
-|---|---|
-| Milestone | M7 — Dynamic verification and knowledge refresh |
-| Status | `not-started` |
-| Depends on | SNT-008, SNT-013, SNT-017, SNT-019, SNT-021, SNT-027, SNT-030 |
-| Blocks | Security hardening and final delivery |
-| PRD references | §7.3–7.4, §11.4, FR-018 |
+| Field          | Value                                                         |
+| -------------- | ------------------------------------------------------------- |
+| Milestone      | M7 — Dynamic verification and knowledge refresh               |
+| Status         | `done`                                                        |
+| Depends on     | SNT-008, SNT-013, SNT-017, SNT-019, SNT-021, SNT-027, SNT-030 |
+| Blocks         | Security hardening and final delivery                         |
+| PRD references | §7.3–7.4, §11.4, FR-018                                       |
 
 ## Background
 
@@ -26,16 +26,16 @@ After merge/deployment, active knowledge must advance to the new commit without 
 
 ## Implementation tasks
 
-- [ ] Define change-to-refresh-scope planner.
-- [ ] Reindex affected TS/PHP/OpenAPI/document sources.
-- [ ] Select affected/stale workflows for re-exploration or replay.
-- [ ] Dispatch specialist missions with prior evidence references and refresh budgets.
-- [ ] Invalidate reviewed/inferred links whose source identities changed.
-- [ ] Recompute coverage assessments for affected requirements.
-- [ ] Stage, validate, and atomically publish pending revision.
-- [ ] Remove/supersede affected stale current facts and safe orphans.
-- [ ] Preserve immutable assessment references/artifacts under retention contract.
-- [ ] Emit refresh summary, warnings, and freshness status.
+- [x] Define change-to-refresh-scope planner.
+- [x] Reindex affected TS/PHP/OpenAPI/document sources.
+- [x] Select affected/stale workflows for re-exploration or replay.
+- [x] Dispatch specialist missions with prior evidence references and refresh budgets.
+- [x] Invalidate reviewed/inferred links whose source identities changed.
+- [x] Recompute coverage assessments for affected requirements.
+- [x] Stage, validate, and atomically publish pending revision.
+- [x] Remove/supersede affected stale current facts and safe orphans.
+- [x] Preserve immutable assessment references/artifacts under retention contract.
+- [x] Emit refresh summary, warnings, and freshness status.
 
 ## Acceptance criteria
 
@@ -63,4 +63,33 @@ Scheduled continuous crawling, multi-commit history browser, duplicate full grap
 
 ## Implementation notes
 
-_Populate during implementation with final paths, commands, decisions, test evidence, and any explicitly deferred acceptance item._
+- Added strict refresh boundary contracts in
+  `packages/contracts/src/knowledge-refresh.ts`, including commit/change,
+  inventory, scope, source-map, specialist, retention, reconciliation, and
+  summary receipts.
+- Added deterministic scope planning in
+  `packages/orchestration/src/knowledge-refresh-planning.ts`. It classifies
+  documentation, TypeScript/TSX, PHP, OpenAPI, configuration, rename, and
+  removal changes; propagates affected dependencies; reassesses requirements
+  covered by affected workflows; invalidates incompatible reviewed links; and
+  emits bounded specialist missions with prior evidence.
+- Compiled `refreshKnowledgeGraph` in
+  `packages/orchestration/src/knowledge-refresh.ts` with checkpointed context
+  validation, commit comparison, inventory loading, scoped source reindexing,
+  parallel specialist dispatch, Curator reconciliation, immutable artifact
+  retention, and terminal atomic publication. Rich payloads remain in a
+  content-addressed durable store while checkpoints contain receipt IDs only.
+- Reused the affected-revision Neo4j publication path for pending validation,
+  compare-and-set activation, unchanged-fact copying, stale/orphan cleanup,
+  historical evidence retention, and rollback. Indexed commit and freshness
+  advance only with the matching successful publication.
+- Added `post_deployment_refresh` validation using the baseline deployment role
+  and a default validator that requires an exact trusted target deployment, the
+  current graph revision/commit, and descendant commit ancestry.
+- Focused verification: 50 refresh/deployment/runtime/publication tests passed;
+  package type checks passed for contracts, adapters, orchestration, and
+  storage; changed-file ESLint, Prettier, and `git diff --check` passed.
+- `/review` identified two HIGH issues. Both were fixed: requirements covered by
+  code-affected workflows are now reassessed, and the compiled adapter no longer
+  checks an already-terminalized lease after successful atomic activation.
+- No acceptance items were deferred. Full CI remains owned by GitHub Actions.

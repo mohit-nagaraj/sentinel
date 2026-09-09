@@ -301,6 +301,7 @@ export interface NodeEventContext {
 export interface NodeWrapperOptions<State = RuntimeStateBase> {
   readonly emitStarted?: boolean
   readonly enforceElapsedBudget?: boolean
+  readonly checkActiveAfter?: boolean
   readonly lifecycleNodeName?: string
   readonly runtimeState?: (state: State) => RuntimeStateBase
   readonly eventContext?: (state: State) => NodeEventContext
@@ -503,7 +504,7 @@ export function wrapNode<State, Update extends Record<string, unknown>>(
         if (timeout !== undefined) clearTimeout(timeout)
       }
       ;(options.validateUpdate ?? assertCompactCheckpointState)(update)
-      await checkActive()
+      if (options.checkActiveAfter !== false) await checkActive()
       return update
     } catch (caught) {
       const error =

@@ -45,6 +45,7 @@ import {
 } from "./primitives.ts"
 
 export const MAX_GRAPH_PUBLICATION_BATCH_SIZE = 1_000 as const
+export const MAX_GRAPH_REPLACEMENT_SCOPE = 50_000 as const
 export const MAX_GRAPH_QUERY_DEPTH = 12 as const
 export const MAX_GRAPH_QUERY_RESULTS = 200 as const
 export const MAX_PR_GRAPH_QUERY_SEEDS = 500 as const
@@ -154,7 +155,7 @@ export const graphReplacementScopeSchema = z.discriminatedUnion("kind", [
     stableKeys: z
       .array(graphIdentitySchema)
       .min(1)
-      .max(50_000)
+      .max(MAX_GRAPH_REPLACEMENT_SCOPE)
       .refine((ids) => new Set(ids).size === ids.length, {
         message: "Affected graph identities must be unique",
       }),
