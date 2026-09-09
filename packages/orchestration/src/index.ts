@@ -1,5 +1,6 @@
 export * from "./application-explorer.ts"
 export * from "./application-explorer-specialist.ts"
+export * from "./blast-radius.ts"
 export * from "./checkpointer.ts"
 export * from "./coverage-matrix.ts"
 export * from "./code-explorer.ts"
