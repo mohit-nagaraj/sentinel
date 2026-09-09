@@ -10,6 +10,7 @@ import {
   applicationIdSchema,
   commitShaSchema,
   contentHashSchema,
+  httpMethodSchema,
   normalizedPathSchema,
   persistedTextSchema,
   publicHttpUrlSchema,
@@ -265,14 +266,37 @@ export const verificationCheckpointOperatorSchema = z.enum([
   "unchanged",
 ])
 
-export const verificationCheckpointSchema = z.strictObject({
-  id: contentHashSchema,
-  kind: verificationCheckpointKindSchema,
-  sourceEntityId: stableEntityIdSchema,
-  operator: verificationCheckpointOperatorSchema,
-  expected: z.union([persistedTextSchema, z.number(), z.boolean()]).optional(),
-  description: persistedTextSchema,
-})
+export const verificationCheckpointSchema = z
+  .strictObject({
+    id: contentHashSchema,
+    kind: verificationCheckpointKindSchema,
+    sourceEntityId: stableEntityIdSchema,
+    operator: verificationCheckpointOperatorSchema,
+    expected: z
+      .union([persistedTextSchema, z.number(), z.boolean()])
+      .optional(),
+    request: z
+      .strictObject({
+        method: httpMethodSchema,
+        normalizedPath: normalizedPathSchema,
+        statuses: z.array(z.number().int().min(100).max(599)).min(1).max(20),
+      })
+      .optional(),
+    description: persistedTextSchema,
+  })
+  .superRefine((checkpoint, context) => {
+    if (
+      (checkpoint.kind === "request_status") !==
+      (checkpoint.request !== undefined)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["request"],
+        message:
+          "Only request-status checkpoints require method, path, and statuses",
+      })
+    }
+  })
 
 export const verificationSetupSchema = z.strictObject({
   method: z.enum(["none", "trusted_fixture_api", "user_interface"]),
@@ -374,12 +398,18 @@ export const verificationPlanSchema = z
   .superRefine((plan, context) => {
     const available = plan.deployment.browserAccessAllowed
     if (plan.status === "planned") {
-      if (!available || plan.missions.length === 0) {
+      if (
+        !available ||
+        plan.deployment.purpose !== "pr_head_verification" ||
+        plan.deployment.assessmentId !== plan.assessmentId ||
+        plan.deployment.pullRequestId === undefined ||
+        plan.missions.length === 0
+      ) {
         context.addIssue({
           code: "custom",
           path: ["status"],
           message:
-            "Planned verification requires a trusted deployment and mission",
+            "Planned verification requires a matching trusted PR-head deployment and mission",
         })
       }
       if (plan.actionRequired !== undefined) {
