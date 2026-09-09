@@ -62,7 +62,7 @@ SNT-026 implementation, QA, clean-database migration verification, and productio
 
 - [x] Define bounded, redacted activity metadata and persist owner-authorized private run broadcasts.
 - [x] Add safe-boundary pause requests, short-lived realtime identity, and run-scoped screenshot signing.
-- [ ] Build deterministic catch-up/reconnect state and the accessible specialist activity workspace.
+- [x] Build deterministic catch-up/reconnect state and the accessible specialist activity workspace.
 - [ ] Add run routes, synthetic live fixture coverage, screenshot storyboard proof, and operational guidance.
 
 | Date       | Decision                                                                                                                                            | Reason                                                                                                                       |
