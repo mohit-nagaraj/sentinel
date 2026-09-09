@@ -1,0 +1,246 @@
+{
+  "dataset": {
+    "id": "hi-events-pr-1338-attribution",
+    "version": "2026-09-09.v1"
+  },
+  "limitations": [
+    "This compact dataset is a human-reviewed assignment fixture, not a statistically representative benchmark.",
+    "Held-out labels are separated from development cases by the harness but remain visible to repository maintainers, so contamination remains possible.",
+    "Browser observations are sanitized structural equivalents; private screenshots, credentials, and raw traces are excluded.",
+    "No paid model run is represented in the committed baseline report."
+  ],
+  "run": {
+    "completedAt": "2026-09-09T12:00:00.000Z",
+    "mode": "deterministic",
+    "model": "scripted-golden-fixture",
+    "modelConfigFingerprint": "sha256:e4ff491169b8a9ea78518a7972422b5a24d5e3790e0d9a9e5cbfb384d9b621e0",
+    "provider": "sentinel",
+    "repetitions": 100,
+    "runId": "snt-033-deterministic-baseline",
+    "seed": 1338,
+    "selectedSplits": [
+      "development",
+      "held_out"
+    ],
+    "startedAt": "2026-09-09T12:00:00.000Z",
+    "templateVersion": "eval-template-v1"
+  },
+  "schemaVersion": 1,
+  "summary": {
+    "caseExecutions": 400,
+    "failed": 0,
+    "hardFailures": 0,
+    "metrics": {
+      "budget_adherence": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "case_score": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "citation_correctness": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "control_false_positive_rate": {
+        "count": 400,
+        "maximum": 0,
+        "mean": 0,
+        "minimum": 0,
+        "p50": 0,
+        "p95": 0,
+        "standardDeviation": 0
+      },
+      "evidence_fact_accuracy": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "fact_f1": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "fact_precision": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "fact_recall": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "false_acceptance_rate": {
+        "count": 400,
+        "maximum": 0,
+        "mean": 0,
+        "minimum": 0,
+        "p50": 0,
+        "p95": 0,
+        "standardDeviation": 0
+      },
+      "impact_precision": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "impacted_recall": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "link_precision": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "link_recall": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "normalized_stability": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "path_completeness": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "terminal_correctness": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "trajectory_efficiency": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "trajectory_evidence_correctness": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "trajectory_required_recall": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "trajectory_scope_adherence": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "unknown_visibility": {
+        "count": 400,
+        "maximum": 1,
+        "mean": 1,
+        "minimum": 1,
+        "p50": 1,
+        "p95": 1,
+        "standardDeviation": 0
+      },
+      "unsupported_claim_rate": {
+        "count": 400,
+        "maximum": 0,
+        "mean": 0,
+        "minimum": 0,
+        "p50": 0,
+        "p95": 0,
+        "standardDeviation": 0
+      }
+    },
+    "passRate": 1,
+    "passed": 400
+  },
+  "usage": {
+    "browserActions": 0,
+    "documentSections": 0,
+    "elapsedMs": 0,
+    "inputTokens": 0,
+    "modelCalls": 0,
+    "outputTokens": 0,
+    "sourceLines": 0,
+    "toolCalls": 0
+  }
+}

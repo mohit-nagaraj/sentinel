@@ -121,12 +121,12 @@ graph LR
 
 **Exit gate:** Refreshing the browser preserves run progress; private artifacts use authorized access; agent activity shows structured facts rather than chain-of-thought; a reviewer can approve/reject a pending link and resume the checkpointed run.
 
-| ID      | Issue                                                                                                                                            | Depends on                                  | Status      |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- | ----------- |
-| SNT-022 | [Application onboarding, compatibility, auth, and safety configuration](./.tasks/milestone-05-control-plane/SNT-022-onboarding-control-plane.md) | SNT-003, SNT-007, SNT-012                   | done        |
-| SNT-023 | [Run APIs, worker control, cancellation, and recovery](./.tasks/milestone-05-control-plane/SNT-023-run-control-api.md)                           | SNT-006, SNT-022                            | done        |
-| SNT-024 | [Realtime specialist activity and screenshot storyboard](./.tasks/milestone-05-control-plane/SNT-024-agent-activity-ux.md)                       | SNT-006, SNT-017, SNT-023                   | done        |
-| SNT-025 | [Knowledge, coverage, evidence-path, and review UI](./.tasks/milestone-05-control-plane/SNT-025-knowledge-review-ui.md)                          | SNT-019, SNT-020, SNT-021, SNT-023, SNT-024 | done        |
+| ID      | Issue                                                                                                                                            | Depends on                                  | Status |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- | ------ |
+| SNT-022 | [Application onboarding, compatibility, auth, and safety configuration](./.tasks/milestone-05-control-plane/SNT-022-onboarding-control-plane.md) | SNT-003, SNT-007, SNT-012                   | done   |
+| SNT-023 | [Run APIs, worker control, cancellation, and recovery](./.tasks/milestone-05-control-plane/SNT-023-run-control-api.md)                           | SNT-006, SNT-022                            | done   |
+| SNT-024 | [Realtime specialist activity and screenshot storyboard](./.tasks/milestone-05-control-plane/SNT-024-agent-activity-ux.md)                       | SNT-006, SNT-017, SNT-023                   | done   |
+| SNT-025 | [Knowledge, coverage, evidence-path, and review UI](./.tasks/milestone-05-control-plane/SNT-025-knowledge-review-ui.md)                          | SNT-019, SNT-020, SNT-021, SNT-023, SNT-024 | done   |
 
 ---
 
@@ -173,7 +173,7 @@ graph LR
 
 | ID      | Issue                                                                                                                                    | Depends on                                  | Status      |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ----------- |
-| SNT-033 | [Golden dataset and stage/trajectory evaluation harness](./.tasks/milestone-08-evaluation-delivery/SNT-033-evaluation-harness.md)        | SNT-015, SNT-016, SNT-017, SNT-019, SNT-028 | not-started |
+| SNT-033 | [Golden dataset and stage/trajectory evaluation harness](./.tasks/milestone-08-evaluation-delivery/SNT-033-evaluation-harness.md)        | SNT-015, SNT-016, SNT-017, SNT-019, SNT-028 | done        |
 | SNT-034 | [Security, resilience, and regression hardening](./.tasks/milestone-08-evaluation-delivery/SNT-034-security-resilience-hardening.md)     | SNT-026, SNT-029, SNT-031, SNT-032, SNT-033 | not-started |
 | SNT-035 | [README, design document, sample output, and Loom preparation](./.tasks/milestone-08-evaluation-delivery/SNT-035-assignment-delivery.md) | SNT-029, SNT-033, SNT-034                   | not-started |
 
@@ -190,8 +190,8 @@ graph LR
 | M5 Onboarding and control plane          |      4 |      4 | done                           |
 | M6 PR blast-radius loop                  |      1 |      4 | in-progress                    |
 | M7 Verification and refresh              |      1 |      3 | in-progress                    |
-| M8 Evaluation and delivery               |      0 |      3 | not-started                    |
-| **Overall**                              | **27** | **35** | **in-progress**                |
+| M8 Evaluation and delivery               |      1 |      3 | in-progress                    |
+| **Overall**                              | **28** | **35** | **in-progress**                |
 
 ## Active front
 
