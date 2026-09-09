@@ -433,6 +433,43 @@ describe("verifyPullRequestGraph", () => {
     expect(result.result.predictedFindingIds).toEqual(affected.findingIds)
   })
 
+  it("does not claim a pass when another affected mission was not run", async () => {
+    const first = fixtureMissionPlan()
+    const second = verificationMissionPlanSchema.parse({
+      ...first,
+      mission: {
+        ...first.mission,
+        id: `mission:v1:${"2".repeat(64)}`,
+        goal: "Verify another impacted checkout checkpoint",
+      },
+      findingIds: [`sha256:${"3".repeat(64)}`],
+      scenarioIds: [`sha256:${"4".repeat(64)}`],
+    })
+    const plan = fixturePlan({ missions: [first, second] })
+    const start = targetedVerificationStartInputSchema.parse({
+      ...fixtureStartInput(plan),
+      totalBudget: first.mission.budget,
+    })
+    const test = harness()
+    const result = await test.service.start(start)
+
+    expect(result.result.status).toBe("blocked")
+    expect(
+      Object.fromEntries(
+        result.result.missionResults.map(({ missionId, status }) => [
+          missionId,
+          status,
+        ])
+      )
+    ).toEqual({
+      [first.mission.id]: "passed",
+      [second.mission.id]: "not_run",
+    })
+    expect(result.result.predictedFindingIds).toEqual(
+      [...first.findingIds, ...second.findingIds].sort()
+    )
+  })
+
   it("allows only one named, in-budget evidence-gap follow-up", async () => {
     const first = fixtureMissionPlan()
     const followupMission = verificationMissionPlanSchema.parse({

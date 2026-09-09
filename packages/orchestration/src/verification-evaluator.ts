@@ -636,6 +636,11 @@ function aggregateStatus(input: {
     return "failed"
   if (effectiveResults.some(({ status }) => status === "blocked"))
     return "blocked"
+  if (effectiveResults.some(({ status }) => status === "not_run")) {
+    return effectiveResults.every(({ status }) => status === "not_run")
+      ? "not_run"
+      : "blocked"
+  }
   if (effectiveResults.some(({ status }) => status === "behavior_changed")) {
     return "behavior_changed"
   }
