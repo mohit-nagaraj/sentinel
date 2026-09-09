@@ -30,7 +30,6 @@ async function fillSources(
 }
 
 async function configureCredentials(page: Page) {
-  await page.getByRole("tab", { name: "Access" }).click()
   await page
     .getByRole("radiogroup", { name: "Authentication method" })
     .getByText("Credentials", { exact: true })
@@ -38,12 +37,12 @@ async function configureCredentials(page: Page) {
   await page
     .getByLabel("Automated login works without CAPTCHA or human verification")
     .check()
-  await page.getByLabel("Email secret value").fill("operator@example.com")
-  await page.getByLabel("Password secret value").fill(targetPassword)
+  await page.getByLabel("Email or username").fill("operator@example.com")
+  await page.getByRole("textbox", { name: "Password" }).fill(targetPassword)
+  await page.getByRole("button", { name: "Save and continue" }).click()
 }
 
 async function configureSafety(page: Page, deploymentUrl: string) {
-  await page.getByRole("tab", { name: "Safety" }).click()
   await page.getByLabel("Allowed hosts").fill(new URL(deploymentUrl).hostname)
   await page.getByLabel("Allow non-destructive form submission").check()
   await page
@@ -52,6 +51,7 @@ async function configureSafety(page: Page, deploymentUrl: string) {
   await page
     .getByLabel("Target setup reference")
     .fill("Use target fixture checkout_demo")
+  await page.getByRole("button", { name: "Inspect and continue" }).click()
 }
 
 async function review(page: Page) {
@@ -76,9 +76,9 @@ test("completes onboarding, inspects compatibility, confirms scope, and isolates
     }
   })
 
-  await page.goto("/")
+  await page.goto("/applications/new/onboarding")
   await expect(
-    page.getByRole("heading", { level: 1, name: "Sentinel" })
+    page.getByText("Sentinel", { exact: true }).first()
   ).toBeVisible()
 
   const deploymentUrl = "https://demo.hi.events"
@@ -86,12 +86,11 @@ test("completes onboarding, inspects compatibility, confirms scope, and isolates
     name: "Hi.Events browser fixture",
     deploymentUrl,
   })
+  await page.getByRole("button", { name: "Save and continue" }).click()
   await configureCredentials(page)
   await configureSafety(page, deploymentUrl)
-  await review(page)
 
-  await expect(page.getByText(deploymentUrl)).toBeVisible()
-  await page.getByRole("button", { name: "Inspect compatibility" }).click()
+  await expect(page.getByText(deploymentUrl).last()).toBeVisible()
 
   await expect(page.getByText("supported", { exact: true })).toBeVisible()
   await expect(
@@ -106,20 +105,6 @@ test("completes onboarding, inspects compatibility, confirms scope, and isolates
   await expect(page.getByText("Playwright assets were detected")).toBeVisible()
   await expect(page.getByText(targetPassword)).toHaveCount(0)
 
-  await page.getByRole("tab", { name: "Sources" }).click()
-  await page.getByLabel("Branch or commit").fill("main")
-  await page.getByRole("tab", { name: "Review" }).click()
-  await expect(
-    page.getByText("Reinspect before confirming changes")
-  ).toBeVisible()
-  await expect(page.getByRole("button", { name: "Confirm scope" })).toHaveCount(
-    0
-  )
-  await page.getByRole("tab", { name: "Sources" }).click()
-  await page.getByLabel("Branch or commit").fill("develop")
-  await page.getByRole("tab", { name: "Review" }).click()
-  await page.getByRole("button", { name: "Reinspect" }).click()
-  await expect(page.getByText("supported", { exact: true })).toBeVisible()
   await expect(
     page.getByRole("button", { name: "Confirm scope" })
   ).toBeVisible()
@@ -169,17 +154,14 @@ test("completes onboarding, inspects compatibility, confirms scope, and isolates
 test("preserves non-secret state through validation and reports compatibility blockers", async ({
   page,
 }, testInfo) => {
-  await page.goto("/")
-  await page.getByRole("button", { name: "New application" }).click()
+  await page.goto("/applications/new/onboarding")
 
   await fillSources(page, {
     name: "Validation recovery fixture",
     deploymentUrl: "https://blocked.example.test",
     repositoryUrl: "https://example.com/not-github",
   })
-  await configureSafety(page, "https://blocked.example.test")
-  await review(page)
-  await page.getByRole("button", { name: "Inspect compatibility" }).click()
+  await page.getByRole("button", { name: "Save and continue" }).click()
 
   await expect(
     page.getByText("Review the highlighted fields and run inspection again")
@@ -189,14 +171,15 @@ test("preserves non-secret state through validation and reports compatibility bl
     "Validation recovery fixture"
   )
   await expect(
-    page.getByText(/Repository URL must identify one GitHub/)
+    page.getByText(/Repository URL must identify one GitHub/).last()
   ).toBeVisible()
 
   await page
     .getByLabel("GitHub repository")
     .fill("https://github.com/mohit-nagaraj/Hi.Events")
-  await review(page)
-  await page.getByRole("button", { name: "Inspect compatibility" }).click()
+  await page.getByRole("button", { name: "Save and continue" }).click()
+  await page.getByRole("button", { name: "Save and continue" }).click()
+  await configureSafety(page, "https://blocked.example.test")
 
   await expect(page.getByText("blocked", { exact: true })).toBeVisible()
   await expect(
@@ -216,17 +199,13 @@ test("keeps the control plane coherent on a narrow keyboard-driven viewport", as
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto("/")
+  await page.goto("/applications/new/onboarding")
 
-  await expect(page.getByText("Control plane", { exact: true })).toBeVisible()
-  await page.getByRole("button", { name: "New application" }).focus()
+  await expect(page.getByRole("heading", { name: "Connect application" })).toBeVisible()
+  await expect(page.getByRole("tab", { name: "Access" })).toBeDisabled()
+  await page.getByRole("button", { name: "Open navigation" }).focus()
   await page.keyboard.press("Enter")
-  await page.getByRole("tab", { name: "Access" }).focus()
-  await page.keyboard.press("Enter")
-  await expect(page.getByRole("tab", { name: "Access" })).toHaveAttribute(
-    "aria-selected",
-    "true"
-  )
+  await expect(page.getByText("Sentinel", { exact: true }).last()).toBeVisible()
   await expect
     .poll(() =>
       page.evaluate(

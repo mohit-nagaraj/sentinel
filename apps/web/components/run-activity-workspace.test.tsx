@@ -178,7 +178,7 @@ describe("run activity workspace", () => {
     )
 
     expect(
-      screen.getByRole("heading", { level: 1, name: "Sentinel" })
+      screen.getByRole("heading", { level: 2, name: "Specialist activity" })
     ).toBeDefined()
     expect(
       screen.getAllByText("Documentation contract mapped").length

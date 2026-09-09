@@ -14,8 +14,43 @@ test("drills through a cited path and resumes a review interrupt once", async ({
 }, testInfo) => {
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1280, height: 800 })
-  await page.goto(`/knowledge/${applicationId}`)
+  await page.goto(`/applications/${applicationId}/knowledge`)
 
+  await page.getByRole("tab", { name: "Graph" }).click()
+  await expect(
+    page.getByRole("heading", { name: "Complete ticket checkout" })
+  ).toBeVisible({ timeout: 15_000 })
+  const graphCanvas = page.locator("canvas").last()
+  await expect(graphCanvas).toBeVisible()
+  await expect
+    .poll(
+      () =>
+        graphCanvas.evaluate((canvas: HTMLCanvasElement) => {
+          const context = canvas.getContext("2d")
+          if (context === null) return 0
+          const pixels = context.getImageData(
+            0,
+            0,
+            canvas.width,
+            canvas.height
+          ).data
+          let colored = 0
+          for (let index = 0; index < pixels.length; index += 4) {
+            if (
+              pixels[index + 3] > 0 &&
+              (pixels[index] < 235 ||
+                pixels[index + 1] < 235 ||
+                pixels[index + 2] < 235)
+            ) {
+              colored += 1
+            }
+          }
+          return colored
+        }),
+      { timeout: 15_000 }
+    )
+    .toBeGreaterThan(100)
+  await page.getByText("Evidence path details").click()
   await expect(
     page.getByRole("heading", { name: "Hi.Events checkout" })
   ).toBeVisible()
@@ -37,6 +72,7 @@ test("drills through a cited path and resumes a review interrupt once", async ({
   await expect(excerpt).toContainText("Buyers provide attendee details")
   await page.getByRole("button", { name: "Close excerpt" }).click()
 
+  await page.getByRole("tab", { name: "Reviews" }).click()
   const linkReview = page.getByRole("button", {
     name: /Requirement to checkout workflow/,
   })

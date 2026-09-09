@@ -5,6 +5,9 @@ import {
   evidencePathSchema,
   knowledgeCountsSchema,
   knowledgeCursorSchema,
+  knowledgeGraphNeighborhoodSchema,
+  knowledgeGraphNodeSchema,
+  knowledgeGraphSearchResultSchema,
   knowledgePageLimitSchema,
   linkReviewItemSchema,
   knowledgeCoverageStatusSchema,
@@ -13,6 +16,9 @@ import {
   type CoverageItem,
   type EvidencePath,
   type KnowledgeCounts,
+  type KnowledgeGraphNeighborhood,
+  type KnowledgeGraphNode,
+  type KnowledgeGraphSearchResult,
   type LinkReviewItem,
   type WorkflowCoverageItem,
 } from "@sentinel/contracts"
@@ -34,6 +40,23 @@ const labelCountKeys = {
   APIEndpoint: "apiEndpoints",
   CodeSymbol: "codeSymbols",
 } as const
+
+const graphNodeProjection = `{
+  id: n.stable_key,
+  kind: n.entity_kind,
+  label: coalesce(n.statement, n.name, n.title, n.accessible_name,
+    n.qualified_name, n.normalized_name, n.normalized_route,
+    n.path_pattern, n.path, n.normalized_path, n.stable_key),
+  detail: coalesce(n.scope_summary, n.description, n.normalized_route,
+    n.path_pattern, n.path),
+  tier: coalesce(n.evidence_tier, 'C'),
+  reviewState: coalesce(n.review_state, 'not_required'),
+  stale: coalesce(n.stale, false)
+}`
+
+function graphNode(value: unknown): KnowledgeGraphNode {
+  return knowledgeGraphNodeSchema.parse(omitNullish(toNativeGraphValue(value)))
+}
 
 function nativeRecordValue(
   transactionRecord: { get(key: string): unknown },
@@ -292,6 +315,163 @@ export class KnowledgeGraphQueryRepository {
           workflowCoverageItemSchema.parse(nativeRecordValue(record, "item"))
         )
         return pageResult(items, limit, "workflowId")
+      }
+    )
+  }
+
+  async search(input: {
+    readonly applicationId: string
+    readonly graphRevision: number
+    readonly query: unknown
+    readonly kinds?: unknown
+    readonly limit?: unknown
+  }): Promise<KnowledgeGraphSearchResult> {
+    const applicationId = applicationIdSchema.parse(input.applicationId)
+    const graphRevision = graphRevisionSchema.parse(input.graphRevision)
+    const query = z.string().trim().min(2).max(200).parse(input.query)
+    const kinds = z.array(z.string()).max(17).optional().parse(input.kinds)
+    const limit = z
+      .number()
+      .int()
+      .positive()
+      .max(50)
+      .default(20)
+      .parse(input.limit)
+    return scopedRead(
+      this.database,
+      "knowledge_graph_search",
+      applicationId,
+      graphRevision,
+      async (transaction) => {
+        const result = await transaction.run(
+          `MATCH (n {application_id: $applicationId, graph_revision: $graphRevision})
+           WHERE ($kinds IS NULL OR n.entity_kind IN $kinds)
+             AND toLower(coalesce(n.statement, n.name, n.title,
+               n.accessible_name, n.qualified_name, n.normalized_name,
+               n.normalized_route, n.path_pattern, n.path,
+               n.normalized_path, n.stable_key)) CONTAINS toLower($query)
+           RETURN ${graphNodeProjection} AS node
+           ORDER BY node.label, node.id
+           LIMIT $limit`,
+          { applicationId, graphRevision, query, kinds: kinds ?? null, limit }
+        )
+        return knowledgeGraphSearchResultSchema.parse({
+          schemaVersion: 1,
+          items: result.records.map((record) => graphNode(record.get("node"))),
+        })
+      }
+    )
+  }
+
+  async neighborhood(input: {
+    readonly applicationId: string
+    readonly graphRevision: number
+    readonly seedId?: unknown
+    readonly depth?: unknown
+    readonly nodeLimit?: unknown
+    readonly edgeLimit?: unknown
+    readonly kinds?: unknown
+    readonly relationships?: unknown
+  }): Promise<KnowledgeGraphNeighborhood | null> {
+    const applicationId = applicationIdSchema.parse(input.applicationId)
+    const graphRevision = graphRevisionSchema.parse(input.graphRevision)
+    const seedId =
+      input.seedId === undefined
+        ? null
+        : stableEntityIdSchema.parse(input.seedId)
+    const depth = z.number().int().min(1).max(3).default(2).parse(input.depth)
+    const nodeLimit = z
+      .number()
+      .int()
+      .positive()
+      .max(200)
+      .default(100)
+      .parse(input.nodeLimit)
+    const edgeLimit = z
+      .number()
+      .int()
+      .positive()
+      .max(400)
+      .default(200)
+      .parse(input.edgeLimit)
+    const kinds = z.array(z.string()).max(17).optional().parse(input.kinds)
+    const relationships = z
+      .array(z.string())
+      .max(30)
+      .optional()
+      .parse(input.relationships)
+    return scopedRead(
+      this.database,
+      "knowledge_graph_neighborhood",
+      applicationId,
+      graphRevision,
+      async (transaction) => {
+        const nodesResult = await transaction.run(
+          `MATCH (seed {application_id: $applicationId, graph_revision: $graphRevision})
+           WHERE ($seedId IS NULL AND seed.entity_kind = 'application') OR seed.stable_key = $seedId
+           WITH seed ORDER BY seed.stable_key LIMIT 1
+           MATCH path = (seed)-[*0..${depth}]-(n)
+           WHERE ($kinds IS NULL OR n = seed OR n.entity_kind IN $kinds)
+             AND all(node IN nodes(path) WHERE node.application_id = $applicationId AND node.graph_revision = $graphRevision)
+             AND all(link IN relationships(path) WHERE link.application_id = $applicationId AND link.graph_revision = $graphRevision AND ($relationships IS NULL OR type(link) IN $relationships))
+           WITH seed, n, min(length(path)) AS distance
+           ORDER BY distance, n.stable_key
+           LIMIT $limit
+           RETURN seed.stable_key AS seedId, collect(${graphNodeProjection}) AS nodes`,
+          {
+            applicationId,
+            graphRevision,
+            seedId,
+            kinds: kinds ?? null,
+            relationships: relationships ?? null,
+            limit: nodeLimit + 1,
+          }
+        )
+        const row = nodesResult.records[0]
+        if (row === undefined) return null
+        const parsedNodes = z
+          .array(z.unknown())
+          .parse(nativeRecordValue(row, "nodes"))
+          .map(graphNode)
+        const truncated = parsedNodes.length > nodeLimit
+        const nodes = parsedNodes.slice(0, nodeLimit)
+        const nodeIds = nodes.map((node) => node.id)
+        const edgesResult = await transaction.run(
+          `MATCH (from)-[r]-(to)
+           WHERE from.application_id = $applicationId AND from.graph_revision = $graphRevision
+             AND to.application_id = $applicationId AND to.graph_revision = $graphRevision
+             AND r.application_id = $applicationId AND r.graph_revision = $graphRevision
+             AND from.stable_key IN $nodeIds AND to.stable_key IN $nodeIds
+             AND ($relationships IS NULL OR type(r) IN $relationships)
+           RETURN DISTINCT {
+             id: r.stable_key,
+             fromId: startNode(r).stable_key,
+             toId: endNode(r).stable_key,
+             relationship: toLower(type(r)),
+             tier: coalesce(r.evidence_tier, 'C'),
+             reviewState: coalesce(r.review_state, 'not_required'),
+             stale: coalesce(r.stale, false)
+           } AS relationship
+           ORDER BY relationship.id
+           LIMIT $limit`,
+          {
+            applicationId,
+            graphRevision,
+            nodeIds,
+            relationships: relationships ?? null,
+            limit: edgeLimit + 1,
+          }
+        )
+        const edgeValues = edgesResult.records.map((record) =>
+          omitNullish(toNativeGraphValue(record.get("relationship")))
+        )
+        return knowledgeGraphNeighborhoodSchema.parse({
+          schemaVersion: 1,
+          seedId: String(nativeRecordValue(row, "seedId")),
+          nodes,
+          relationships: edgeValues.slice(0, edgeLimit),
+          truncated: truncated || edgeValues.length > edgeLimit,
+        })
       }
     )
   }

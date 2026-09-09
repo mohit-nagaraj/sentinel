@@ -1,5 +1,7 @@
 import {
   databaseApplicationIdSchema,
+  entityKindSchema,
+  evidenceRelationshipSchema,
   evidenceIdSchema,
   knowledgeCursorSchema,
   knowledgePageLimitSchema,
@@ -27,6 +29,8 @@ type KnowledgeApi = Pick<
   | "artifactExcerpt"
   | "coverage"
   | "evidencePath"
+  | "graphNeighborhood"
+  | "graphSearch"
   | "overview"
   | "reviewInterrupt"
   | "reviewLink"
@@ -294,6 +298,52 @@ export async function handleKnowledgeRequest(
           limit: knowledgePageLimitSchema.parse(
             url.searchParams.get("limit") ?? undefined
           ),
+        })
+      )
+    }
+    if (
+      method === "GET" &&
+      path.length === 4 &&
+      path[2] === "graph" &&
+      path[3] === "search"
+    ) {
+      const query = url.searchParams.get("query") ?? ""
+      const kinds = url.searchParams
+        .getAll("kind")
+        .map((kind) => entityKindSchema.parse(kind))
+      return response(
+        await service.graphSearch(applicationId, {
+          query,
+          ...(kinds.length === 0 ? {} : { kinds }),
+          limit: Number(url.searchParams.get("limit") ?? 20),
+        })
+      )
+    }
+    if (
+      method === "GET" &&
+      path.length === 4 &&
+      path[2] === "graph" &&
+      path[3] === "neighborhood"
+    ) {
+      const seedId = url.searchParams.get("seedId")
+      const kinds = url.searchParams
+        .getAll("kind")
+        .map((kind) => entityKindSchema.parse(kind))
+      const relationships = url.searchParams
+        .getAll("relationship")
+        .map((relationship) =>
+          evidenceRelationshipSchema.parse(relationship.toUpperCase())
+        )
+      return response(
+        await service.graphNeighborhood(applicationId, {
+          ...(seedId === null
+            ? {}
+            : { seedId: stableEntityIdSchema.parse(seedId) }),
+          depth: Number(url.searchParams.get("depth") ?? 2),
+          nodeLimit: Number(url.searchParams.get("nodeLimit") ?? 100),
+          edgeLimit: Number(url.searchParams.get("edgeLimit") ?? 200),
+          ...(kinds.length === 0 ? {} : { kinds }),
+          ...(relationships.length === 0 ? {} : { relationships }),
         })
       )
     }

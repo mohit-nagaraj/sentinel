@@ -6,6 +6,8 @@ import {
   evidenceIdSchema,
   evidencePathSchema,
   knowledgeOverviewSchema,
+  knowledgeGraphNeighborhoodSchema,
+  knowledgeGraphSearchResultSchema,
   knowledgePageLimitSchema,
   knowledgeReviewDecisionResultSchema,
   knowledgeReviewDecisionSchema,
@@ -17,6 +19,8 @@ import {
   type CoveragePage,
   type EvidencePath,
   type KnowledgeCounts,
+  type KnowledgeGraphNeighborhood,
+  type KnowledgeGraphSearchResult,
   type KnowledgeReviewDecision,
   type KnowledgeReviewPage,
   type LinkReviewItem,
@@ -121,6 +125,23 @@ export interface KnowledgeGraphStore {
     readonly graphRevision: number
     readonly linkId: string
   }): Promise<LinkReviewItem | null>
+  search(input: {
+    readonly applicationId: string
+    readonly graphRevision: number
+    readonly query: unknown
+    readonly kinds?: unknown
+    readonly limit?: unknown
+  }): Promise<KnowledgeGraphSearchResult>
+  neighborhood(input: {
+    readonly applicationId: string
+    readonly graphRevision: number
+    readonly seedId?: unknown
+    readonly depth?: unknown
+    readonly nodeLimit?: unknown
+    readonly edgeLimit?: unknown
+    readonly kinds?: unknown
+    readonly relationships?: unknown
+  }): Promise<KnowledgeGraphNeighborhood | null>
 }
 
 export interface KnowledgeInterruptService {
@@ -337,6 +358,51 @@ export class KnowledgeService {
         ...input,
       })),
     })
+  }
+
+  async graphSearch(
+    applicationIdInput: string,
+    input: {
+      readonly query: unknown
+      readonly kinds?: unknown
+      readonly limit?: unknown
+    }
+  ): Promise<KnowledgeGraphSearchResult> {
+    const application = await this.application(applicationIdInput)
+    if (application.graphRevision === 0) {
+      return knowledgeGraphSearchResultSchema.parse({
+        schemaVersion: 1,
+        items: [],
+      })
+    }
+    return this.graph.search({
+      applicationId: application.stableKey,
+      graphRevision: application.graphRevision,
+      ...input,
+    })
+  }
+
+  async graphNeighborhood(
+    applicationIdInput: string,
+    input: {
+      readonly seedId?: unknown
+      readonly depth?: unknown
+      readonly nodeLimit?: unknown
+      readonly edgeLimit?: unknown
+      readonly kinds?: unknown
+      readonly relationships?: unknown
+    }
+  ): Promise<KnowledgeGraphNeighborhood> {
+    const application = await this.application(applicationIdInput)
+    if (application.graphRevision === 0)
+      throw new KnowledgeNotFoundError("path")
+    const neighborhood = await this.graph.neighborhood({
+      applicationId: application.stableKey,
+      graphRevision: application.graphRevision,
+      ...input,
+    })
+    if (neighborhood === null) throw new KnowledgeNotFoundError("path")
+    return knowledgeGraphNeighborhoodSchema.parse(neighborhood)
   }
 
   async evidencePath(

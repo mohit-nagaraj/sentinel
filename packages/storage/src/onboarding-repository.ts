@@ -6,11 +6,13 @@ import {
   createOnboardingInputFingerprint,
   createStableKey,
   onboardingConfigurationSchema,
+  onboardingCompletedStepSchema,
   publicOnboardingApplicationSchema,
   publicHttpUrlSchema,
   shortTextSchema,
   type CompatibilityReport,
   type OnboardingConfiguration,
+  type OnboardingCompletedStep,
   type PublicOnboardingApplication,
 } from "@sentinel/contracts"
 import { z } from "zod"
@@ -19,6 +21,22 @@ import type { DatabaseClient, DatabaseExecutor } from "./database.ts"
 
 const operatorIdSchema = z.uuid()
 const databaseIdSchema = z.uuid()
+const onboardingStepOrder: readonly OnboardingCompletedStep[] = [
+  "none",
+  "sources",
+  "access",
+  "safety",
+  "review",
+]
+
+function furthestCompletedStep(
+  left: OnboardingCompletedStep,
+  right: OnboardingCompletedStep
+): OnboardingCompletedStep {
+  return onboardingStepOrder.indexOf(left) >= onboardingStepOrder.indexOf(right)
+    ? left
+    : right
+}
 
 const onboardingRowSchema = z.object({
   id: databaseIdSchema,
@@ -38,6 +56,7 @@ const onboardingRowSchema = z.object({
   inspected_at: z.coerce.date().nullable(),
   confirmed_at: z.coerce.date().nullable(),
   updated_at: z.coerce.date(),
+  completed_through: onboardingCompletedStepSchema.default("safety"),
 })
 type OnboardingRow = z.infer<typeof onboardingRowSchema> &
   Record<string, unknown>
@@ -60,6 +79,7 @@ export interface OnboardingRecord {
   readonly inspectedAt: Date | null
   readonly confirmedAt: Date | null
   readonly updatedAt: Date
+  readonly completedThrough: OnboardingCompletedStep
 }
 
 export interface SaveOnboardingDraftResult {
@@ -84,7 +104,8 @@ const selectColumns = `
   onboarding.knowledge_stale,
   onboarding.inspected_at,
   onboarding.confirmed_at,
-  onboarding.updated_at
+  onboarding.updated_at,
+  onboarding.completed_through
 `
 
 function mapRow(row: OnboardingRow): OnboardingRecord {
@@ -120,6 +141,7 @@ function mapRow(row: OnboardingRow): OnboardingRecord {
     inspectedAt: parsed.inspected_at,
     confirmedAt: parsed.confirmed_at,
     updatedAt: parsed.updated_at,
+    completedThrough: parsed.completed_through,
   }
 }
 
@@ -316,6 +338,7 @@ export function toPublicOnboardingApplication(
     confirmed:
       record.confirmationFingerprint !== null &&
       record.confirmationFingerprint === record.inputFingerprint,
+    completedThrough: record.completedThrough,
     updatedAt: record.updatedAt.toISOString(),
   })
 }
@@ -375,12 +398,16 @@ export class OnboardingRepository {
     readonly operatorId: string
     readonly stableKey: string
     readonly configuration: OnboardingConfiguration
+    readonly completedThrough?: OnboardingCompletedStep
   }): Promise<SaveOnboardingDraftResult> {
     const operatorId = operatorIdSchema.parse(input.operatorId)
     const stableKey = applicationIdSchema.parse(input.stableKey)
     const configuration = storedConfiguration(input.configuration)
     const inputFingerprint = createOnboardingInputFingerprint(configuration)
     const recordId = input.configuration.recordId
+    const completedThrough = onboardingCompletedStepSchema.parse(
+      input.completedThrough ?? "safety"
+    )
 
     return this.database.transaction(async (transaction) => {
       if (recordId === undefined) {
@@ -390,7 +417,7 @@ export class OnboardingRepository {
         }>(
           `insert into sentinel.applications (
              stable_key, name, deployment_url, status
-           ) values ($1, $2, $3, 'inspecting')
+           ) values ($1, $2, $3, $4)
            on conflict (stable_key) do update
            set name = excluded.name,
                deployment_url = excluded.deployment_url,
@@ -398,12 +425,17 @@ export class OnboardingRepository {
                  when sentinel.applications.graph_revision > 0
                    or sentinel.applications.indexed_commit_sha is not null
                  then 'stale'
-                 else 'inspecting'
+                 else $4
                end
            returning id,
              (graph_revision > 0 or indexed_commit_sha is not null)
                as knowledge_stale`,
-          [stableKey, configuration.name, configuration.deploymentUrl]
+          [
+            stableKey,
+            configuration.name,
+            configuration.deploymentUrl,
+            completedThrough === "safety" ? "inspecting" : "not_configured",
+          ]
         )
         const application = applicationRows[0]
         const applicationId = application?.id
@@ -413,14 +445,15 @@ export class OnboardingRepository {
         await transaction.query(
           `insert into sentinel.onboarding_configurations (
              application_id, operator_id, configuration, input_fingerprint,
-             knowledge_stale
-           ) values ($1::uuid, $2::uuid, $3::jsonb, $4, $5)`,
+             knowledge_stale, completed_through
+           ) values ($1::uuid, $2::uuid, $3::jsonb, $4, $5, $6)`,
           [
             applicationId,
             operatorId,
             JSON.stringify(configuration),
             inputFingerprint,
             application?.knowledge_stale ?? false,
+            completedThrough,
           ]
         )
         await syncSources(transaction, applicationId, stableKey, configuration)
@@ -442,6 +475,10 @@ export class OnboardingRepository {
         true
       )
       if (current === null) throw new Error("Application not found")
+      const persistedCompletedThrough = furthestCompletedStep(
+        current.completedThrough,
+        completedThrough
+      )
       const relevantChanged = current.inputFingerprint !== inputFingerprint
       const hasCurrentKnowledge =
         current.graphRevision > 0 || current.indexedCommitSha !== null
@@ -450,7 +487,10 @@ export class OnboardingRepository {
       const status = relevantChanged
         ? knowledgeStale
           ? "stale"
-          : "inspecting"
+          : onboardingStepOrder.indexOf(persistedCompletedThrough) >=
+              onboardingStepOrder.indexOf("safety")
+            ? "inspecting"
+            : "not_configured"
         : current.status
 
       await transaction.query(
@@ -478,7 +518,8 @@ export class OnboardingRepository {
              compatibility_report = case when $6 then null else compatibility_report end,
              inspected_at = case when $6 then null else inspected_at end,
              confirmation_fingerprint = case when $6 then null else confirmation_fingerprint end,
-             confirmed_at = case when $6 then null else confirmed_at end
+             confirmed_at = case when $6 then null else confirmed_at end,
+             completed_through = $7
          where application_id = $1::uuid and operator_id = $2::uuid`,
         [
           applicationId,
@@ -487,6 +528,7 @@ export class OnboardingRepository {
           inputFingerprint,
           knowledgeStale,
           relevantChanged,
+          persistedCompletedThrough,
         ]
       )
       if (relevantChanged) {
@@ -618,7 +660,8 @@ export class OnboardingRepository {
       const rows = await transaction.query<{ application_id: string }>(
         `update sentinel.onboarding_configurations
          set confirmation_fingerprint = $3,
-             confirmed_at = now()
+             confirmed_at = now(),
+             completed_through = 'review'
          where application_id = $1::uuid
            and operator_id = $2::uuid
            and input_fingerprint = $3

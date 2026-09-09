@@ -18,7 +18,6 @@ import {
   ShieldAlert,
   XCircle,
 } from "lucide-react"
-import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
 
 import {
@@ -39,9 +38,24 @@ import {
 } from "@sentinel/contracts"
 
 import { Button } from "@/components/ui/button"
+import { KnowledgeGraphExplorer } from "@/components/knowledge-graph-explorer"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { Textarea } from "@/components/ui/textarea"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 
 type View = "requirements" | "workflows"
+type WorkspaceView = "coverage" | "graph" | "reviews"
 type Busy = "coverage" | "path" | "reviews" | "decision" | "excerpt" | null
 
 const coverageLabels: Record<CoverageItem["status"], string> = {
@@ -251,33 +265,37 @@ function CoverageTable({
   }
   return (
     <div className="grid gap-3">
-      <div className="overflow-x-auto border-y border-border">
-        <table className="w-full min-w-[46rem] border-collapse text-left text-xs">
-          <thead className="bg-muted/40 text-muted-foreground">
-            <tr>
-              <th scope="col" className="px-3 py-2 font-medium">
+      <div className="border-y border-border">
+        <Table className="min-w-[46rem] border-collapse text-left text-xs">
+          <TableHeader className="bg-muted/40 text-muted-foreground">
+            <TableRow>
+              <TableHead scope="col" className="h-auto px-3 py-2 font-medium">
                 Requirement
-              </th>
-              <th scope="col" className="px-3 py-2 font-medium">
+              </TableHead>
+              <TableHead scope="col" className="h-auto px-3 py-2 font-medium">
                 Coverage
-              </th>
-              <th scope="col" className="px-3 py-2 font-medium">
+              </TableHead>
+              <TableHead scope="col" className="h-auto px-3 py-2 font-medium">
                 Evidence
-              </th>
-              <th scope="col" className="px-3 py-2 font-medium">
+              </TableHead>
+              <TableHead scope="col" className="h-auto px-3 py-2 font-medium">
                 Path
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody className="divide-y divide-border">
             {page.items.map((item) => (
-              <tr
+              <TableRow
                 key={item.requirementId}
-                className={item.stale ? "bg-amber-500/5" : undefined}
+                className={
+                  item.stale
+                    ? "bg-amber-500/5 hover:bg-amber-500/5"
+                    : "hover:bg-transparent"
+                }
               >
-                <th
+                <TableHead
                   scope="row"
-                  className="max-w-md px-3 py-3 align-top font-normal"
+                  className="h-auto max-w-md px-3 py-3 align-top font-normal whitespace-normal"
                 >
                   <p className="text-sm font-medium">{item.statement}</p>
                   <p className="mt-1 text-muted-foreground">
@@ -291,8 +309,8 @@ function CoverageTable({
                       Scope: {item.scope}
                     </p>
                   )}
-                </th>
-                <td className="px-3 py-3 align-top">
+                </TableHead>
+                <TableCell className="px-3 py-3 align-top whitespace-normal">
                   <span
                     className={cn(
                       "inline-flex rounded-sm border px-2 py-1 font-medium",
@@ -306,8 +324,8 @@ function CoverageTable({
                       Stale assessment
                     </p>
                   ) : null}
-                </td>
-                <td className="px-3 py-3 align-top">
+                </TableCell>
+                <TableCell className="px-3 py-3 align-top whitespace-normal">
                   <div className="flex flex-wrap gap-1">
                     {item.evidenceTiers.length === 0 ? (
                       <span className="text-muted-foreground">
@@ -329,8 +347,8 @@ function CoverageTable({
                     {item.workflowCount} linked workflow
                     {item.workflowCount === 1 ? "" : "s"}
                   </p>
-                </td>
-                <td className="px-3 py-3 align-top">
+                </TableCell>
+                <TableCell className="px-3 py-3 align-top whitespace-normal">
                   <Button
                     type="button"
                     variant="outline"
@@ -349,11 +367,11 @@ function CoverageTable({
                     )}
                     Trace
                   </Button>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
       {page.nextCursor === undefined ? null : (
         <Button
@@ -387,35 +405,42 @@ function WorkflowTable({ page }: { readonly page: WorkflowCoveragePage }) {
     )
   }
   return (
-    <div className="overflow-x-auto border-y border-border">
-      <table className="w-full min-w-[38rem] border-collapse text-left text-xs">
-        <thead className="bg-muted/40 text-muted-foreground">
-          <tr>
-            <th scope="col" className="px-3 py-2 font-medium">
+    <div className="border-y border-border">
+      <Table className="min-w-[38rem] border-collapse text-left text-xs">
+        <TableHeader className="bg-muted/40 text-muted-foreground">
+          <TableRow>
+            <TableHead scope="col" className="h-auto px-3 py-2 font-medium">
               Workflow
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
+            </TableHead>
+            <TableHead scope="col" className="h-auto px-3 py-2 font-medium">
               Status
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
+            </TableHead>
+            <TableHead scope="col" className="h-auto px-3 py-2 font-medium">
               Requirements
-            </th>
-            <th scope="col" className="px-3 py-2 font-medium">
+            </TableHead>
+            <TableHead scope="col" className="h-auto px-3 py-2 font-medium">
               Observed surface
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody className="divide-y divide-border">
           {page.items.map((item) => (
-            <tr
+            <TableRow
               key={item.workflowId}
-              className={item.stale ? "bg-amber-500/5" : undefined}
+              className={
+                item.stale
+                  ? "bg-amber-500/5 hover:bg-amber-500/5"
+                  : "hover:bg-transparent"
+              }
             >
-              <th scope="row" className="px-3 py-3 font-normal">
+              <TableHead
+                scope="row"
+                className="h-auto px-3 py-3 font-normal whitespace-normal"
+              >
                 <p className="text-sm font-medium">{item.name}</p>
                 <p className="mt-1 text-muted-foreground">{item.actor}</p>
-              </th>
-              <td className="px-3 py-3">
+              </TableHead>
+              <TableCell className="px-3 py-3 whitespace-normal">
                 <span
                   className={cn(
                     "rounded-sm border px-2 py-1 font-medium",
@@ -424,15 +449,17 @@ function WorkflowTable({ page }: { readonly page: WorkflowCoveragePage }) {
                 >
                   {item.stale ? "Stale" : humanize(item.status)}
                 </span>
-              </td>
-              <td className="px-3 py-3 font-mono">{item.requirementCount}</td>
-              <td className="px-3 py-3 text-muted-foreground">
+              </TableCell>
+              <TableCell className="px-3 py-3 font-mono whitespace-normal">
+                {item.requirementCount}
+              </TableCell>
+              <TableCell className="px-3 py-3 whitespace-normal text-muted-foreground">
                 {item.stepCount} steps / {item.screenCount} screens
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   )
 }
@@ -740,12 +767,13 @@ function ReviewPanel({
         <div className="grid divide-y divide-border">
           <div className="grid max-h-64 overflow-y-auto">
             {page.items.map((item) => (
-              <button
+              <Button
                 key={item.id}
                 type="button"
+                variant="ghost"
                 aria-pressed={item.id === selected.id}
                 className={cn(
-                  "min-h-14 border-b border-border px-4 py-3 text-left text-xs last:border-b-0 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary",
+                  "h-auto min-h-14 justify-start rounded-none border-b border-border px-4 py-3 text-left text-xs whitespace-normal last:border-b-0 focus-visible:ring-inset",
                   item.id === selected.id ? "bg-muted" : "hover:bg-muted/50"
                 )}
                 onClick={() => {
@@ -775,7 +803,7 @@ function ReviewPanel({
                     ? `Tier ${item.tier} / ${humanize(item.relationship)}`
                     : `Run ${shortId(item.runId)}`}
                 </span>
-              </button>
+              </Button>
             ))}
           </div>
           <div className="grid gap-4 p-4">
@@ -863,13 +891,13 @@ function ReviewPanel({
             ) : (
               <>
                 <div className="grid gap-1.5">
-                  <label
+                  <Label
                     htmlFor="review-reason"
-                    className="text-xs font-medium"
+                    className="text-xs leading-normal font-medium"
                   >
                     Decision reason
-                  </label>
-                  <textarea
+                  </Label>
+                  <Textarea
                     id="review-reason"
                     rows={4}
                     maxLength={4096}
@@ -951,6 +979,7 @@ export function KnowledgeWorkspace({
   readonly initialPath: EvidencePath | null
 }) {
   const [view, setView] = useState<View>("requirements")
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("coverage")
   const [coverage, setCoverage] = useState(initialCoverage)
   const [workflows, setWorkflows] = useState(initialWorkflows)
   const [reviews, setReviews] = useState(initialReviews)
@@ -1120,44 +1149,7 @@ export function KnowledgeWorkspace({
   }
 
   return (
-    <main className="min-h-svh bg-background text-foreground">
-      <header className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-2 sm:px-6">
-        <div className="flex items-center gap-3">
-          <span className="grid size-7 place-items-center rounded-md bg-foreground font-mono text-xs font-semibold text-background">
-            S
-          </span>
-          <div>
-            <h1 className="text-sm font-semibold">Sentinel</h1>
-            <p className="font-mono text-[0.6875rem] text-muted-foreground">
-              Knowledge control
-            </p>
-          </div>
-        </div>
-        <nav
-          aria-label="Control plane"
-          className="flex items-center gap-1 text-xs"
-        >
-          <Link
-            href="/"
-            className="min-h-11 rounded-md px-3 leading-[2.75rem] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
-          >
-            Applications
-          </Link>
-          <Link
-            href="/knowledge"
-            aria-current="page"
-            className="min-h-11 rounded-md bg-muted px-3 leading-[2.75rem] font-medium"
-          >
-            Knowledge
-          </Link>
-          <Link
-            href="/runs"
-            className="min-h-11 rounded-md px-3 leading-[2.75rem] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
-          >
-            Activity
-          </Link>
-        </nav>
-      </header>
+    <main className="min-h-full bg-background text-foreground">
       <SummaryBand overview={initialOverview} />
       {error.length === 0 ? null : (
         <div
@@ -1171,157 +1163,195 @@ export function KnowledgeWorkspace({
       <p className="sr-only" aria-live="polite" aria-atomic="true">
         {message}
       </p>
-      <div className="grid min-w-0 xl:grid-cols-[minmax(0,1fr)_23rem]">
+      <div className="border-b border-border px-4 py-3 sm:px-6">
+        <Tabs
+          value={workspaceView}
+          onValueChange={(value) => setWorkspaceView(value as WorkspaceView)}
+        >
+          <TabsList aria-label="Knowledge views">
+            <TabsTrigger value="coverage">Coverage</TabsTrigger>
+            <TabsTrigger value="graph">Graph</TabsTrigger>
+            <TabsTrigger value="reviews">Reviews</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+      {workspaceView === "coverage" ? (
         <div className="min-w-0">
-          <section aria-labelledby="coverage-heading" className="p-4 sm:p-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <BookOpenCheck
-                    className="size-4 text-primary"
-                    aria-hidden="true"
-                  />
-                  <h3 id="coverage-heading" className="text-sm font-semibold">
-                    Coverage
-                  </h3>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Missing links are unknown until a bounded assessment records
-                  otherwise. {unresolvedCount} loaded requirements need
-                  attention.
-                </p>
-              </div>
-              <div
-                className="flex rounded-md border border-border p-0.5"
-                role="group"
-                aria-label="Coverage view"
-              >
-                <button
-                  type="button"
-                  aria-pressed={view === "requirements"}
-                  className={cn(
-                    "min-h-10 rounded-sm px-3 text-xs font-medium",
-                    view === "requirements"
-                      ? "bg-muted"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                  onClick={() => setView("requirements")}
-                >
-                  Requirements
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={view === "workflows"}
-                  className={cn(
-                    "min-h-10 rounded-sm px-3 text-xs font-medium",
-                    view === "workflows"
-                      ? "bg-muted"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                  onClick={() => setView("workflows")}
-                >
-                  Workflows
-                </button>
-              </div>
-            </div>
-            {view === "requirements" ? (
-              <>
-                <form
-                  className="mt-4 grid gap-2 sm:grid-cols-[minmax(12rem,1fr)_12rem_auto]"
-                  onSubmit={(event) => {
-                    event.preventDefault()
-                    void loadCoverage()
-                  }}
-                >
-                  <label className="relative">
-                    <span className="sr-only">Search requirements</span>
-                    <Search
-                      className="pointer-events-none absolute top-3.5 left-3 size-4 text-muted-foreground"
+          <div className="min-w-0">
+            <section aria-labelledby="coverage-heading" className="p-4 sm:p-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <BookOpenCheck
+                      className="size-4 text-primary"
                       aria-hidden="true"
                     />
-                    <input
-                      type="search"
-                      value={query}
-                      onChange={(event) => setQuery(event.target.value)}
-                      placeholder="Search requirements"
-                      className="min-h-11 w-full rounded-md border border-input bg-background pr-3 pl-9 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    />
-                  </label>
-                  <label>
-                    <span className="sr-only">Coverage status</span>
-                    <select
-                      value={status}
-                      onChange={(event) => setStatus(event.target.value)}
-                      className="min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <option value="all">All coverage</option>
-                      {Object.entries(coverageLabels).map(([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <Button
-                    type="submit"
-                    variant="outline"
-                    className="min-h-11 rounded-md"
-                    disabled={busy === "coverage"}
-                  >
-                    {busy === "coverage" ? (
-                      <LoaderCircle
-                        className="animate-spin motion-reduce:animate-none"
-                        aria-hidden="true"
-                      />
-                    ) : (
-                      <Search aria-hidden="true" />
-                    )}
-                    Apply
-                  </Button>
-                </form>
-                <div className="mt-4">
-                  <CoverageTable
-                    page={coverage}
-                    onTrace={(id) => void loadPath(id)}
-                    onLoadMore={() => void loadCoverage(coverage.nextCursor)}
-                    busy={busy}
-                  />
+                    <h3 id="coverage-heading" className="text-sm font-semibold">
+                      Coverage
+                    </h3>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Missing links are unknown until a bounded assessment records
+                    otherwise. {unresolvedCount} loaded requirements need
+                    attention.
+                  </p>
                 </div>
-              </>
-            ) : (
-              <div className="mt-4">
-                <WorkflowTable page={workflows} />
-                {workflows.nextCursor === undefined ? null : (
+                <div
+                  className="flex rounded-md border border-border p-0.5"
+                  role="group"
+                  aria-label="Coverage view"
+                >
                   <Button
                     type="button"
-                    variant="outline"
-                    className="mt-3 min-h-11 rounded-md"
-                    onClick={() => void loadWorkflows(workflows.nextCursor)}
-                    disabled={busy === "coverage"}
+                    variant="ghost"
+                    aria-pressed={view === "requirements"}
+                    className={cn(
+                      "h-auto min-h-10 rounded-sm px-3 text-xs",
+                      view === "requirements"
+                        ? "bg-muted"
+                        : "text-muted-foreground hover:bg-transparent hover:text-foreground"
+                    )}
+                    onClick={() => setView("requirements")}
                   >
-                    <ChevronDown aria-hidden="true" />
-                    Load more workflows
+                    Requirements
                   </Button>
-                )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    aria-pressed={view === "workflows"}
+                    className={cn(
+                      "h-auto min-h-10 rounded-sm px-3 text-xs",
+                      view === "workflows"
+                        ? "bg-muted"
+                        : "text-muted-foreground hover:bg-transparent hover:text-foreground"
+                    )}
+                    onClick={() => setView("workflows")}
+                  >
+                    Workflows
+                  </Button>
+                </div>
               </div>
-            )}
-          </section>
-          <EvidencePathPanel
-            path={path}
-            onExcerpt={(id) => void loadExcerpt(id)}
+              {view === "requirements" ? (
+                <>
+                  <form
+                    className="mt-4 grid gap-2 sm:grid-cols-[minmax(12rem,1fr)_12rem_auto]"
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      void loadCoverage()
+                    }}
+                  >
+                    <Label className="relative block">
+                      <span className="sr-only">Search requirements</span>
+                      <Search
+                        className="pointer-events-none absolute top-3.5 left-3 size-4 text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                      <Input
+                        type="search"
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                        placeholder="Search requirements"
+                        className="min-h-11 w-full rounded-md border border-input bg-background pr-3 pl-9 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      />
+                    </Label>
+                    <Label className="block">
+                      <span className="sr-only">Coverage status</span>
+                      <NativeSelect
+                        value={status}
+                        onChange={(event) => setStatus(event.target.value)}
+                        className="w-full [&>select]:min-h-11 [&>select]:rounded-md [&>select]:bg-background"
+                      >
+                        <NativeSelectOption value="all">
+                          All coverage
+                        </NativeSelectOption>
+                        {Object.entries(coverageLabels).map(
+                          ([value, label]) => (
+                            <NativeSelectOption key={value} value={value}>
+                              {label}
+                            </NativeSelectOption>
+                          )
+                        )}
+                      </NativeSelect>
+                    </Label>
+                    <Button
+                      type="submit"
+                      variant="outline"
+                      className="min-h-11 rounded-md"
+                      disabled={busy === "coverage"}
+                    >
+                      {busy === "coverage" ? (
+                        <LoaderCircle
+                          className="animate-spin motion-reduce:animate-none"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <Search aria-hidden="true" />
+                      )}
+                      Apply
+                    </Button>
+                  </form>
+                  <div className="mt-4">
+                    <CoverageTable
+                      page={coverage}
+                      onTrace={(id) => {
+                        void loadPath(id)
+                        setWorkspaceView("graph")
+                      }}
+                      onLoadMore={() => void loadCoverage(coverage.nextCursor)}
+                      busy={busy}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="mt-4">
+                  <WorkflowTable page={workflows} />
+                  {workflows.nextCursor === undefined ? null : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="mt-3 min-h-11 rounded-md"
+                      onClick={() => void loadWorkflows(workflows.nextCursor)}
+                      disabled={busy === "coverage"}
+                    >
+                      <ChevronDown aria-hidden="true" />
+                      Load more workflows
+                    </Button>
+                  )}
+                </div>
+              )}
+            </section>
+          </div>
+        </div>
+      ) : workspaceView === "graph" ? (
+        <div>
+          <KnowledgeGraphExplorer
+            applicationId={applicationId}
+            initialSeedId={path?.requirementId}
+          />
+          <details className="border-t border-border bg-muted/10">
+            <summary className="min-h-11 cursor-pointer px-4 py-3 text-xs font-medium sm:px-6">
+              Evidence path details
+            </summary>
+            <EvidencePathPanel
+              path={path}
+              onExcerpt={(id) => void loadExcerpt(id)}
+              busy={busy}
+            />
+          </details>
+        </div>
+      ) : (
+        <div className="mx-auto max-w-5xl border-x border-border bg-background">
+          <ReviewPanel
+            page={reviews}
+            applicationId={applicationId}
+            onPage={setReviews}
             busy={busy}
+            setBusy={setBusy}
+            setMessage={setMessage}
+            onLoadMore={() => void loadReviews(reviews.nextCursor)}
           />
         </div>
-        <ReviewPanel
-          page={reviews}
-          applicationId={applicationId}
-          onPage={setReviews}
-          busy={busy}
-          setBusy={setBusy}
-          setMessage={setMessage}
-          onLoadMore={() => void loadReviews(reviews.nextCursor)}
-        />
-      </div>
+      )}
       <div className="fixed right-4 bottom-4 flex gap-2">
         <Button
           type="button"

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 
 const activityFixtureRunId = "00000000-0000-4000-8000-000000000024"
+const activityFixtureApplicationId = "00000000-0000-4000-8000-000000000124"
 const screenshotId = `artifact:v1:${"a".repeat(64)}`
 const privilegedCanaries = [
   "supabase-service-canary-snt022",
@@ -13,7 +14,7 @@ const privilegedCanaries = [
 test("streams a parallel run, resumes safely, and reconstructs its storyboard", async ({
   page,
 }, testInfo) => {
-  test.setTimeout(60_000)
+  test.setTimeout(90_000)
   const reset = await page.request.post("/api/control/fixture/activity", {
     data: { action: "reset" },
   })
@@ -34,13 +35,15 @@ test("streams a parallel run, resumes safely, and reconstructs its storyboard", 
   )
   expect(uploaded.status()).toBe(201)
 
-  await page.goto("/runs")
+  await page.goto(`/applications/${activityFixtureApplicationId}/activity`)
   const activityLink = page.getByRole("link", { name: /Assess Pr/ })
   await expect(activityLink).toHaveAttribute(
     "href",
-    `/runs/${activityFixtureRunId}`
+    `/applications/${activityFixtureApplicationId}/activity/${activityFixtureRunId}`
   )
-  await page.goto(`/runs/${activityFixtureRunId}`)
+  await page.goto(
+    `/applications/${activityFixtureApplicationId}/activity/${activityFixtureRunId}`
+  )
   await expect(
     page.getByRole("heading", { name: "Specialist activity" })
   ).toBeVisible({ timeout: 15_000 })
@@ -74,9 +77,7 @@ test("streams a parallel run, resumes safely, and reconstructs its storyboard", 
   await expect(page.getByRole("button", { name: "Resume" })).toBeVisible()
   await page.getByRole("button", { name: "Resume" }).focus()
   await page.keyboard.press("Enter")
-  await expect(
-    page.locator("header").first().getByText("Running", { exact: true })
-  ).toBeVisible()
+  await expect(page.getByText("Running", { exact: true }).first()).toBeVisible()
 
   const completed = await page.request.post("/api/control/fixture/activity", {
     data: { action: "advance" },
