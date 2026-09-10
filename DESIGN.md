@@ -1,15 +1,28 @@
 # Sentinel: evidence-grounded blast-radius analysis for agentic testing
 
 **Design document for the Testsigma AI Engineer assignment**  
-**Reference target:** [Hi.Events](https://github.com/HiEventsDev/Hi.Events)  
-**Reference change:** [PR #1338](https://github.com/HiEventsDev/Hi.Events/pull/1338)  
-**Revision reviewed:** 2026-09-09
+**Demo target:** [mohit-nagaraj/Hi.Events](https://github.com/mohit-nagaraj/Hi.Events) fork, live at [hi-events-production.up.railway.app](https://hi-events-production.up.railway.app) ([runbook](deployment.md))  
+**Fork change:** [PR #1](https://github.com/mohit-nagaraj/Hi.Events/pull/1) (promo-code discount type enum)  
+**Held-out sample PR:** upstream [PR #1338](https://github.com/HiEventsDev/Hi.Events/pull/1338) (attribution report)  
+**Revision reviewed:** 2026-09-10
 
 The four Mermaid figures have a self-contained accessible
 [HTML companion](docs/delivery/diagrams.html) for wide-screen review. Its light
 palette is derived from Sentinel's local white, ink, green, and gray design
 tokens; low-level storage fields and retry branches remain in prose to keep each
 figure within its visual complexity budget.
+
+How this document answers the brief:
+
+| Assignment item                              | Section        |
+| -------------------------------------------- | -------------- |
+| Part A crawl, ingest, graph, reason          | §1, §3, §4, §6 |
+| 5. Agent decomposition; deterministic vs LLM | §3             |
+| 6. Graph schema, three layers, absence       | §4             |
+| 7. Confidence under ambiguity                | §5             |
+| 8. Eval if we ran it 100 times               | §7             |
+| 9. Scope decisions and cuts                  | §9             |
+| 10. Another week, in order                   | §10            |
 
 ## Executive position
 
@@ -40,21 +53,45 @@ is an environmental limitation, not a wording problem to hide.
 
 ## 1. Reference target and narrow vertical slice
 
-Hi.Events is a credible three-layer target: a public React/TypeScript frontend, a
-PHP/Laravel backend, a live web product, public documentation, and active pull
-requests. Sentinel focuses on organizer and admin workflows where browser state,
-HTTP requests, frontend code, Laravel routes/actions/services, and product intent
-can form one inspectable path. It does not attempt to understand the entire
-repository.
+The demonstration repository is the public fork
+[mohit-nagaraj/Hi.Events](https://github.com/mohit-nagaraj/Hi.Events), not a
+generic SaaS homepage. Hi.Events is a credible three-layer target: React/TypeScript
+frontend, PHP/Laravel backend, live product, version-controlled docs, and real
+pull requests. Sentinel focuses on buyer checkout plus organizer/admin workflows
+where browser state, HTTP, frontend symbols, Laravel routes/actions, and product
+intent can form one inspectable path. It does not index the entire repository.
 
-PR #1338, “Rework UTM attribution tracking and admin attribution report,” is the
-reference change. GitHub records base
+The live crawl target is a **source-built** deploy of that fork (`develop`) on
+Railway, with Postgres and S3 on a shared Supabase project. Operator detail is in
+[`deployment.md`](deployment.md). SNT-030 still attests **Render** Blueprint
+previews as the trusted PR-head verification contract; Railway is the operator
+demo so the browser can hit a real fork commit rather than the upstream
+all-in-one image. Sleep-on-idle is on. No trusted PR-head deployment is registered
+in Sentinel for the sample, so runtime QA stays `verification_unavailable`.
+
+The knowledge slice the demo actually shows is checkout-centered coverage, not
+“we crawled every screen”:
+
+| Requirement (demo knowledge)                  | Coverage                                                                                                                                                               |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Buyer selects a ticket and completes checkout | `observed` — control workflow; used to separate product failure from environment failure                                                                               |
+| Buyer applies a promotion code                | `partially_observed` — entry point seen; submission not completed (fork [PR #1](https://github.com/mohit-nagaraj/Hi.Events/pull/1) is the live promo-code enum change) |
+| Buyer transfers a ticket after purchase       | `not_observed` in the completed crawl                                                                                                                                  |
+| Organizer issues a refund                     | `blocked` at a destructive-action boundary                                                                                                                             |
+| Organizer exports attendees                   | `not_evaluated`                                                                                                                                                        |
+| Buyer receives order confirmation             | `ambiguous` pending review                                                                                                                                             |
+
+That is the assignment’s absence question in product form: missing UI is a
+scoped `CoverageAssessment`, not a deleted requirement.
+
+The committed blast-radius **sample** remains upstream
+[PR #1338](https://github.com/HiEventsDev/Hi.Events/pull/1338), “Rework UTM
+attribution tracking and admin attribution report.” GitHub records base
 `2064f88ff7590e93c738efb8becaa7d732063619`, head
-`f68df0dabd18d04df5e6c7e873aac2b5e5201584`, 56 changed files, 2,232 additions,
-and 1,238 deletions. The diff changes the admin attribution screen, date and
-grouping parameters, request validation, account-source classification,
-aggregation, and currency presentation. That gives the sample report a real
-cross-stack path without requiring a claim that the whole product was crawled.
+`f68df0dabd18d04df5e6c7e873aac2b5e5201584`, 56 files, 2,232 additions, 1,238
+deletions. The golden eval fixture and product renderer are pinned to those
+SHAs. The fork PR is the live demo change; 1338 is the held-out report reviewers
+can read without credentials. They are not the same commit.
 
 Commit alignment is non-negotiable. A graph built from the PR merge commit already
 contains the change and cannot serve as the base. A PR assessment stores provider
@@ -97,9 +134,11 @@ secret-shaped keys and values.
 
 The control plane is a Next.js application. It acknowledges long work with a run
 ID and reads durable state instead of simulating progress. The worker owns leases,
-heartbeats, cancellation, cleanup, and handler dispatch. The repository includes
-the worker boundary but not the final production `createRunGraphs` assembly; the
-submission demo therefore uses deterministic in-memory fixture services.
+heartbeats, cancellation, cleanup, and handler dispatch. `apps/worker` now
+exports production `createRunGraphs` (onboarding, PR assessment, verification,
+refresh). The clean-clone submission demo still uses deterministic in-memory
+fixture services so reviewers can run `pnpm demo:web` without Supabase, Neo4j,
+Azure, or a GitHub App.
 
 ```mermaid
 flowchart LR
@@ -116,6 +155,9 @@ flowchart LR
 ```
 
 ## 3. Agent decomposition: decisions versus authority
+
+**Assignment §5.** Distinct stages, boundaries, and what is deterministic vs
+LLM-driven. This is not a chain of prompts dressed up as an agent.
 
 This is not one long prompt. Each stage has a narrow question, bounded tools, a
 typed result, and an explicit authority boundary.
@@ -172,6 +214,9 @@ flowchart LR
 
 ## 4. Knowledge graph schema and why it is shaped this way
 
+**Assignment §6.** Node and edge types across requirements, UI, and code; how
+absence is modeled; justified against the blast-radius query.
+
 The graph preserves facts rather than a single generated narrative. The primary
 node types are:
 
@@ -203,11 +248,13 @@ erDiagram
 ```
 
 Stable identity is content-derived from canonical structured fields. A code
-symbol includes repository, commit, language, qualified name, file path, and
-range. A runtime element uses the application, screen, semantic role/name, and
-context fingerprint; private selectors are not public identity. Stable IDs make
-repetition comparisons and unchanged-fact reuse possible without pretending two
-different commits are identical.
+symbol hashes application, repository, commit, file path, qualified name, and
+symbol kind. A UI element hashes application, screen, ARIA/HTML role, accessible
+name, and a context fingerprint of neighborhood and behavior; CSS selectors stay
+private Playwright locators and optional hints, never public identity. Stable IDs
+make repetition comparisons and unchanged-fact reuse possible without pretending
+two different commits are identical. Two “Remove” buttons on the same checkout
+screen remain distinct nodes because their fingerprints differ.
 
 ### Absence is an assessment, not a missing node
 
@@ -232,6 +279,14 @@ mission” rather than “feature does not exist.” True feature absence is a s
 reviewed conclusion that can be built on top of this evidence, not inferred from
 null traversal.
 
+On the Hi.Events demo knowledge view that is concrete: checkout completion is
+`observed` and retained as the **control**; promotion-code apply is
+`partially_observed` (the fork change, not a claim that Hi.Events has no promo
+codes); ticket transfer is `not_observed`; refunds are `blocked` by safety
+policy. The blast-radius query below is why those statuses must be nodes: a PR
+that touches `OrderController.create` should reach the observed checkout path,
+not invent a transfer finding from a missing edge.
+
 The blast-radius query starts from each changed symbol and traverses fixed
 relationship patterns toward endpoint/frontend/UI/workflow/requirement targets
 inside one application and active revision. Candidate paths containing stale,
@@ -241,6 +296,10 @@ belongs on edges and coverage is an explicit node: the system must return both a
 path and the reason a potential path was excluded.
 
 ## 5. Confidence and ambiguity without fake probabilities
+
+**Assignment §7.** When the PRD describes a feature the crawl cannot find, or a
+changed symbol has no UI path: no fake probability, explicit status, and a
+human interrupt when two plausible targets remain.
 
 Sentinel does not output “92% confident.” The current data cannot justify a
 calibrated probability, and a similarity score is not a probability of truth.
@@ -337,6 +396,9 @@ the same view contract at assessment UUID ending in `0029`.
 
 ## 7. Evaluation: deciding which of 100 runs are correct
 
+**Assignment §8.** How we know output is right if the system ran 100 times on
+the same input.
+
 Evaluation is layered because different failures require different evidence.
 Deterministic parsers and graph nodes should be exactly stable; model-driven
 investigation can vary in wording and tool order while preserving facts, safety,
@@ -411,15 +473,17 @@ sensitive ignore rules, audits production advisories and licenses with expiring
 exact exceptions, runs malicious-input tests, and checks deterministic evaluation
 artifact drift. High/critical dependency advisories cannot be excepted.
 
-PR code in a Render preview remains hostile even if provider identity proves its
+PR code on a preview host remains hostile even if provider identity proves its
 commit. The planning contract requires an exact service/deploy/repository/SHA/origin
 and compatibility proof before credential access. The targeted verification graph
 revalidates identity before every head browser mission, runs affected scenarios
-and an optional control, evaluates deterministic checkpoints, limits one named
-gap follow-up, cleans up in `finally`, retains failure evidence privately, and
-appends versioned report/check enrichment without erasing predicted findings. No
-trusted head deployment is registered for the sample, so the demo correctly stops
-at `verification_unavailable`.
+and an optional control (checkout on Hi.Events), evaluates deterministic
+checkpoints, limits one named gap follow-up, cleans up in `finally`, retains
+failure evidence privately, and appends versioned report/check enrichment without
+erasing predicted findings. Railway hosts the live fork for crawl and operator
+demo; Render remains the attested assignment verification adapter. No trusted
+head deployment is registered for the sample, so the demo correctly stops at
+`verification_unavailable`.
 
 Incremental refresh is implemented separately from assessment history. It checks
 trusted deployed commit ancestry, plans affected document/code/workflow scope,
@@ -429,6 +493,9 @@ artifacts, and activates a validated pending revision atomically. Failure or
 cancellation leaves the prior active graph and indexed commit unchanged.
 
 ## 9. Scope decisions and cuts
+
+**Assignment §9.** What went deep, what is shallow, and what was cut. A working
+narrow slice with honest limits, not three half-done layers.
 
 ### Where the implementation goes deep
 
@@ -454,22 +521,24 @@ cancellation leaves the prior active graph and indexed commit unchanged.
 - The browser explores bounded workflows; it is not a general autonomous testing
   product.
 - Documentation ingestion follows configured roots; it is not a web-scale crawl.
-- Render support is one assignment adapter and plan, not a deployment platform.
+- Render is the attested trusted-head adapter; Railway is an operator live demo
+  of the fork, not a second deployment platform.
 
 ### Explicit cuts
 
-- Production root graph assembly for the worker.
-- A registered public baseline/head Render pair and an executed live provider
-  demonstration; deterministic and gated live harnesses exist, but the submission
-  does not fabricate an external deployment.
+- Registering a trusted PR-head deploy in Sentinel and executing live provider
+  verification on the sample. The worker `createRunGraphs` assembly exists; the
+  clean-clone demo still uses fixtures. Deterministic and gated live harnesses
+  exist, but the submission does not fabricate a verified head run.
 - Languages beyond TypeScript/React and PHP/Laravel.
 - Arbitrary target code execution, generated tests, auto-healing, broad visual
   regression, payments, outbound messages, repository writes, and PR comments.
 - Statistical calibration or claims that the small golden fixture generalizes.
 
 SNT-029 report delivery, SNT-031 targeted verification, and SNT-032 incremental
-refresh are implemented and verified. The clean-clone demo uses fixture ports and
-records verification as unavailable because it has no registered external head.
+refresh are implemented and verified. The worker ships `createRunGraphs`. The
+clean-clone demo still uses fixture ports and records verification as unavailable
+because no trusted external head is registered.
 
 These cuts mean the submission demonstrates the engine and trust boundaries with
 deterministic UI fixtures and a validated reference report, not a fully deployed
@@ -477,6 +546,8 @@ end-to-end SaaS. That is less polished than implying completion and more useful 
 an engineering reviewer deciding what is real.
 
 ## 10. What I would build with another week
+
+**Assignment §10.** Three highest-value next steps, in order.
 
 ### 1. Exercise the production root graphs in a second clean environment
 
@@ -486,14 +557,14 @@ and GitHub Check synchronization. The next deployment step is to repeat the full
 path against a second clean Supabase, Aura, Azure, and GitHub App environment and
 retain the resulting immutable report as operational evidence.
 
-### 2. Run the trusted Hi.Events deployment and calibration study
+### 2. Register a trusted Hi.Events head and run the calibration study
 
-Provision the disposable Render base/head pair, register exact provider identity,
-run the implemented affected scenarios plus one control, and retain the first
-versioned report enrichment. Repeat the approved model/browser subset, audit
-failures with the QA rubric, and record actual cost and variance without selecting
-a best run. This turns the honest `verification_unavailable` sample into measured
-runtime evidence.
+The live fork already exists on Railway; the missing piece is registering exact
+provider identity (service, deploy, repository, SHA, origin) as a trusted head,
+then running affected scenarios plus the checkout control. Repeat the approved
+model/browser subset, audit failures with the QA rubric, and record cost and
+variance without selecting a best run. This turns `verification_unavailable` into
+measured runtime evidence without pretending the crawl host is already attested.
 
 ### 3. Validate a second target
 
@@ -544,8 +615,10 @@ change. It also shows, in code and tests, where model autonomy stops.
 ## 12. Primary references
 
 - [Assignment brief](AI%20Engineer%20Updated%20-%20Assignment.md)
-- [Hi.Events repository](https://github.com/HiEventsDev/Hi.Events) and
-  [PR #1338](https://github.com/HiEventsDev/Hi.Events/pull/1338)
+- [Hi.Events fork](https://github.com/mohit-nagaraj/Hi.Events),
+  [fork PR #1](https://github.com/mohit-nagaraj/Hi.Events/pull/1),
+  [upstream PR #1338](https://github.com/HiEventsDev/Hi.Events/pull/1338), and
+  [live demo runbook](deployment.md)
 - [GitHub webhook signature validation](https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries)
   and [GitHub App least-privilege permissions](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app)
 - [OWASP excessive-agency guidance](https://genai.owasp.org/llmrisk/llm062025-excessive-agency/)
@@ -558,3 +631,4 @@ change. It also shows, in code and tests, where model autonomy stops.
 - [Azure OpenAI Responses v1 reference](https://learn.microsoft.com/en-us/rest/api/microsoft-foundry/azureopenai/responses)
 - [Render preview environments](https://render.com/docs/preview-environments)
   and [Blueprint specification](https://render.com/docs/blueprint-spec)
+- [Railway documentation](https://docs.railway.com/)

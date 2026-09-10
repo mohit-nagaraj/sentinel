@@ -274,8 +274,9 @@ describe("run repository", () => {
       assessmentId,
     })
     expect(query.mock.calls[0]?.[0]).toContain(
-      "left join sentinel.pr_assessments assessment"
+      "join sentinel.pr_assessments assessment"
     )
+    expect(query.mock.calls[0]?.[0]).toContain("left join lateral")
     expect(query.mock.calls[0]?.[0]).toContain(
       "assessment.report_id is not null"
     )

@@ -690,6 +690,33 @@ export function RunActivityWorkspace({
   }, [live, run.id, run.status, transport, writeFeed])
 
   useEffect(() => {
+    if (!live || !terminalStatuses.has(run.status)) return
+    let disposed = false
+    const catchUp = async () => {
+      let more = true
+      while (more && !disposed) {
+        const response = await fetch(
+          `/api/control/runs/${encodeURIComponent(run.id)}/events?after=${feedRef.current.cursor}&limit=100`,
+          {
+            cache: "no-store",
+            credentials: "same-origin",
+            headers: { accept: "application/json" },
+          }
+        )
+        if (!response.ok) return
+        const page = runEventPageSchema.parse(await response.json())
+        if (disposed) return
+        writeFeed(mergeActivityPage(feedRef.current, page))
+        more = page.nextCursor !== undefined
+      }
+    }
+    void catchUp().catch(() => undefined)
+    return () => {
+      disposed = true
+    }
+  }, [live, run.id, run.status, writeFeed])
+
+  useEffect(() => {
     if (
       feed.connection !== "connecting" &&
       feed.connection !== "reconnecting"

@@ -203,18 +203,18 @@ The graph is facts plus **allowlisted** edges. Direction is part of the schema.
 The path a QA lead should be able to follow, for example “submit order” or
 “open attribution report”:
 
-| Relationship | Meaning |
-| --- | --- |
-| `STATES` | A doc section states a requirement |
-| `COVERED_BY` | That requirement is covered by a workflow |
-| `HAS_STEP` / `NEXT` | Ordered flow steps |
-| `ON_SCREEN` / `CONTAINS` | Step or screen to UI |
-| `ACTS_ON` | The user action on a control |
-| `TRIGGERS_API` | That control fires an endpoint |
-| `CALLS_API` / `HANDLED_BY` | Frontend or route to the Laravel/TS symbol |
-| `CALLS`, `READS`, `WRITES` | Symbol-to-symbol and domain entities |
-| `CHANGES` | The pull request touches this symbol |
-| `HAS_ASSESSMENT` | Requirement → coverage record, not a missing node |
+| Relationship               | Meaning                                           |
+| -------------------------- | ------------------------------------------------- |
+| `STATES`                   | A doc section states a requirement                |
+| `COVERED_BY`               | That requirement is covered by a workflow         |
+| `HAS_STEP` / `NEXT`        | Ordered flow steps                                |
+| `ON_SCREEN` / `CONTAINS`   | Step or screen to UI                              |
+| `ACTS_ON`                  | The user action on a control                      |
+| `TRIGGERS_API`             | That control fires an endpoint                    |
+| `CALLS_API` / `HANDLED_BY` | Frontend or route to the Laravel/TS symbol        |
+| `CALLS`, `READS`, `WRITES` | Symbol-to-symbol and domain entities              |
+| `CHANGES`                  | The pull request touches this symbol              |
+| `HAS_ASSESSMENT`           | Requirement → coverage record, not a missing node |
 
 Also `MATCHES_ROUTE`, `RENDERED_BY`, `BINDS` for screen-to-frontend-symbol.
 
