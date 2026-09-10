@@ -1,4 +1,5 @@
 import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres"
+import pg from "pg"
 import { z } from "zod"
 
 export const LANGGRAPH_CHECKPOINT_SCHEMA = "langgraph_checkpoint" as const
@@ -16,9 +17,11 @@ export function createPostgresCheckpointSaver(
   const connectionString = parseCheckpointConnectionString(
     connectionStringInput
   )
-  return PostgresSaver.fromConnString(connectionString, {
-    schema: LANGGRAPH_CHECKPOINT_SCHEMA,
-  })
+  return new PostgresSaver(
+    new pg.Pool({ connectionString, max: 2 }),
+    undefined,
+    { schema: LANGGRAPH_CHECKPOINT_SCHEMA }
+  )
 }
 
 export function parseCheckpointConnectionString(

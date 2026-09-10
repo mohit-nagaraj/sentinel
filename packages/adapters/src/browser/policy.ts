@@ -206,6 +206,7 @@ function classifyUnsafeName(name: string): BrowserPolicyCategory | undefined {
 
 function isSafeReadName(name: string): boolean {
   return (
+    /^(?:details?|preview|summary|status)$/i.test(name) ||
     /^(?:view|show|inspect|preview)\b/i.test(name) ||
     /^(?:open|dismiss|close)\s+(?:modal|dialog|menu|panel|popover|drawer|section|details?|preview|window)$/i.test(
       name

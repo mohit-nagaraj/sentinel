@@ -5,6 +5,7 @@ import type { PublicRun } from "@sentinel/contracts"
 import { isControlPlaneFixture } from "@/lib/operator-auth"
 import { getActivityFixtureSnapshot } from "@/lib/run-activity-fixture"
 import { getRunControlService } from "@/lib/run-control"
+import { PrAssessmentSubmit } from "@/components/pr-assessment-submit"
 
 export const dynamic = "force-dynamic"
 
@@ -67,6 +68,7 @@ export default async function ApplicationActivityPage({
           Run activity is currently unavailable.
         </div>
       ) : null}
+      <PrAssessmentSubmit applicationId={applicationId} />
       <section
         aria-labelledby="runs-heading"
         className="mx-auto grid max-w-6xl gap-5 px-4 py-6 sm:px-6 lg:px-8"
@@ -107,6 +109,19 @@ export default async function ApplicationActivityPage({
                         {humanize(run.status)} / Attempt {run.attemptCount + 1}{" "}
                         / {run.createdAt.slice(0, 19).replace("T", " ")} UTC
                       </p>
+                      {run.assessment === undefined ? null : (
+                        <p className="mt-1 truncate text-xs text-muted-foreground">
+                          {run.assessment.repository.owner}/
+                          {run.assessment.repository.name} PR #
+                          {run.assessment.pullRequestNumber} / head {" "}
+                          <span className="font-mono">
+                            {run.assessment.headSha.slice(0, 12)}
+                          </span>
+                          {run.assessment.reportAvailable
+                            ? " / report ready"
+                            : " / report pending"}
+                        </p>
+                      )}
                     </div>
                     <ArrowRight className="size-4 text-muted-foreground" />
                   </Link>

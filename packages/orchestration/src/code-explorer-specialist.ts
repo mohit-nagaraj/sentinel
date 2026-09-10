@@ -83,6 +83,7 @@ export const CODE_EXPLORER_SPECIALIST_TOOLSET_ID =
 export const CODE_EXPLORER_SPECIALIST_COMPLETION_ID =
   "code_explorer_completion_v1" as const
 export const CODE_EXPLORER_SPECIALIST_GRAPH_NAME = "code_explorer_v1" as const
+const MODEL_DECISION_MAX_OUTPUT_TOKENS = 1_024
 
 export const CODE_EXPLORER_SPECIALIST_INSTRUCTIONS = [
   "You are Sentinel's bounded Code Explorer.",
@@ -286,7 +287,7 @@ const storedCodeExplorerToolResultSchema = z
     }
   })
 
-function parseStoredToolResult(
+export function parseStoredCodeExplorerToolResult(
   input: StoredCodeExplorerToolResult
 ): StoredCodeExplorerToolResult {
   const result = storedCodeExplorerToolResultSchema.parse(input)
@@ -328,7 +329,7 @@ async function readStoredToolResults(
 ): Promise<readonly StoredCodeExplorerToolResult[]> {
   const missionId = missionIdSchema.parse(missionIdInput)
   const results = await store.listToolResults(missionId)
-  const parsed = results.map(parseStoredToolResult)
+  const parsed = results.map(parseStoredCodeExplorerToolResult)
   if (parsed.some((result) => result.missionId !== missionId)) {
     throw new Error("Code Explorer store returned a cross-mission tool result")
   }
@@ -344,7 +345,7 @@ export class InMemoryCodeExplorerSpecialistStoreForTesting implements CodeExplor
   readonly #tools = new Map<string, StoredCodeExplorerToolResult>()
 
   async putToolResult(result: StoredCodeExplorerToolResult): Promise<void> {
-    const parsed = parseStoredToolResult(result)
+    const parsed = parseStoredCodeExplorerToolResult(result)
     const key = `${parsed.missionId}\u0000${parsed.callId}`
     const existing = this.#tools.get(key)
     if (
@@ -375,7 +376,9 @@ export class InMemoryCodeExplorerSpecialistStoreForTesting implements CodeExplor
     return [...this.#tools.values()]
       .filter((result) => result.missionId === missionId)
       .sort((left, right) => left.sequence - right.sequence)
-      .map((result) => parseStoredToolResult(structuredClone(result)))
+      .map((result) =>
+        parseStoredCodeExplorerToolResult(structuredClone(result))
+      )
   }
 
   async getMissionResult(
@@ -1406,7 +1409,10 @@ class CodeExplorerSpecialistDecisionModel {
       modelOutputTokens:
         remaining.modelOutputTokens === 0
           ? 1
-          : Math.min(512, remaining.modelOutputTokens),
+          : Math.min(
+              MODEL_DECISION_MAX_OUTPUT_TOKENS,
+              remaining.modelOutputTokens
+            ),
     })
   }
 
@@ -1531,7 +1537,10 @@ class CodeExplorerSpecialistDecisionModel {
           maxCharacters: this.options.maxContextCharacters,
         }),
         instructions: CODE_EXPLORER_SPECIALIST_INSTRUCTIONS,
-        maxOutputTokens: Math.min(512, remainingOutputTokens),
+        maxOutputTokens: Math.min(
+          MODEL_DECISION_MAX_OUTPUT_TOKENS,
+          remainingOutputTokens
+        ),
         tools: definitions,
         toolChoice: "required",
         signal: request.signal,

@@ -737,7 +737,14 @@ function buildKernelGraph(
           signal: runtime.signal,
         })
         parsed = specialistModelDecisionSchema.parse(raw)
-      } catch {
+      } catch (error) {
+        if (process.env["SENTINEL_WORKER_DEBUG"] === "1") {
+          console.error("specialist_model_decision_failed", {
+            agent: state.agent,
+            missionId: state.mission.id,
+            error,
+          })
+        }
         return failedModelUpdate(state, estimate, "model_decision_invalid")
       }
       try {
@@ -1043,7 +1050,10 @@ function buildKernelGraph(
           call,
           signal: runtime.signal,
         })
-      } catch {
+      } catch (error) {
+        if (process.env["SENTINEL_WORKER_DEBUG"] === "1") {
+          console.error("specialist_tool_revalidation_failed", error)
+        }
         return validateSpecialistUpdate(state, {
           terminalResult: resultFor(
             state,

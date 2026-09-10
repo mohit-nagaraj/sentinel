@@ -10,6 +10,8 @@ import {
   type RunDispatcher,
 } from "@sentinel/orchestration/run-dispatch"
 
+import { logWorkerError, workerLog } from "./logger.ts"
+
 export interface WorkerRunStore {
   claim(owner: string, leaseSeconds: number): Promise<DispatchableRun | null>
   heartbeat(
@@ -133,6 +135,14 @@ export function createWorker(options: WorkerOptions): WorkerProcess {
     if (isAborted(shutdownSignal)) return false
     const run = await options.store.claim(options.owner, leaseSeconds)
     if (run === null) return false
+    const startedAt = Date.now()
+    workerLog("info", "worker_run_claimed", {
+      workerId: options.owner,
+      runId: run.id,
+      applicationId: run.applicationId,
+      runType: run.runType,
+      attempt: run.attemptCount,
+    })
     if (isAborted(shutdownSignal)) return true
 
     const execution = new AbortController()
@@ -221,6 +231,10 @@ export function createWorker(options: WorkerOptions): WorkerProcess {
       ? abortError(execution.signal)
       : failure
     if (cleanupFailure !== undefined) {
+      logWorkerError("worker_run_cleanup_failed", cleanupFailure, {
+        workerId: options.owner,
+        runId: run.id,
+      })
       if (
         errorName(cause) === "LeaseOwnershipError" ||
         repositoryErrorCode(cause) === "storage_unavailable" ||
@@ -270,7 +284,18 @@ export function createWorker(options: WorkerOptions): WorkerProcess {
       return true
     }
     if (failure !== undefined) {
+      options.onError?.(failure)
       const error = classifyRunExecutionError(failure)
+      logWorkerError("worker_run_failed", failure, {
+        workerId: options.owner,
+        runId: run.id,
+        applicationId: run.applicationId,
+        runType: run.runType,
+        durationMs: Date.now() - startedAt,
+        category: error.category,
+        code: error.code,
+        retryable: error.retryable,
+      })
       await options.store.finish({
         runId: run.id,
         owner: options.owner,
@@ -296,6 +321,13 @@ export function createWorker(options: WorkerOptions): WorkerProcess {
         owner: options.owner,
         status: "succeeded",
         publication: result!.publication,
+      })
+      workerLog("info", "worker_run_succeeded", {
+        workerId: options.owner,
+        runId: run.id,
+        applicationId: run.applicationId,
+        runType: run.runType,
+        durationMs: Date.now() - startedAt,
       })
     } catch (error) {
       if (repositoryErrorCode(error) !== "publication_conflict") throw error

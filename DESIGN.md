@@ -478,14 +478,13 @@ an engineering reviewer deciding what is real.
 
 ## 10. What I would build with another week
 
-### 1. Compile and deploy the production root graphs
+### 1. Exercise the production root graphs in a second clean environment
 
-Wire initialization, PR assessment, report finalization, verification, and refresh
-handlers into the worker's `createRunGraphs` assembly with real durable rich-state
-stores and service health. Prove a clean Supabase, Aura, Azure, and GitHub App
-deployment can progress from onboarding through one immutable report without
-fixture ports. This closes the gap between tested modules and an operational
-deployment.
+The worker now assembles initialization and PR assessment with durable rich-state
+stores, immutable GitHub source resolution, Neo4j traversal, report finalization,
+and GitHub Check synchronization. The next deployment step is to repeat the full
+path against a second clean Supabase, Aura, Azure, and GitHub App environment and
+retain the resulting immutable report as operational evidence.
 
 ### 2. Run the trusted Hi.Events deployment and calibration study
 

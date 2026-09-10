@@ -1,4 +1,5 @@
 import {
+  applicationIdSchema,
   entityKindSchema,
   blastRadiusRelationshipTypes,
   graphBlastRadiusQuerySchema,
@@ -232,6 +233,48 @@ const pathProjection = `{
 
 export class Neo4jGraphQueryRepository {
   constructor(private readonly database: GraphDatabase) {}
+
+  async listIndexedRepositoryPaths(input: {
+    readonly applicationId: string
+    readonly graphRevision: number
+    readonly limit?: number
+  }): Promise<readonly string[]> {
+    const applicationId = applicationIdSchema.parse(input.applicationId)
+    const graphRevision = z
+      .number()
+      .int()
+      .positive()
+      .parse(input.graphRevision)
+    const limit = z
+      .number()
+      .int()
+      .positive()
+      .max(200_000)
+      .default(100_000)
+      .parse(input.limit)
+    return this.database.read(
+      {
+        applicationId,
+        operation: "query_indexed_repository_paths",
+      },
+      async (transaction) => {
+        const result = await transaction.run(
+          `MATCH (file:CodeFile {
+             application_id: $applicationId,
+             graph_revision: $graphRevision
+           })
+           WHERE file.path IS NOT NULL
+           RETURN DISTINCT file.path AS path
+           ORDER BY path
+           LIMIT ${limit}`,
+          { applicationId, graphRevision }
+        )
+        return result.records.map((record) =>
+          z.string().trim().min(1).parse(record.get("path"))
+        )
+      }
+    )
+  }
 
   private async listEntities(
     scopeValue: GraphReadScope,

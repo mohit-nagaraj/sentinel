@@ -445,6 +445,10 @@ describe("onboarding control plane", () => {
       status: "confirmed",
       application: { confirmed: true },
     })
+    const key = await controlPlane.initializationIdempotencyKey(applicationId)
+    expect(key).toBe(
+      `initialize_knowledge:${applicationId}:${store.record?.inputFingerprint.slice("sha256:".length)}`
+    )
     expect(store.actorIds.every((actor) => actor === operatorId)).toBe(true)
   })
 

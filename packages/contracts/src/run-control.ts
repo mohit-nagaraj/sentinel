@@ -7,6 +7,7 @@ import {
   contentHashSchema,
   persistedTextSchema,
   reasonCodeSchema,
+  repositoryIdentitySchema,
   runStatusSchema,
   runTypeSchema,
   schemaVersionSchema,
@@ -127,6 +128,16 @@ export const publicRunSchema = z
     attemptCount: z.number().int().nonnegative(),
     retryOf: databaseRunIdSchema.optional(),
     assessmentId: z.uuid().optional(),
+    assessment: z
+      .strictObject({
+        id: z.uuid(),
+        repository: repositoryIdentitySchema,
+        pullRequestNumber: z.number().int().positive(),
+        baseSha: commitShaSchema,
+        headSha: commitShaSchema,
+        reportAvailable: z.boolean(),
+      })
+      .optional(),
     createdAt: timestampSchema,
     startedAt: timestampSchema.optional(),
     finishedAt: timestampSchema.optional(),
@@ -143,6 +154,23 @@ export const publicRunSchema = z
         code: "custom",
         path: ["assessmentId"],
         message: "Only succeeded assessment runs expose a report identity",
+      })
+    }
+    if (run.assessment !== undefined && run.type !== "assess_pr") {
+      context.addIssue({
+        code: "custom",
+        path: ["assessment"],
+        message: "Only assessment runs expose pull-request metadata",
+      })
+    }
+    if (
+      run.assessmentId !== undefined &&
+      (run.assessment === undefined || !run.assessment.reportAvailable)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["assessmentId"],
+        message: "Report identity requires an available assessment report",
       })
     }
   })

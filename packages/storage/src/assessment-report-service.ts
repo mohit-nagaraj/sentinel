@@ -18,7 +18,7 @@ export type AssessmentReportArtifactPort = Pick<
 
 export type AssessmentReportRecordPort = Pick<
   AssessmentReportRepository,
-  "finalize" | "getOwned"
+  "finalize" | "getOwned" | "getOwnedStatus"
 >
 
 export class AssessmentReportDeliveryService {
@@ -94,6 +94,13 @@ export class AssessmentReportDeliveryService {
     readonly assessmentId: string
   }): Promise<OwnedAssessmentReport | null> {
     return this.repository.getOwned(input)
+  }
+
+  getOwnedStatus(input: {
+    readonly operatorId: string
+    readonly assessmentId: string
+  }) {
+    return this.repository.getOwnedStatus(input)
   }
 
   async signedOwnedDownload(input: {

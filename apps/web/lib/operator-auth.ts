@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto"
+import { createHash, createHmac, timingSafeEqual } from "node:crypto"
 
 export interface OperatorAuthEnvironment {
   readonly NODE_ENV?: string | undefined
@@ -8,6 +8,16 @@ export interface OperatorAuthEnvironment {
 
 const minimumTokenLength = 32
 const maximumTokenLength = 4_096
+const operatorSessionVersion = "v1"
+const operatorSessionDurationSeconds = 12 * 60 * 60
+
+export const operatorSessionCookieName = "sentinel_operator_session"
+
+export interface OperatorSession {
+  readonly value: string
+  readonly expiresAt: Date
+  readonly maxAge: number
+}
 
 export function isControlPlaneFixture(
   environment: OperatorAuthEnvironment
@@ -51,18 +61,76 @@ function matchesToken(presented: string, expected: string): boolean {
   return timingSafeEqual(left, right)
 }
 
+function configuredToken(
+  environment: OperatorAuthEnvironment
+): string | undefined {
+  const token = environment.SENTINEL_OPERATOR_TOKEN
+  return token !== undefined &&
+    token.length >= minimumTokenLength &&
+    token.length <= maximumTokenLength
+    ? token
+    : undefined
+}
+
+export function isOperatorTokenAuthorized(
+  presented: string,
+  environment: OperatorAuthEnvironment
+): boolean {
+  if (isControlPlaneFixture(environment)) return true
+  const expected = configuredToken(environment)
+  return expected !== undefined && matchesToken(presented, expected)
+}
+
+function sessionSignature(payload: string, token: string): string {
+  return createHmac("sha256", token)
+    .update(`sentinel-operator-session:${payload}`, "utf8")
+    .digest("hex")
+}
+
+export function createOperatorSession(
+  environment: OperatorAuthEnvironment,
+  now = Date.now()
+): OperatorSession | undefined {
+  const token = configuredToken(environment)
+  if (token === undefined) return undefined
+  const expiresAtSeconds =
+    Math.floor(now / 1_000) + operatorSessionDurationSeconds
+  const payload = `${operatorSessionVersion}.${expiresAtSeconds}`
+  return {
+    value: `${payload}.${sessionSignature(payload, token)}`,
+    expiresAt: new Date(expiresAtSeconds * 1_000),
+    maxAge: operatorSessionDurationSeconds,
+  }
+}
+
+export function isOperatorSessionAuthorized(
+  session: string | undefined,
+  environment: OperatorAuthEnvironment,
+  now = Date.now()
+): boolean {
+  if (isControlPlaneFixture(environment)) return true
+  const token = configuredToken(environment)
+  if (token === undefined || session === undefined) return false
+  const match = /^(v1)\.(\d{10})\.([a-f0-9]{64})$/.exec(session)
+  if (match === null) return false
+  const expiresAtSeconds = Number(match[2])
+  if (
+    !Number.isSafeInteger(expiresAtSeconds) ||
+    expiresAtSeconds <= Math.floor(now / 1_000)
+  ) {
+    return false
+  }
+  const payload = `${match[1]}.${match[2]}`
+  return matchesToken(match[3]!, sessionSignature(payload, token))
+}
+
 export function isOperatorRequestAuthorized(
   authorization: string | null,
   environment: OperatorAuthEnvironment
 ): boolean {
   if (isControlPlaneFixture(environment)) return true
-  const expected = environment.SENTINEL_OPERATOR_TOKEN
   const presented = presentedToken(authorization)
   return (
-    expected !== undefined &&
-    expected.length >= minimumTokenLength &&
-    expected.length <= maximumTokenLength &&
-    presented !== undefined &&
-    matchesToken(presented, expected)
+    presented !== undefined && isOperatorTokenAuthorized(presented, environment)
   )
 }

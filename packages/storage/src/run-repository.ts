@@ -67,6 +67,18 @@ const runRowSchema = z.object({
   started_at: z.coerce.date().nullable(),
   finished_at: z.coerce.date().nullable(),
   assessment_id: z.uuid().nullable().optional(),
+  assessment_repository_host: z.string().nullable().optional(),
+  assessment_repository_owner: z.string().nullable().optional(),
+  assessment_repository_name: z.string().nullable().optional(),
+  assessment_pull_request_number: z.coerce
+    .number()
+    .int()
+    .positive()
+    .nullable()
+    .optional(),
+  assessment_base_sha: z.string().nullable().optional(),
+  assessment_head_sha: z.string().nullable().optional(),
+  assessment_report_available: z.boolean().nullable().optional(),
 })
 type RunRow = z.infer<typeof runRowSchema> & Record<string, unknown>
 
@@ -145,10 +157,26 @@ export interface RunRecord {
   readonly startedAt: Date | null
   readonly finishedAt: Date | null
   readonly assessmentId?: string | null
+  readonly assessment?: PublicRun["assessment"]
 }
 
 function mapRun(row: RunRow): RunRecord {
   const parsed = runRowSchema.parse(row)
+  const assessment =
+    parsed.assessment_id === null || parsed.assessment_id === undefined
+      ? undefined
+      : {
+          id: parsed.assessment_id,
+          repository: {
+            host: parsed.assessment_repository_host,
+            owner: parsed.assessment_repository_owner,
+            name: parsed.assessment_repository_name,
+          },
+          pullRequestNumber: parsed.assessment_pull_request_number,
+          baseSha: parsed.assessment_base_sha,
+          headSha: parsed.assessment_head_sha,
+          reportAvailable: parsed.assessment_report_available ?? false,
+        }
   return {
     id: parsed.id,
     applicationId: parsed.application_id,
@@ -173,6 +201,9 @@ function mapRun(row: RunRow): RunRecord {
     startedAt: parsed.started_at,
     finishedAt: parsed.finished_at,
     assessmentId: parsed.assessment_id ?? null,
+    ...(assessment === undefined
+      ? {}
+      : { assessment: publicRunSchema.shape.assessment.unwrap().parse(assessment) }),
   }
 }
 
@@ -208,9 +239,11 @@ export function toPublicRun(run: RunRecord): PublicRun {
     ...(run.retryOf === null ? {} : { retryOf: run.retryOf }),
     ...(run.runType === "assess_pr" &&
     run.status === "succeeded" &&
-    run.assessmentId != null
+    run.assessmentId != null &&
+    run.assessment?.reportAvailable === true
       ? { assessmentId: run.assessmentId }
       : {}),
+    ...(run.assessment === undefined ? {} : { assessment: run.assessment }),
     createdAt: run.createdAt.toISOString(),
     ...(run.startedAt === null
       ? {}
@@ -587,7 +620,14 @@ export class RunRepository {
 
   async getOwned(operatorId: string, runId: string): Promise<PublicRun | null> {
     const rows = await this.controlQuery<RunRow>(
-      `select run.*, assessment.id as assessment_id
+      `select run.*, assessment.id as assessment_id,
+              assessment.repository_host as assessment_repository_host,
+              assessment.repository_owner as assessment_repository_owner,
+              assessment.repository_name as assessment_repository_name,
+              assessment.pull_request_number as assessment_pull_request_number,
+              assessment.base_sha as assessment_base_sha,
+              assessment.head_sha as assessment_head_sha,
+              (assessment.report_id is not null) as assessment_report_available
        from sentinel.runs run
        join sentinel.onboarding_configurations onboarding
          on onboarding.application_id = run.application_id
@@ -595,7 +635,6 @@ export class RunRepository {
        left join sentinel.pr_assessments assessment
          on assessment.application_id = run.application_id
         and assessment.run_id = run.id
-        and assessment.report_id is not null
        where run.id = $2::uuid`,
       [operatorIdSchema.parse(operatorId), databaseRunIdSchema.parse(runId)]
     )
@@ -614,7 +653,14 @@ export class RunRepository {
     const cursor = input.cursor
     const limit = pageLimitSchema.parse(input.limit)
     const rows = await this.controlQuery<RunRow>(
-      `select run.*, assessment.id as assessment_id
+      `select run.*, assessment.id as assessment_id,
+              assessment.repository_host as assessment_repository_host,
+              assessment.repository_owner as assessment_repository_owner,
+              assessment.repository_name as assessment_repository_name,
+              assessment.pull_request_number as assessment_pull_request_number,
+              assessment.base_sha as assessment_base_sha,
+              assessment.head_sha as assessment_head_sha,
+              (assessment.report_id is not null) as assessment_report_available
        from sentinel.runs run
        join sentinel.onboarding_configurations onboarding
          on onboarding.application_id = run.application_id
@@ -622,7 +668,6 @@ export class RunRepository {
        left join sentinel.pr_assessments assessment
          on assessment.application_id = run.application_id
         and assessment.run_id = run.id
-        and assessment.report_id is not null
        where ($2::uuid is null or run.application_id = $2::uuid)
          and ($3::timestamptz is null or (
            date_trunc('milliseconds', run.created_at), run.id

@@ -176,6 +176,7 @@ interface PreparedCandidate {
   readonly kind: BrowserActionKind
   readonly role?: string | undefined
   readonly name?: string | undefined
+  readonly contextLabel?: string | undefined
   readonly inputSlot?: string | undefined
   readonly disabled: boolean
   readonly signature: ContentHash
@@ -512,6 +513,12 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
       await this.throwPendingViolation(session)
       this.assertRunDuration(session)
       setupStage = "initial_observation"
+      if (policy.budgets.observationSettleMs > 0) {
+        await this.awaitSessionOperation(
+          session,
+          page.waitForTimeout(policy.budgets.observationSettleMs)
+        )
+      }
       const observation = await this.awaitSessionOperation(
         session,
         this.captureObservation(session)
@@ -556,6 +563,14 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
     try {
       this.assertRunDuration(session)
       await this.throwPendingViolation(session)
+      if (session.policy.budgets.observationSettleMs > 0) {
+        await this.awaitSessionOperation(
+          session,
+          session.page.waitForTimeout(
+            session.policy.budgets.observationSettleMs
+          )
+        )
+      }
       const observation = await this.awaitSessionOperation(
         session,
         this.captureObservation(session)
@@ -636,8 +651,8 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         (candidate) => candidate.signature === record.candidate.signature
       )
       if (
-        current.stateFingerprint !== record.observation.stateFingerprint ||
-        currentCandidate?.behaviorFingerprint !== record.behaviorFingerprint
+        currentCandidate === undefined ||
+        currentCandidate.behaviorFingerprint !== record.behaviorFingerprint
       ) {
         throw this.publicError(
           session.runId,
@@ -725,8 +740,12 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
             ordinal: session.history.length,
             signature: record.candidate.signature,
             kind: record.candidate.kind,
-            name: record.candidate.name,
-            inputSlot: record.candidate.inputSlot,
+            ...(record.candidate.name === undefined
+              ? {}
+              : { name: record.candidate.name }),
+            ...(record.candidate.inputSlot === undefined
+              ? {}
+              : { inputSlot: record.candidate.inputSlot }),
             expectedBeforeFingerprint: transition.before.stateFingerprint,
             expectedAfterFingerprint: transition.after.stateFingerprint,
             replaySafe: true,
@@ -759,7 +778,7 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
             ? "Browser action triggered a denied side effect"
             : expired
               ? "Run time limit was reached"
-              : "Browser action failed",
+              : `Browser action failed: ${this.safeSetupDiagnostic(error)}`,
           actionId
         )
       }
@@ -959,6 +978,16 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
       ["ZodError", "TypeError", "RangeError"].includes(error.name)
     ) {
       return error.name
+    }
+    if (error instanceof Error && error.name === "TimeoutError") {
+      return "action_timeout"
+    }
+    if (error instanceof Error) {
+      if (/not visible/i.test(error.message)) return "target_not_visible"
+      if (/detached/i.test(error.message)) return "target_detached"
+      if (/intercepts pointer events/i.test(error.message)) {
+        return "target_intercepted"
+      }
     }
     return "browser_error"
   }
@@ -1401,9 +1430,14 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         actionId,
         signature: prepared.signature,
         kind: prepared.kind,
-        role: prepared.role,
-        name: prepared.name,
-        inputSlot: prepared.inputSlot,
+        ...(prepared.role === undefined ? {} : { role: prepared.role }),
+        ...(prepared.name === undefined ? {} : { name: prepared.name }),
+        ...(prepared.contextLabel === undefined
+          ? {}
+          : { contextLabel: prepared.contextLabel }),
+        ...(prepared.inputSlot === undefined
+          ? {}
+          : { inputSlot: prepared.inputSlot }),
         disabled: prepared.disabled,
         policy: prepared.policy,
         expiresAt: iso(expiresAt),
@@ -1431,9 +1465,9 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
       selectedText: snapshot.selectedText,
       candidates: candidates.map(({ candidate }) => candidate),
       stateFingerprint: snapshot.stateFingerprint,
-      screenshotArtifactId,
+      ...(screenshotArtifactId === undefined ? {} : { screenshotArtifactId }),
       errors: session.errors.slice(-100),
-      priorActionId,
+      ...(priorActionId === undefined ? {} : { priorActionId }),
       observedAt: iso(observedAt),
     })
     for (const { candidate, prepared } of candidates) {
@@ -1502,6 +1536,19 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
           html.getAttribute("title") ||
           inputButtonName ||
           ""
+        let contextLabel = ""
+        let context = html.parentElement
+        for (let depth = 0; depth < 6 && context !== null; depth += 1) {
+          const heading = context.querySelector(
+            "h1, h2, h3, h4, [role='heading']"
+          ) as HTMLElement | null
+          const text = heading?.innerText.trim() ?? ""
+          if (text.length > 0 && text !== name.trim()) {
+            contextLabel = text
+            break
+          }
+          context = context.parentElement
+        }
         const button =
           element instanceof HTMLButtonElement ? element : undefined
         const anchor =
@@ -1510,6 +1557,7 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
           tag,
           explicitRole: html.getAttribute("role") ?? "",
           name,
+          contextLabel,
           disabled:
             html.getAttribute("aria-disabled") === "true" ||
             ("disabled" in html && Boolean(html.disabled)),
@@ -1528,6 +1576,7 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         }
       })
       const role = roleForElement(raw.tag, raw.explicitRole, raw.inputType)
+      const contextLabel = redactor.redactText(raw.contextLabel, 512)
       const descriptor: ElementDescriptor = {
         tag: raw.tag,
         role,
@@ -1548,6 +1597,7 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         kind,
         role,
         name: semanticName,
+        contextLabel,
         inputSlot,
       })
       const occurrence = occurrences.get(semanticKey) ?? 0
@@ -1556,6 +1606,7 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         kind,
         role,
         name: semanticName,
+        ...(contextLabel.length === 0 ? {} : { contextLabel }),
         ...(inputSlot === undefined ? {} : { inputSlot }),
         tag: descriptor.tag,
         ...(descriptor.inputType === undefined
@@ -1585,6 +1636,7 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         kind,
         role,
         name: descriptor.name,
+        ...(contextLabel.length === 0 ? {} : { contextLabel }),
         inputSlot,
         disabled: descriptor.disabled,
         signature,

@@ -376,10 +376,14 @@ export function DashboardShell({
 
   return (
     <DashboardGuardContext.Provider value={{ dirty, setDirty }}>
-      <div className="min-h-svh bg-muted/25 text-foreground lg:grid lg:grid-cols-[auto_minmax(0,1fr)]">
+      <div
+        data-slot="dashboard-shell"
+        className="min-h-svh bg-muted/25 text-foreground"
+      >
         <aside
+          data-slot="dashboard-sidebar"
           className={cn(
-            "sticky top-0 hidden h-svh border-r border-sidebar-border bg-sidebar transition-[width] duration-200 lg:block",
+            "fixed inset-y-0 left-0 z-30 hidden h-svh border-r border-sidebar-border bg-sidebar transition-[width] duration-200 lg:block",
             collapsed ? "w-14" : "w-[15.5rem]"
           )}
         >
@@ -392,7 +396,13 @@ export function DashboardShell({
             onCollapse={() => setCollapsed((value) => !value)}
           />
         </aside>
-        <div className="min-w-0">
+        <div
+          data-slot="dashboard-content"
+          className={cn(
+            "min-w-0 transition-[margin] duration-200",
+            collapsed ? "lg:ml-14" : "lg:ml-[15.5rem]"
+          )}
+        >
           <header className="flex h-14 items-center gap-3 border-b border-border bg-background px-3 lg:hidden">
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
               <SheetTrigger
@@ -427,9 +437,7 @@ export function DashboardShell({
               / {selected?.name ?? "New application"}
             </span>
           </header>
-          <div className="min-h-[calc(100svh-3.5rem)] lg:min-h-svh">
-            {children}
-          </div>
+          {children}
         </div>
       </div>
       <AlertDialog

@@ -602,13 +602,15 @@ function Workspace({
           <div className="flex items-center gap-2 text-xs">
             <StatusMark
               status={
-                currentApplication.confirmed
+                currentApplication.confirmed &&
+                currentApplication.status === "awaiting_confirmation"
                   ? "ready"
                   : currentApplication.status
               }
             />
             <span>
-              {currentApplication.confirmed
+              {currentApplication.confirmed &&
+              currentApplication.status === "awaiting_confirmation"
                 ? "Ready to initialize"
                 : (statusLabels[currentApplication.status] ??
                   currentApplication.status)}

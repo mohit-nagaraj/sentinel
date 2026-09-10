@@ -713,10 +713,12 @@ describe("PR investigation graph", () => {
   it("adapts assess_pr run commands to the compiled run-graph contract", async () => {
     const fixture = harness()
     const finalizeReport = vi.fn().mockResolvedValue("published" as const)
+    const publishCheck = vi.fn().mockResolvedValue("published" as const)
     const compiled = createPrInvestigationCompiledRunGraph({
       service: fixture.service,
       resolver: { resolve: async () => start() },
       reports: { finalize: finalizeReport },
+      checks: { publishCheck },
     })
     const graphInput = {
       runId: assessmentId,
@@ -740,9 +742,49 @@ describe("PR investigation graph", () => {
       { investigation: expect.objectContaining({ status: "completed" }) },
       context.signal
     )
+    expect(publishCheck).toHaveBeenCalledWith(
+      expect.objectContaining({
+        assessmentId,
+        headSha,
+        lifecycle: expect.objectContaining({ state: "running" }),
+      })
+    )
     await expect(compiled.hasCheckpoint(graphInput)).resolves.toBe(true)
     await expect(
       compiled.hasPendingInterrupt(graphInput, "unused")
     ).resolves.toBe(false)
+  })
+
+  it("finalizes an action-required assessment report", async () => {
+    const fixture = harness({ baselineStatus: "stale_relevant" })
+    const finalizeReport = vi.fn().mockResolvedValue("published" as const)
+    const compiled = createPrInvestigationCompiledRunGraph({
+      service: fixture.service,
+      resolver: { resolve: async () => start() },
+      reports: { finalize: finalizeReport },
+      checks: { publishCheck: async () => "published" },
+    })
+    const context = {
+      signal: new AbortController().signal,
+      assertActive: async () => undefined,
+      registerCleanup: () => undefined,
+    }
+
+    await expect(
+      compiled.start(
+        {
+          runId: assessmentId,
+          applicationId: "00000000-0000-4000-8000-000000000001",
+          budget,
+          payload: { pullRequestNumber: 27, baseSha, headSha },
+          configurationFingerprint: contentHash("8"),
+        },
+        context
+      )
+    ).resolves.toMatchObject({ status: "succeeded" })
+    expect(finalizeReport).toHaveBeenCalledWith(
+      { investigation: expect.objectContaining({ status: "action_required" }) },
+      context.signal
+    )
   })
 })

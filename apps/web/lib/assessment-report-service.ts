@@ -42,6 +42,7 @@ export type AssessmentReportDownload =
 
 export interface AssessmentReportWebService {
   get(assessmentId: string): Promise<AssessmentReportView | null>
+  status(assessmentId: string): Promise<AssessmentReportStatusView | null>
   download(
     assessmentId: string,
     expiresInSeconds?: number
@@ -50,6 +51,28 @@ export interface AssessmentReportWebService {
     assessmentId: string,
     artifactId: string
   ): Promise<PrivateArtifactExcerpt | null>
+}
+
+export interface AssessmentReportStatusView {
+  readonly assessmentId: string
+  readonly applicationId: string
+  readonly runId: string
+  readonly status:
+    | "queued"
+    | "running"
+    | "interrupted"
+    | "cancelling"
+    | "cancelled"
+    | "succeeded"
+    | "failed"
+  readonly repositoryOwner: string
+  readonly repositoryName: string
+  readonly pullRequestNumber: number
+  readonly error: {
+    readonly category: string
+    readonly code: string
+    readonly retryable: boolean
+  } | null
 }
 
 const sampleReport = sampleReportSchema.parse(sampleReportSource)
@@ -61,6 +84,21 @@ function fixtureView(): AssessmentReportView {
 export class FixtureAssessmentReportService implements AssessmentReportWebService {
   async get(assessmentId: string) {
     return assessmentId === REPORT_FIXTURE_ASSESSMENT_ID ? fixtureView() : null
+  }
+
+  async status(assessmentId: string) {
+    return assessmentId === REPORT_FIXTURE_ASSESSMENT_ID
+      ? {
+          assessmentId,
+          applicationId: "00000000-0000-4000-8000-000000000001",
+          runId: "00000000-0000-4000-8000-000000000002",
+          status: "succeeded" as const,
+          repositoryOwner: "HiEventsDev",
+          repositoryName: "Hi.Events",
+          pullRequestNumber: 1338,
+          error: null,
+        }
+      : null
   }
 
   async download(assessmentId: string) {
@@ -120,6 +158,21 @@ export function getAssessmentReportService(): AssessmentReportWebService {
                   }),
             })
       ),
+    status: async (assessmentId) => {
+      const status = await delivery.getOwnedStatus({ operatorId, assessmentId })
+      return status === null
+        ? null
+        : {
+            assessmentId: status.assessmentId,
+            applicationId: status.applicationDatabaseId,
+            runId: status.runId,
+            status: status.runStatus,
+            repositoryOwner: status.repositoryOwner,
+            repositoryName: status.repositoryName,
+            pullRequestNumber: status.pullRequestNumber,
+            error: status.error,
+          }
+    },
     download: async (assessmentId, expiresInSeconds) => {
       const url = await delivery.signedOwnedDownload({
         operatorId,

@@ -86,6 +86,7 @@ function candidate(input: {
   signature: string
   name: string
   kind?: BrowserActionCandidate["kind"]
+  contextLabel?: string
   allowed?: boolean
   replaySafe?: boolean
   category?: BrowserActionCandidate["policy"]["category"]
@@ -101,6 +102,9 @@ function candidate(input: {
         ? "navigation"
         : "button",
     name: input.name,
+    ...(input.contextLabel === undefined
+      ? {}
+      : { contextLabel: input.contextLabel }),
     disabled: false,
     policy: {
       category,

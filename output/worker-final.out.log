@@ -1,0 +1,111 @@
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+{"timestamp":"2026-09-10T07:14:14.829Z","level":"info","event":"worker_health_listening","workerId"Failed running 'src/cli.ts'. Waiting for file changes before restarting...
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Failed running 'src/cli.ts'. Waiting for file changes before restarting...
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+D:\github projects\sentinel\apps\worker:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @sentinel/worker@0.0.1 dev: `node --experimental-transform-types --watch src/cli.ts`
+Exit status 1
+
+    "       or (status in ('running', 'cancelling') and lease_expires_at < now())\n" +
+    '    order by created_at, id\n' +
+    '    for update skip locked\n' +
+    '    limit 1\n' +
+    '  )\n' +
+    '  update sentinel.runs as run\n' +
+    '  set status = case\n' +
+    "        when run.cancel_requested_at is null then 'running'\n" +
+    "        else 'cancelling'\n" +
+    '      end,\n' +
+    '      lease_owner = p_owner,\n' +
+    '      lease_expires_at = now() + make_interval(secs => p_lease_seconds),\n' +
+    '      attempt_count = run.attempt_count + 1,\n' +
+    '      started_at = coalesce(run.started_at, now())\n' +
+    '  from candidate\n' +
+    '  where run.id = candidate.id\n' +
+    '  returning run.*"\n' +
+    'PL/pgSQL function sentinel.claim_run(text,integer) line 10 at RETURN QUERY',
+  file: 'pl_exec.c',
+  line: '3911',
+  routine: 'exec_stmt_raise'
+}
+{"timestamp":"2026-09-10T07:14:15.775Z","level":"info","event":"worker_run_claimed","workerId":"worker-local","runId":"e9c68826-2c4c-46b2-b078-071fd2536639","applicationId":"830387b3-fbc5-4916-89b8-3b8f040805b0","runType":"assess_pr","attempt":2}
+{
+  severity_local: 'WARNING',
+  severity: 'WARNING',
+  code: '01000',
+  message: 'WarnSendingBroadcastMessage: no partition of relation "messages" found for row',
+  where: 'PL/pgSQL function realtime.send(jsonb,text,text,boolean) line 23 at RAISE\n' +
+    'SQL statement "SELECT realtime.send(\n' +
+    "      pg_catalog.jsonb_build_object('runId', v_run_id),\n" +
+    "      'run_state',\n" +
+    "      'run:' || v_run_id::text,\n" +
+    '      true\n' +
+    '    )"\n' +
+    'PL/pgSQL function sentinel.broadcast_run_state() line 11 at PERFORM\n' +
+    'SQL statement "update sentinel.runs\n' +
+    '  set status = p_status, lease_owner = null, lease_expires_at = null,\n' +
+    '      error_category = p_error_category, error_code = p_error_code,\n' +
+    '      error_retryable = p_error_retryable, finished_at = now()\n' +
+    '  where id = p_run_id and lease_owner = p_owner and lease_expires_at > now()\n' +
+    "    and status in ('running', 'cancelling')\n" +
+    "    and (status = 'running' or p_status in ('cancelled', 'failed'))\n" +
+    '  returning application_id, run_type, application_status_before,\n' +
+    '            configuration_fingerprint, request"\n' +
+    'PL/pgSQL function sentinel.finish_control_run(uuid,text,text,text,text,boolean,jsonb) line 35 at SQL statement',
+  file: 'pl_exec.c',
+  line: '3911',
+  routine: 'exec_stmt_raise'
+}
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Failed running 'src/cli.ts'. Waiting for file changes before restarting...
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+Restarting 'src/cli.ts'
+D:\github projects\sentinel\apps\worker:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @sentinel/worker@0.0.1 dev: `node --experimental-transform-types --watch src/cli.ts`
+Exit status 1

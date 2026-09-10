@@ -74,6 +74,7 @@ export const DOCUMENTATION_EXPLORER_SPECIALIST_COMPLETION_ID =
   "documentation_explorer_completion_v1" as const
 export const DOCUMENTATION_EXPLORER_SPECIALIST_GRAPH_NAME =
   "documentation_explorer_v1" as const
+const MODEL_DECISION_MAX_OUTPUT_TOKENS = 1_024
 
 export const DOCUMENTATION_EXPLORER_SPECIALIST_INSTRUCTIONS = [
   "You are Sentinel's bounded Documentation Explorer.",
@@ -82,9 +83,13 @@ export const DOCUMENTATION_EXPLORER_SPECIALIST_INSTRUCTIONS = [
   "Navigate only the caller-prepared approved documentation map; never request a URL, file, browser, shell, graph, or mutation capability.",
   "Use tree and search metadata to choose relevant sections, then read a section before citing it.",
   "Submit exactly one atomic, testable requirement or acceptance criterion at a time with an exact prior-read quote and immutable citation fields.",
+  "Copy statement and capability as exact contiguous word sequences from inside the cited quote; never paraphrase or add MUST, SHALL, or other normative language absent from the quote.",
+  "Omit actor and expectedOutcome unless each is stated explicitly inside the selected citation span.",
+  "Split feature lists into separate claims rather than copying or paraphrasing multiple capabilities into one claim.",
   "Do not turn marketing, setup steps, examples, architecture prose, vague language, or unsupported paraphrases into requirements.",
   "Keep exact duplicates grouped and contradictory sources distinct and unresolved.",
   "Use finish_document_mission with one explicit disposition per mission question, selected requirement IDs, exclusions, and bounded Code or Application follow-ups.",
+  "When two or fewer model calls remain, stop exploring and call finish_document_mission with complete or partial status; preserve every accepted requirement and mark uncovered questions unresolved.",
   "Never assign authoritative evidence tiers, runtime coverage, code relationships, risk, acceptance, or graph mutations.",
 ].join(" ")
 
@@ -110,6 +115,28 @@ const toolSchemas: Readonly<Record<DocumentationExplorerToolName, z.ZodType>> =
     submit_requirement_claim: submitRequirementClaimInputSchema,
     finish_document_mission: finishDocumentMissionInputSchema,
   }
+
+function modelToolSchema(
+  name: DocumentationExplorerToolName,
+  options: DocumentationExplorerSpecialistOptions
+): z.ZodType {
+  const limit = z
+    .number()
+    .int()
+    .positive()
+    .max(options.maxResultsPerTool)
+    .optional()
+  if (name === "list_document_tree") {
+    return listDocumentTreeInputSchema.extend({ limit })
+  }
+  if (name === "search_documentation") {
+    return searchDocumentationInputSchema.extend({ limit })
+  }
+  if (name === "inspect_linked_sections") {
+    return inspectLinkedSectionsInputSchema.extend({ limit })
+  }
+  return toolSchemas[name]
+}
 
 const richToolDraftReferenceSchema = z.strictObject({
   draftId: contentHashSchema,
@@ -253,7 +280,7 @@ export interface StoredDocumentationExplorerToolDraft {
   >
 }
 
-function parseToolDraft(
+export function parseStoredDocumentationExplorerToolDraft(
   input: StoredDocumentationExplorerToolDraft
 ): StoredDocumentationExplorerToolDraft {
   const draft = documentationToolDraftSchema.parse(input)
@@ -273,7 +300,7 @@ function createToolDraft(
   missionId: string,
   request: StoredDocumentationExplorerToolDraft["request"]
 ): StoredDocumentationExplorerToolDraft {
-  return parseToolDraft({
+  return parseStoredDocumentationExplorerToolDraft({
     missionId,
     draftId: hashCanonical({
       kind: "documentation_tool_draft",
@@ -453,7 +480,7 @@ export interface StoredDocumentationExplorerToolResult {
   readonly usage: MissionBudget
 }
 
-function parseStoredToolResult(
+export function parseStoredDocumentationExplorerToolResult(
   input: StoredDocumentationExplorerToolResult
 ): StoredDocumentationExplorerToolResult {
   const record = storedToolResultSchema.parse(input)
@@ -521,7 +548,7 @@ async function readStoredToolResults(
 ): Promise<readonly StoredDocumentationExplorerToolResult[]> {
   const missionId = missionIdSchema.parse(missionIdInput)
   const records = (await store.listToolResults(missionId)).map(
-    parseStoredToolResult
+    parseStoredDocumentationExplorerToolResult
   )
   if (records.some((record) => record.missionId !== missionId)) {
     throw new Error("Documentation store returned a cross-mission record")
@@ -543,7 +570,7 @@ export class InMemoryDocumentationExplorerSpecialistStoreForTesting implements D
   async putToolDraft(
     draftInput: StoredDocumentationExplorerToolDraft
   ): Promise<void> {
-    const draft = parseToolDraft(draftInput)
+    const draft = parseStoredDocumentationExplorerToolDraft(draftInput)
     const key = `${draft.missionId}\u0000${draft.draftId}`
     const existing = this.#drafts.get(key)
     if (
@@ -564,13 +591,13 @@ export class InMemoryDocumentationExplorerSpecialistStoreForTesting implements D
     const draft = this.#drafts.get(`${parsedMissionId}\u0000${parsedDraftId}`)
     return draft === undefined
       ? undefined
-      : parseToolDraft(structuredClone(draft))
+      : parseStoredDocumentationExplorerToolDraft(structuredClone(draft))
   }
 
   async putToolResult(
     result: StoredDocumentationExplorerToolResult
   ): Promise<void> {
-    const parsed = parseStoredToolResult(result)
+    const parsed = parseStoredDocumentationExplorerToolResult(result)
     const key = `${parsed.missionId}\u0000${parsed.callId}`
     const existing = this.#records.get(key)
     if (
@@ -603,7 +630,9 @@ export class InMemoryDocumentationExplorerSpecialistStoreForTesting implements D
     return [...this.#records.values()]
       .filter((record) => record.missionId === missionId)
       .sort((left, right) => left.sequence - right.sequence)
-      .map((record) => parseStoredToolResult(structuredClone(record)))
+      .map((record) =>
+        parseStoredDocumentationExplorerToolResult(structuredClone(record))
+      )
   }
 
   async getMissionResult(
@@ -837,28 +866,44 @@ function resolveSupportedCitation(
     /\b(?:best|delightful|for example|industry-leading|leading|seamless|world(?:'s)?\s+(?:best|most))\b/i
   const vague =
     /\b(?:easy|easily|fast|intuitive|quick|quickly|robust|simple|user[- ]friendly|works?\s+well)\b/i
+  const setupInstruction =
+    /(?:\blocalhost(?::\d+)?\b|^\s*(?:docker(?:\s+compose)?|npm|pnpm|yarn|composer|php\s+artisan)\s+)/i
+  const supportContact =
+    /\b(?:contact|email|reach out to)\s+(?:our\s+)?(?:support|team|us)\b/i
   const excludedHeading =
     /\b(?:architecture|example|examples|installation|internal|internals|marketing|setup)\b/i
   const compoundAction =
     /\b(?:can|may|must|shall|should|will)\b[^.!?]*\b(?:add|approve|cancel|create|delete|edit|export|import|install|publish|refund|reject|remove|run|select|send|start|stop|submit|update|view)\b[^.!?]*\b(?:and|or)\b[^.!?]*\b(?:add|approve|cancel|create|delete|edit|export|import|install|publish|refund|reject|remove|run|select|send|start|stop|submit|update|view)\b/i
+  const multipleActions =
+    /\b(?:add|approve|cancel|create|delete|edit|export|import|install|learn|publish|refund|reject|remove|run|select|send|set up|start|stop|submit|update|view)\b[^.!?]*\b(?:and|or)\b[^.!?]*\b(?:add|approve|cancel|create|delete|edit|export|import|install|learn|publish|refund|reject|remove|run|select|send|set up|start|stop|submit|update|view)\b/i
   const sentenceMarks = statement.match(/[.!?]+/g) ?? []
   const normativeCount = statement.match(
     /\b(?:can(?:not)?|may|must|require[ds]?|shall|should|will)\b/gi
   )?.length
+  const atomicFeaturePhrase =
+    input.kind === "requirement" &&
+    statement.length <= 240 &&
+    !/[\n;\u00b7\u2022]/u.test(statement) &&
+    textSupports(quote, statement)
   if (
     statement.length > 4_096 ||
     sentenceMarks.length > 1 ||
     (normativeCount ?? 0) > 1 ||
     compoundAction.test(statement) ||
+    multipleActions.test(statement) ||
     excluded.test(statement) ||
     excluded.test(quote) ||
     vague.test(statement) ||
+    setupInstruction.test(statement) ||
+    supportContact.test(statement) ||
     excludedHeading.test(fullCitation.headingPath.join(" ")) ||
     (!normative.test(statement) &&
-      !(input.kind === "acceptance_criterion" && criterion.test(statement))) ||
+      !(input.kind === "acceptance_criterion" && criterion.test(statement)) &&
+      !atomicFeaturePhrase) ||
     hasNegativePolarity(statement) !== hasNegativePolarity(quote) ||
     !textSupports(quote, statement) ||
     !textSupports(quote, input.capability) ||
+    !textSupports(statement, input.capability) ||
     (input.actor !== undefined && !textSupports(quote, input.actor)) ||
     (input.expectedOutcome !== undefined &&
       !textSupports(quote, input.expectedOutcome)) ||
@@ -1680,15 +1725,28 @@ function estimateToolUsage(
     throw new Error("Documentation result-item budget is exhausted")
   }
   if (!observationToolNames.has(name)) return { toolCalls: 1 }
+  const readsSection = name === "read_document_section"
+  const treeSections =
+    name === "list_document_tree"
+      ? options.maxResultsPerTool * 25
+      : options.maxResultsPerTool
   return {
     toolCalls: 1,
-    contentBytes: Math.max(1, remaining("contentBytes")),
-    documentBytes:
-      name === "read_document_section"
-        ? Math.max(1, remaining("documentBytes"))
-        : 0,
-    documentPages: Math.max(1, remaining("documentPages")),
-    documentSections: Math.max(1, remaining("documentSections")),
+    contentBytes: Math.max(1, Math.min(65_536, remaining("contentBytes"))),
+    documentBytes: readsSection
+      ? Math.max(
+          1,
+          Math.min(options.maxSectionCharacters, remaining("documentBytes"))
+        )
+      : 0,
+    documentPages: Math.max(
+      1,
+      Math.min(options.maxResultsPerTool, remaining("documentPages"))
+    ),
+    documentSections: Math.max(
+      1,
+      Math.min(readsSection ? 1 : treeSections, remaining("documentSections"))
+    ),
   }
 }
 
@@ -1736,7 +1794,7 @@ async function resolveExternalRequest(
   if (storedDraft === undefined) {
     throw new Error("Documentation rich tool draft is missing or mismatched")
   }
-  const draft = parseToolDraft(storedDraft)
+  const draft = parseStoredDocumentationExplorerToolDraft(storedDraft)
   if (
     draft.missionId !== missionId ||
     draft.draftId !== draftId ||
@@ -2305,7 +2363,7 @@ class DocumentationExplorerDecisionModel {
       ...EMPTY_BUDGET_USAGE,
       modelCalls: 1,
       modelInputTokens: this.options.maxContextCharacters,
-      modelOutputTokens: 512,
+      modelOutputTokens: MODEL_DECISION_MAX_OUTPUT_TOKENS,
     })
   }
 
@@ -2449,6 +2507,68 @@ class DocumentationExplorerDecisionModel {
     }
     const allowed = new Set(request.mission.scope.allowedTools)
     const definitions = this.definitions.filter(({ name }) => allowed.has(name))
+    if (
+      request.remainingBudget.modelCalls <= 2 &&
+      allowed.has("finish_document_mission")
+    ) {
+      const accepted = claimsFrom(durable)
+      const requirementIds = accepted.map(({ requirement }) => requirement.id)
+      const evidenceIds = [
+        ...new Set(accepted.map(({ citation }) => citation.evidenceId)),
+      ]
+      const finish = finishDocumentMissionInputSchema.parse({
+        status: "partial",
+        selectedRequirementIds: requirementIds,
+        questionDispositions: this.mission.questions.map(
+          (question, questionIndex) => ({
+            questionIndex,
+            question,
+            status: accepted.length === 0 ? "unresolved" : "covered",
+            requirementIds,
+            evidenceIds,
+            reasonCode:
+              accepted.length === 0
+                ? "bounded_search_complete"
+                : "cited_requirement",
+            summary:
+              accepted.length === 0
+                ? "The bounded search ended without an accepted exact-cited requirement."
+                : "The bounded search retained exact-cited requirements before its final model reservation.",
+          })
+        ),
+        exclusions: [],
+        suggestedFollowups: [],
+        stopReason: {
+          code: "bounded_search_complete",
+          summary:
+            "The specialist finalized before exhausting its model-call budget.",
+        },
+      })
+      const externalRequest: Extract<
+        DocumentationExplorerToolInput,
+        { readonly toolName: "finish_document_mission" }
+      > = { toolName: "finish_document_mission", arguments: finish }
+      const draft = createToolDraft(this.mission.id, externalRequest)
+      await this.store.putToolDraft(draft)
+      const decisionId = `bounded_finish_${request.stateFingerprint.slice("sha256:".length, "sha256:".length + 48)}`
+      return {
+        decisionId,
+        usage: this.providerEstimate(),
+        action: {
+          kind: "tool_calls",
+          calls: [
+            {
+              callId: deterministicCallId(decisionId),
+              toolName: "finish_document_mission",
+              arguments: kernelArgumentsForRequest(
+                this.mission.id,
+                externalRequest
+              ),
+            },
+          ],
+        },
+      }
+    }
     let response: Awaited<
       ReturnType<DocumentationExplorerModelGateway["decideTools"]>
     >
@@ -2461,7 +2581,7 @@ class DocumentationExplorerDecisionModel {
         }),
         instructions: DOCUMENTATION_EXPLORER_SPECIALIST_INSTRUCTIONS,
         maxOutputTokens: Math.min(
-          512,
+          MODEL_DECISION_MAX_OUTPUT_TOKENS,
           request.remainingBudget.modelOutputTokens
         ),
         tools: definitions,
@@ -2795,7 +2915,7 @@ export function createDocumentationExplorerSpecialist(
       return {
         name,
         description,
-        parameters: toolSchemas[name],
+        parameters: modelToolSchema(name, options),
       }
     }),
     input.store,

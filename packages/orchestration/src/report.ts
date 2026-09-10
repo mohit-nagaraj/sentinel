@@ -720,8 +720,11 @@ export function createAssessmentReportRunFinalizer(input: {
     finalize: async ({ investigation: investigationValue }, signal) => {
       const investigation =
         prInvestigationResultSchema.parse(investigationValue)
-      if (investigation.status !== "completed") {
-        throw new Error("Only completed PR investigations can produce a report")
+      if (
+        investigation.status !== "completed" &&
+        investigation.status !== "action_required"
+      ) {
+        throw new Error("Only terminal PR investigations can produce a report")
       }
       const source = assessmentReportSourceSchema.parse(
         await input.source.resolve({ investigation }, signal)
@@ -741,6 +744,7 @@ export function createAssessmentReportRunFinalizer(input: {
         source,
         currentHead: input.currentHead,
         publisher: input.publisher,
+        actionRequired: investigation.status === "action_required",
         ...(input.model === undefined ? {} : { model: input.model }),
         ...(signal === undefined ? {} : { signal }),
       })
@@ -765,6 +769,7 @@ export async function generateAndPublishAssessmentReport(input: {
   readonly currentHead: AssessmentReportCurrentHeadPort
   readonly publisher: AssessmentReportPublicationPort
   readonly model?: ReportWordingModelPort
+  readonly actionRequired?: boolean
   readonly signal?: AbortSignal
 }) {
   const source = assessmentReportSourceSchema.parse(input.source)
@@ -799,6 +804,9 @@ export async function generateAndPublishAssessmentReport(input: {
     view,
     markdown,
     artifactId: publication.artifactId,
-    check: buildGithubReportCheck({ view }),
+    check: buildGithubReportCheck({
+      view,
+      actionRequired: input.actionRequired === true,
+    }),
   }
 }

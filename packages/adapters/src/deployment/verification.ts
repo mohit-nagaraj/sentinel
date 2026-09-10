@@ -4,13 +4,17 @@ import {
   deploymentProviderProofSchema,
   deploymentValidationRequestSchema,
   deploymentValidationResultSchema,
+  type DeploymentProvider,
   type DeploymentProviderProof,
   type DeploymentRegistration,
   type DeploymentValidationRequest,
   type DeploymentValidationResult,
 } from "@sentinel/contracts"
 
-import type { UrlReadinessProbe } from "../onboarding/compatibility.ts"
+import type {
+  ApplicationReadinessProbe,
+  UrlReadinessProbe,
+} from "../onboarding/compatibility.ts"
 
 export interface DeploymentAttestor {
   attest(
@@ -50,36 +54,60 @@ export interface DeploymentValidationServiceOptions {
   readonly now?: () => Date
 }
 
-const actionByReason: Record<
-  Exclude<DeploymentValidationResult["reason"], "deployment_ready">,
+const sharedActionByReason: Record<
+  Exclude<
+    DeploymentValidationResult["reason"],
+    | "deployment_ready"
+    | "provider_unreachable"
+    | "provider_identity_unknown"
+    | "provider_deploy_not_live"
+    | "deployment_service_mismatch"
+    | "deployment_commit_mismatch"
+    | "deployment_url_mismatch"
+  >,
   string
 > = {
   deployment_expired:
     "Register a current deployment of the expected commit and retry verification",
   deployment_cleanup_overdue:
     "Remove the expired disposable environment before registering a replacement",
-  provider_unreachable:
-    "Restore Render API access and retry deployment identity validation",
-  provider_identity_unknown:
-    "Register a Render service and deploy with inspectable repository and commit metadata",
-  provider_deploy_not_live:
-    "Wait for the registered Render deploy to become live or register a successful deploy",
   deployment_role_mismatch:
     "Register the expected baseline or PR-head deployment role for this verification purpose",
-  deployment_service_mismatch:
-    "Register the exact Render service and deploy pair intended for this run",
-  deployment_commit_mismatch:
-    "Deploy the expected immutable commit and register its Render deploy identifier",
   deployment_repository_mismatch:
     "Register a deployment built from the assessed repository",
-  deployment_url_mismatch:
-    "Use the public URL owned by the attested Render service",
   deployment_compatibility_mismatch:
     "Re-register after aligning application, authentication, test-data, and browser policy configuration",
   deployment_readiness_failed:
     "Restore the registered deployment health endpoint and approved public origin",
   credential_authorization_failed:
     "Restore scoped test credential authorization without exposing credentials to the preview service",
+}
+
+function providerLabel(provider: DeploymentProvider): string {
+  return provider === "railway" ? "Railway" : "Render"
+}
+
+function actionForReason(
+  reason: Exclude<DeploymentValidationResult["reason"], "deployment_ready">,
+  provider: DeploymentProvider
+): string {
+  const label = providerLabel(provider)
+  switch (reason) {
+    case "provider_unreachable":
+      return `Restore ${label} API access and retry deployment identity validation`
+    case "provider_identity_unknown":
+      return `Register a ${label} service and deploy with inspectable repository and commit metadata`
+    case "provider_deploy_not_live":
+      return `Wait for the registered ${label} deploy to become live or register a successful deploy`
+    case "deployment_service_mismatch":
+      return `Register the exact ${label} project, service, environment, and deploy intended for this run`
+    case "deployment_commit_mismatch":
+      return `Deploy the expected immutable commit and register its ${label} deploy identifier`
+    case "deployment_url_mismatch":
+      return `Use a public URL owned by the attested ${label} service environment`
+    default:
+      return sharedActionByReason[reason]
+  }
 }
 
 function sameRepository(
@@ -127,7 +155,10 @@ function failureResult(input: {
     browserAccessAllowed: false,
     credentialAccessAllowed: false,
     reason: input.reason,
-    actionRequired: actionByReason[input.reason],
+    actionRequired: actionForReason(
+      input.reason,
+      input.request.registration.provider.kind
+    ),
     ...(input.proof === undefined ? {} : { proof: input.proof }),
     validatedAt: input.now.toISOString(),
   })
@@ -200,10 +231,15 @@ export class DeploymentValidationService {
       })
     }
 
-    if (
+    const providerIdentityMismatch =
+      proof.provider !== registration.provider.kind ||
       proof.serviceId !== registration.provider.serviceId ||
-      proof.deployId !== registration.provider.deployId
-    ) {
+      proof.deployId !== registration.provider.deployId ||
+      (proof.provider === "railway" &&
+        registration.provider.kind === "railway" &&
+        (proof.projectId !== registration.provider.projectId ||
+          proof.environmentId !== registration.provider.environmentId))
+    if (providerIdentityMismatch) {
       return failureResult({
         request,
         identityState: "mismatch",
@@ -373,6 +409,17 @@ const renderDeploySchema = z.object({
 
 function parseGitHubRepository(value: string | undefined) {
   if (value === undefined) return undefined
+  const slugParts = value
+    .replace(/\.git$/, "")
+    .split("/")
+    .filter(Boolean)
+  if (!value.includes("://") && slugParts.length === 2) {
+    return {
+      host: "github.com",
+      owner: slugParts[0]!,
+      name: slugParts[1]!,
+    }
+  }
   try {
     const url = new URL(value)
     const parts = url.pathname
@@ -446,6 +493,12 @@ export class RenderApiDeploymentAttestor implements DeploymentAttestor {
     registration: DeploymentRegistration,
     signal?: AbortSignal
   ): Promise<DeploymentProviderProof> {
+    if (registration.provider.kind !== "render") {
+      throw new DeploymentAttestationError(
+        "provider_identity_unknown",
+        "Render attestation requires a Render registration"
+      )
+    }
     const serviceId = encodeURIComponent(registration.provider.serviceId)
     const deployId = encodeURIComponent(registration.provider.deployId)
     const [serviceValue, deployValue] = await Promise.all([
@@ -500,15 +553,355 @@ export class RenderApiDeploymentAttestor implements DeploymentAttestor {
   }
 }
 
+const railwayDeploymentStatusSchema = z.enum([
+  "BUILDING",
+  "CRASHED",
+  "DEPLOYING",
+  "FAILED",
+  "INITIALIZING",
+  "NEEDS_APPROVAL",
+  "QUEUED",
+  "REMOVED",
+  "REMOVING",
+  "SKIPPED",
+  "SLEEPING",
+  "SUCCESS",
+  "WAITING",
+])
+
+const railwayDeploymentSchema = z.object({
+  id: z.string().min(1),
+  projectId: z.string().min(1),
+  serviceId: z.string().min(1),
+  environmentId: z.string().min(1),
+  status: railwayDeploymentStatusSchema,
+  staticUrl: z.string().nullish(),
+  url: z.string().nullish(),
+  meta: z.record(z.string(), z.unknown()).nullish(),
+})
+
+const railwayServiceInstanceSchema = z.object({
+  serviceId: z.string().min(1),
+  environmentId: z.string().min(1),
+  source: z
+    .object({
+      repo: z.string().nullish(),
+    })
+    .nullish(),
+  domains: z.object({
+    serviceDomains: z.array(z.object({ domain: z.string().min(1) })),
+    customDomains: z.array(z.object({ domain: z.string().min(1) })),
+  }),
+})
+
+const railwayGraphqlEnvelopeSchema = z.object({
+  data: z.unknown().optional(),
+  errors: z
+    .array(
+      z.object({
+        message: z.string(),
+        extensions: z.object({ code: z.string().optional() }).optional(),
+      })
+    )
+    .optional(),
+})
+
+const railwayDeploymentDataSchema = z.object({
+  deployment: railwayDeploymentSchema.nullable(),
+})
+
+const railwayServiceInstanceDataSchema = z.object({
+  serviceInstance: railwayServiceInstanceSchema.nullable(),
+})
+
+const RAILWAY_DEPLOYMENT_QUERY = `
+  query SentinelRailwayDeployment($id: String!) {
+    deployment(id: $id) {
+      id
+      projectId
+      serviceId
+      environmentId
+      status
+      staticUrl
+      url
+      meta
+    }
+  }
+`
+
+const RAILWAY_SERVICE_INSTANCE_QUERY = `
+  query SentinelRailwayServiceInstance(
+    $serviceId: String!
+    $environmentId: String!
+  ) {
+    serviceInstance(serviceId: $serviceId, environmentId: $environmentId) {
+      serviceId
+      environmentId
+      source { repo }
+      domains {
+        serviceDomains { domain }
+        customDomains { domain }
+      }
+    }
+  }
+`
+
+function normalizeRailwayStatus(
+  status: z.infer<typeof railwayDeploymentStatusSchema>
+): DeploymentProviderProof["status"] {
+  switch (status) {
+    case "SUCCESS":
+      return "live"
+    case "BUILDING":
+      return "build_in_progress"
+    case "DEPLOYING":
+    case "INITIALIZING":
+      return "update_in_progress"
+    case "NEEDS_APPROVAL":
+    case "WAITING":
+    case "QUEUED":
+      return "queued"
+    case "FAILED":
+      return "build_failed"
+    case "CRASHED":
+      return "update_failed"
+    case "REMOVED":
+    case "REMOVING":
+    case "SLEEPING":
+      return "deactivated"
+    case "SKIPPED":
+      return "canceled"
+  }
+}
+
+function publicUrlForRailwayDomains(
+  registeredUrl: string,
+  domains: readonly string[]
+): string | undefined {
+  const registeredOrigin = new URL(registeredUrl).origin
+  const origins: string[] = []
+  for (const value of domains) {
+    const domain = value.trim().toLowerCase()
+    if (domain.length === 0 || domain.includes("/")) continue
+    try {
+      origins.push(new URL(`https://${domain}`).origin)
+    } catch {
+      continue
+    }
+  }
+  if (origins.includes(registeredOrigin)) return registeredOrigin
+  return origins[0]
+}
+
+export class RailwayApiDeploymentAttestor implements DeploymentAttestor {
+  private readonly baseUrl: URL
+  private readonly now: () => Date
+
+  constructor(
+    private readonly options: {
+      readonly token: string
+      readonly tokenType?: "bearer" | "project"
+      readonly fetch?: typeof fetch
+      readonly baseUrl?: string
+      readonly now?: () => Date
+    }
+  ) {
+    if (options.token.trim().length === 0) {
+      throw new Error("Railway API token is required")
+    }
+    this.baseUrl = new URL(
+      options.baseUrl ?? "https://backboard.railway.com/graphql/v2"
+    )
+    this.now = options.now ?? (() => new Date())
+  }
+
+  private async query(
+    query: string,
+    variables: Readonly<Record<string, string>>,
+    signal?: AbortSignal
+  ): Promise<unknown> {
+    const token = this.options.token
+    const authentication =
+      this.options.tokenType === "project"
+        ? { "Project-Access-Token": token }
+        : { Authorization: `Bearer ${token}` }
+    let response: Response
+    try {
+      response = await (this.options.fetch ?? fetch)(this.baseUrl, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          ...authentication,
+        },
+        body: JSON.stringify({ query, variables }),
+        ...(signal === undefined ? {} : { signal }),
+      })
+    } catch {
+      throw new DeploymentAttestationError(
+        "provider_unreachable",
+        "Railway API request failed"
+      )
+    }
+    if (!response.ok) {
+      throw new DeploymentAttestationError(
+        response.status === 404
+          ? "provider_identity_unknown"
+          : "provider_unreachable",
+        "Railway API did not return the registered resource"
+      )
+    }
+
+    let value: unknown
+    try {
+      value = await response.json()
+    } catch {
+      throw new DeploymentAttestationError(
+        "provider_identity_unknown",
+        "Railway API response was not valid JSON"
+      )
+    }
+    const envelope = railwayGraphqlEnvelopeSchema.safeParse(value)
+    if (!envelope.success) {
+      throw new DeploymentAttestationError(
+        "provider_identity_unknown",
+        "Railway API response omitted the GraphQL envelope"
+      )
+    }
+    const errors = envelope.data.errors ?? []
+    if (errors.length > 0) {
+      const unknown = errors.some(
+        (error) =>
+          error.extensions?.code === "NOT_FOUND" ||
+          /\bnot found\b/i.test(error.message)
+      )
+      throw new DeploymentAttestationError(
+        unknown ? "provider_identity_unknown" : "provider_unreachable",
+        "Railway API rejected the attestation query"
+      )
+    }
+    if (envelope.data.data === undefined || envelope.data.data === null) {
+      throw new DeploymentAttestationError(
+        "provider_identity_unknown",
+        "Railway API returned no attestation data"
+      )
+    }
+    return envelope.data.data
+  }
+
+  async attest(
+    registration: DeploymentRegistration,
+    signal?: AbortSignal
+  ): Promise<DeploymentProviderProof> {
+    if (registration.provider.kind !== "railway") {
+      throw new DeploymentAttestationError(
+        "provider_identity_unknown",
+        "Railway attestation requires a Railway registration"
+      )
+    }
+
+    const deploymentData = railwayDeploymentDataSchema.safeParse(
+      await this.query(
+        RAILWAY_DEPLOYMENT_QUERY,
+        { id: registration.provider.deployId },
+        signal
+      )
+    )
+    if (!deploymentData.success || deploymentData.data.deployment === null) {
+      throw new DeploymentAttestationError(
+        "provider_identity_unknown",
+        "Railway API response omitted the registered deployment"
+      )
+    }
+    const deployment = deploymentData.data.deployment
+    const instanceData = railwayServiceInstanceDataSchema.safeParse(
+      await this.query(
+        RAILWAY_SERVICE_INSTANCE_QUERY,
+        {
+          serviceId: deployment.serviceId,
+          environmentId: deployment.environmentId,
+        },
+        signal
+      )
+    )
+    if (!instanceData.success || instanceData.data.serviceInstance === null) {
+      throw new DeploymentAttestationError(
+        "provider_identity_unknown",
+        "Railway API response omitted the deployment service instance"
+      )
+    }
+    const instance = instanceData.data.serviceInstance
+    if (
+      instance.serviceId !== deployment.serviceId ||
+      instance.environmentId !== deployment.environmentId
+    ) {
+      throw new DeploymentAttestationError(
+        "provider_identity_unknown",
+        "Railway service instance did not match the deployment identity"
+      )
+    }
+    const meta = deployment.meta ?? {}
+    const commitSha =
+      typeof meta["commitHash"] === "string" ? meta["commitHash"] : undefined
+    const repository = parseGitHubRepository(instance.source?.repo ?? undefined)
+    const publicUrl = publicUrlForRailwayDomains(registration.publicUrl, [
+      ...instance.domains.serviceDomains.map(({ domain }) => domain),
+      ...instance.domains.customDomains.map(({ domain }) => domain),
+    ])
+
+    return deploymentProviderProofSchema.parse({
+      schemaVersion: 1,
+      provider: "railway",
+      projectId: deployment.projectId,
+      environmentId: deployment.environmentId,
+      serviceId: deployment.serviceId,
+      deployId: deployment.id,
+      ...(repository === undefined ? {} : { repository }),
+      ...(commitSha === undefined ? {} : { commitSha }),
+      ...(publicUrl === undefined ? {} : { publicUrl }),
+      status: normalizeRailwayStatus(deployment.status),
+      observedAt: this.now().toISOString(),
+    })
+  }
+}
+
 export class PublicDeploymentReadinessProbe implements DeploymentReadinessProbe {
-  constructor(private readonly probe: UrlReadinessProbe) {}
+  constructor(
+    private readonly probe: UrlReadinessProbe,
+    private readonly options: {
+      readonly application?: ApplicationReadinessProbe
+    } = {}
+  ) {}
 
   async check(registration: DeploymentRegistration, signal?: AbortSignal) {
-    const healthUrl = new URL(
-      registration.healthPath,
-      registration.publicUrl
-    ).toString()
-    const result = await this.probe.check(healthUrl, signal)
+    const configured = registration.readinessProbe
+    const path = configured?.path ?? registration.healthPath
+    const readinessUrl = new URL(path, registration.publicUrl).toString()
+    if (configured?.kind === "application") {
+      if (this.options.application === undefined) {
+        throw new Error("Application readiness probe is not configured")
+      }
+      const result = await this.options.application.check(
+        readinessUrl,
+        registration.compatibility.allowedOrigins,
+        signal
+      )
+      return { finalUrl: result.finalUrl, status: 200 }
+    }
+
+    const result = await this.probe.check(readinessUrl, signal)
+    if (configured?.kind === "api_json") {
+      if (!configured.expectedStatuses.includes(result.status)) {
+        throw new Error("Application API returned an unexpected status")
+      }
+      if (
+        !/^application\/(?:[a-z0-9.+-]*\+)?json(?:\s*;|$)/i.test(
+          result.contentType
+        )
+      ) {
+        throw new Error("Application API did not return JSON")
+      }
+    }
     return { finalUrl: result.finalUrl, status: result.status }
   }
 }

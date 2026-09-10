@@ -148,7 +148,8 @@ export type ModelGatewayErrorCode =
 export class ModelGatewayError extends Error {
   constructor(
     readonly code: ModelGatewayErrorCode,
-    readonly retryable: boolean
+    readonly retryable: boolean,
+    readonly issuePaths: readonly string[] = []
   ) {
     super(`Model gateway request failed: ${code}`)
     this.name = "ModelGatewayError"

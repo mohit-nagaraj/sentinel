@@ -244,13 +244,10 @@ describe("EvidenceLinker evidence policy", () => {
     NonNullable<(typeof evidenceRelationshipPolicies)[EvidenceRelationship]>,
   ][]
 
-  it("defines authoritative policies for every non-semantic relationship", () => {
+  it("defines authoritative policies for every relationship except REQUIRES", () => {
     expect(policyEntries.map(([relationship]) => relationship).sort()).toEqual(
       evidenceRelationshipSchema.options
-        .filter(
-          (relationship) =>
-            relationship !== "REQUIRES" && relationship !== "COVERED_BY"
-        )
+        .filter((relationship) => relationship !== "REQUIRES")
         .sort()
     )
   })
@@ -316,7 +313,7 @@ describe("EvidenceLinker evidence policy", () => {
     }
   )
 
-  it.each(["REQUIRES", "COVERED_BY"] as const)(
+  it.each(["REQUIRES"] as const)(
     "keeps %s as review-only semantic work",
     async (relationship) => {
       const record = evidence(

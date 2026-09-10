@@ -36,7 +36,10 @@ import {
   type ModelToolRequest,
   type ModelUsage,
 } from "./contracts.ts"
-import { createStrictModelJsonSchema } from "./schema.ts"
+import {
+  createStrictModelJsonSchema,
+  normalizeModelJsonValue,
+} from "./schema.ts"
 
 export interface AzureResponsesTransport {
   create(
@@ -364,6 +367,7 @@ export class AzureOpenAIModelGateway implements ModelGateway {
     request: ModelStructuredRequest<Output>
   ): Promise<ModelResult<Output>> {
     const schemaName = parseModelOperation(request.schemaName)
+    const envelopeSchema = z.strictObject({ result: request.schema })
     const response = await this.create(
       {
         ...this.baseRequest(request),
@@ -371,7 +375,7 @@ export class AzureOpenAIModelGateway implements ModelGateway {
           format: {
             type: "json_schema",
             name: schemaName,
-            schema: createStrictModelJsonSchema(request.schema, schemaName),
+            schema: createStrictModelJsonSchema(envelopeSchema, schemaName),
             strict: true,
           },
         },
@@ -379,14 +383,28 @@ export class AzureOpenAIModelGateway implements ModelGateway {
       request.signal
     )
     const result = extractText(response)
+    let decoded: unknown
     try {
-      return {
-        output: request.schema.parse(JSON.parse(result.text)),
-        model: result.model,
-        usage: result.usage,
-      }
+      decoded = JSON.parse(result.text)
     } catch {
-      throw new ModelGatewayError("malformed_output", false)
+      throw new ModelGatewayError("malformed_output", false, ["$"])
+    }
+    const parsed = envelopeSchema.safeParse(decoded)
+    if (!parsed.success) {
+      throw new ModelGatewayError(
+        "malformed_output",
+        false,
+        parsed.error.issues
+          .map((issue) =>
+            issue.path.length === 0 ? "$" : `$.${issue.path.join(".")}`
+          )
+          .slice(0, 20)
+      )
+    }
+    return {
+      output: parsed.data.result,
+      model: result.model,
+      usage: result.usage,
     }
   }
 
@@ -462,7 +480,11 @@ export class AzureOpenAIModelGateway implements ModelGateway {
           throw new ModelGatewayError("tool_arguments_invalid", false)
         }
         assertModelSafeValue(rawArguments)
-        const argumentsResult = tool.parameters.safeParse(rawArguments)
+        const normalizedArguments = normalizeModelJsonValue(
+          tool.parameters,
+          rawArguments
+        )
+        const argumentsResult = tool.parameters.safeParse(normalizedArguments)
         if (!argumentsResult.success) {
           throw new ModelGatewayError("tool_arguments_invalid", false)
         }

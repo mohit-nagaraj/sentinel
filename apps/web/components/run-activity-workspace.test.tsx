@@ -18,11 +18,19 @@ import {
 } from "@sentinel/contracts"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+const realtimeStart = vi.hoisted(() => vi.fn(async () => undefined))
+const realtimeWake = vi.hoisted(() => ({
+  current: undefined as (() => void) | undefined,
+}))
+
 vi.mock("@/lib/realtime-client", () => ({
-  createRunRealtimeSubscription: () => ({
-    start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn().mockResolvedValue(undefined),
-  }),
+  createRunRealtimeSubscription: (options: { readonly onWake: () => void }) => {
+    realtimeWake.current = options.onWake
+    return {
+      start: realtimeStart,
+      stop: vi.fn().mockResolvedValue(undefined),
+    }
+  },
 }))
 
 import { RunActivityWorkspace } from "./run-activity-workspace"
@@ -153,6 +161,10 @@ afterEach(() => {
   cleanup()
   vi.useRealTimers()
   vi.unstubAllGlobals()
+  realtimeStart.mockReset()
+  realtimeStart.mockResolvedValue(undefined)
+  realtimeWake.current = undefined
+  window.history.replaceState(null, "", "/")
 })
 
 describe("run activity workspace", () => {
@@ -180,6 +192,7 @@ describe("run activity workspace", () => {
     expect(
       screen.getByRole("heading", { level: 2, name: "Specialist activity" })
     ).toBeDefined()
+    expect(screen.getByRole("main")).not.toHaveClass("min-h-full")
     expect(
       screen.getAllByText("Documentation contract mapped").length
     ).toBeGreaterThan(0)
@@ -282,6 +295,134 @@ describe("run activity workspace", () => {
     )
   })
 
+  it("follows new lane activity only while the user remains at the bottom", async () => {
+    const documentationEvent = (sequence: number, summary: string) =>
+      runEventSchema.parse({
+        ...common(sequence),
+        agent: "documentation",
+        kind: "node_completed",
+        nodeName: `documentation_step_${sequence}`,
+        status: "completed",
+        summary,
+        reasonCode: `documentation_step_${sequence}_completed`,
+        activity: { category: "decision" },
+      })
+    const first = documentationEvent(1, "First documentation event")
+    const second = documentationEvent(2, "Second documentation event")
+    const third = documentationEvent(3, "Third documentation event")
+    let nextEvent: RunEvent | undefined
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes("/events?")) {
+          const after = Number(
+            new URL(url, "http://sentinel.test").searchParams.get("after")
+          )
+          if (nextEvent?.sequence === after + 1) {
+            const event = nextEvent
+            nextEvent = undefined
+            return Response.json(page([event]))
+          }
+          return Response.json(page([]))
+        }
+        if (url.endsWith("/interrupt")) {
+          return new Response(null, { status: 404 })
+        }
+        return Response.json(run())
+      })
+    )
+
+    render(
+      <RunActivityWorkspace
+        initialRun={run()}
+        initialEventPage={page([first])}
+      />
+    )
+    const scrollArea = screen.getAllByRole("region", {
+      name: "Documentation activity events",
+    })[0]!
+    let scrollTop = 400
+    let scrollHeight = 600
+    Object.defineProperties(scrollArea, {
+      clientHeight: { configurable: true, value: 200 },
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+      scrollTop: {
+        configurable: true,
+        get: () => scrollTop,
+        set: (value: number) => {
+          scrollTop = value
+        },
+      },
+    })
+
+    expect(scrollArea).toHaveClass("scrollbar-hidden")
+    expect(scrollArea).toHaveAttribute("tabindex", "0")
+    fireEvent.scroll(scrollArea)
+
+    scrollHeight = 800
+    nextEvent = second
+    act(() => realtimeWake.current?.())
+    await waitFor(() =>
+      expect(screen.getAllByText(second.summary).length).toBeGreaterThan(0)
+    )
+    expect(scrollTop).toBe(800)
+
+    scrollTop = 100
+    fireEvent.scroll(scrollArea)
+    scrollHeight = 900
+    nextEvent = third
+    act(() => realtimeWake.current?.())
+    await waitFor(() =>
+      expect(screen.getAllByText(third.summary).length).toBeGreaterThan(0)
+    )
+    expect(scrollTop).toBe(100)
+
+    scrollTop = 700
+    fireEvent.scroll(scrollArea)
+    scrollHeight = 1_100
+    nextEvent = documentationEvent(4, "Fourth documentation event")
+    act(() => realtimeWake.current?.())
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("Fourth documentation event").length
+      ).toBeGreaterThan(0)
+    )
+    expect(scrollTop).toBe(1_100)
+  })
+
+  it("falls back to polling when realtime bootstrap is unavailable", async () => {
+    realtimeStart.mockRejectedValueOnce(new Error("realtime unavailable"))
+    const incoming = events()[0]!
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes("/events?")) {
+          const after = new URL(url, "http://sentinel.test").searchParams.get(
+            "after"
+          )
+          return Response.json(after === "0" ? page([incoming]) : page([]))
+        }
+        if (url.endsWith("/interrupt")) {
+          return new Response(null, { status: 404 })
+        }
+        return Response.json(run())
+      })
+    )
+    render(
+      <RunActivityWorkspace initialRun={run()} initialEventPage={page([])} />
+    )
+
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("Documentation contract mapped").length
+      ).toBeGreaterThan(0)
+    )
+    expect(screen.getByText("Live")).toBeDefined()
+  })
+
   it("shows empty, slow, completed, and failed states", async () => {
     vi.useFakeTimers()
     vi.stubGlobal(
@@ -345,6 +486,53 @@ describe("run activity workspace", () => {
     expect(
       screen.queryByRole("link", { name: "Open assessment report" })
     ).toBeNull()
+  })
+
+  it("moves retry to the new run and resets the prior event feed", async () => {
+    const retriedRunId = "55555555-5555-4555-8555-555555555555"
+    const retried = publicRunSchema.parse({
+      ...run("running"),
+      id: retriedRunId,
+      retryOf: databaseRunId,
+    })
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (init?.method === "POST" && url.endsWith("/retry")) {
+          return Response.json({ schemaVersion: 1, run: retried })
+        }
+        if (url.includes(`/${retriedRunId}/events?`)) {
+          return Response.json(page([]))
+        }
+        if (url.endsWith(`/${retriedRunId}/interrupt`)) {
+          return new Response(null, { status: 404 })
+        }
+        return Response.json(retried)
+      })
+    )
+    window.history.replaceState(
+      null,
+      "",
+      `/applications/${applicationId}/activity/${databaseRunId}`
+    )
+    render(
+      <RunActivityWorkspace
+        initialRun={run("failed")}
+        initialEventPage={page([events()[0]!])}
+        live={false}
+      />
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }))
+
+    await waitFor(() =>
+      expect(window.location.pathname).toBe(
+        `/applications/${applicationId}/activity/${retriedRunId}`
+      )
+    )
+    expect(screen.queryByText("Documentation contract mapped")).toBeNull()
+    expect(screen.getByRole("button", { name: "Pause" })).toBeDefined()
   })
 
   it("pauses, confirms stop, and resumes through authenticated control routes", async () => {

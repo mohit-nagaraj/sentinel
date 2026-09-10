@@ -86,6 +86,7 @@
         display: block;
         min-width: 960px;
         width: 100%;
+        overflow: visible;
       }
       figcaption {
         margin-top: 12px;
@@ -143,33 +144,39 @@
             <defs>
               <marker
                 id="arch-arrow"
-                markerWidth="8"
-                markerHeight="6"
-                refX="7"
-                refY="3"
+                markerUnits="userSpaceOnUse"
+                markerWidth="12"
+                markerHeight="10"
+                refX="11"
+                refY="5"
                 orient="auto"
+                overflow="visible"
               >
-                <polygon points="0 0, 8 3, 0 6" fill="#526a70" />
+                <path d="M 0 0 L 12 5 L 0 10 z" fill="#526a70" />
               </marker>
               <marker
                 id="arch-accent"
-                markerWidth="8"
-                markerHeight="6"
-                refX="7"
-                refY="3"
+                markerUnits="userSpaceOnUse"
+                markerWidth="12"
+                markerHeight="10"
+                refX="11"
+                refY="5"
                 orient="auto"
+                overflow="visible"
               >
-                <polygon points="0 0, 8 3, 0 6" fill="#087f5b" />
+                <path d="M 0 0 L 12 5 L 0 10 z" fill="#087f5b" />
               </marker>
               <marker
                 id="arch-link"
-                markerWidth="8"
-                markerHeight="6"
-                refX="7"
-                refY="3"
+                markerUnits="userSpaceOnUse"
+                markerWidth="12"
+                markerHeight="10"
+                refX="11"
+                refY="5"
                 orient="auto"
+                overflow="visible"
               >
-                <polygon points="0 0, 8 3, 0 6" fill="#2f6f89" />
+                <path d="M 0 0 L 12 5 L 0 10 z" fill="#2f6f89" />
               </marker>
             </defs>
             <rect width="1280" height="720" fill="#fafaf7" />
@@ -232,61 +239,6 @@
             >
               DURABLE STATE + REVIEW
             </text>
-
-            <line
-              x1="240"
-              y1="240"
-              x2="352"
-              y2="240"
-              stroke="#2f6f89"
-              stroke-width="1.2"
-              marker-end="url(#arch-link)"
-            />
-            <path
-              d="M 512 240 H 552 Q 560 240 560 232 V 184"
-              fill="none"
-              stroke="#526a70"
-              stroke-width="1.2"
-              marker-end="url(#arch-arrow)"
-            />
-            <path
-              d="M 704 184 H 728 Q 736 184 736 192 V 240"
-              fill="none"
-              stroke="#087f5b"
-              stroke-width="1.2"
-              marker-end="url(#arch-accent)"
-            />
-            <path
-              d="M 816 280 V 320 Q 816 328 824 328 H 960"
-              fill="none"
-              stroke="#526a70"
-              stroke-width="1.2"
-              marker-end="url(#arch-arrow)"
-            />
-            <path
-              d="M 816 280 V 424"
-              fill="none"
-              stroke="#526a70"
-              stroke-width="1.2"
-              marker-end="url(#arch-arrow)"
-            />
-            <path
-              d="M 1040 368 V 416 Q 1040 424 1032 424 H 896"
-              fill="none"
-              stroke="#526a70"
-              stroke-width="1"
-              stroke-dasharray="4,3"
-              marker-end="url(#arch-arrow)"
-            />
-            <line
-              x1="896"
-              y1="464"
-              x2="960"
-              y2="464"
-              stroke="#087f5b"
-              stroke-width="1.2"
-              marker-end="url(#arch-accent)"
-            />
 
             <rect
               x="80"
@@ -508,6 +460,66 @@
             </text>
 
             <line
+              x1="240"
+              y1="240"
+              x2="352"
+              y2="240"
+              fill="none"
+              stroke="#2f6f89"
+              stroke-width="1.75"
+              marker-end="url(#arch-link)"
+            />
+            <path
+              d="M 512 216 H 536 V 184 H 560"
+              fill="none"
+              stroke="#526a70"
+              stroke-width="1.75"
+              marker-end="url(#arch-arrow)"
+            />
+            <path
+              d="M 704 184 H 720 V 240 H 736"
+              fill="none"
+              stroke="#087f5b"
+              stroke-width="1.75"
+              marker-end="url(#arch-accent)"
+            />
+            <path
+              d="M 896 256 H 928 V 328 H 960"
+              fill="none"
+              stroke="#526a70"
+              stroke-width="1.75"
+              marker-end="url(#arch-arrow)"
+            />
+            <line
+              x1="816"
+              y1="280"
+              x2="816"
+              y2="424"
+              fill="none"
+              stroke="#526a70"
+              stroke-width="1.75"
+              marker-end="url(#arch-arrow)"
+            />
+            <path
+              d="M 960 348 H 928 V 464 H 896"
+              fill="none"
+              stroke="#526a70"
+              stroke-width="1.5"
+              stroke-dasharray="6,4"
+              marker-end="url(#arch-arrow)"
+            />
+            <line
+              x1="896"
+              y1="464"
+              x2="960"
+              y2="464"
+              fill="none"
+              stroke="#087f5b"
+              stroke-width="1.75"
+              marker-end="url(#arch-accent)"
+            />
+
+            <line
               x1="40"
               y1="640"
               x2="1240"
@@ -581,100 +593,30 @@
             <defs>
               <marker
                 id="spec-arrow"
-                markerWidth="8"
-                markerHeight="6"
-                refX="7"
-                refY="3"
+                markerUnits="userSpaceOnUse"
+                markerWidth="12"
+                markerHeight="10"
+                refX="11"
+                refY="5"
                 orient="auto"
+                overflow="visible"
               >
-                <polygon points="0 0, 8 3, 0 6" fill="#526a70" />
+                <path d="M 0 0 L 12 5 L 0 10 z" fill="#526a70" />
               </marker>
               <marker
                 id="spec-accent"
-                markerWidth="8"
-                markerHeight="6"
-                refX="7"
-                refY="3"
+                markerUnits="userSpaceOnUse"
+                markerWidth="12"
+                markerHeight="10"
+                refX="11"
+                refY="5"
                 orient="auto"
+                overflow="visible"
               >
-                <polygon points="0 0, 8 3, 0 6" fill="#087f5b" />
-              </marker>
-              <marker
-                id="spec-link"
-                markerWidth="8"
-                markerHeight="6"
-                refX="7"
-                refY="3"
-                orient="auto"
-              >
-                <polygon points="0 0, 8 3, 0 6" fill="#2f6f89" />
+                <path d="M 0 0 L 12 5 L 0 10 z" fill="#087f5b" />
               </marker>
             </defs>
             <rect width="1280" height="720" fill="#fafaf7" />
-
-            <path
-              d="M 248 320 H 304 Q 312 320 312 312 V 176 H 376"
-              fill="none"
-              stroke="#526a70"
-              stroke-width="1.2"
-              marker-end="url(#spec-arrow)"
-            />
-            <line
-              x1="248"
-              y1="320"
-              x2="376"
-              y2="320"
-              stroke="#526a70"
-              stroke-width="1.2"
-              marker-end="url(#spec-arrow)"
-            />
-            <path
-              d="M 248 320 H 304 Q 312 320 312 328 V 464 H 376"
-              fill="none"
-              stroke="#526a70"
-              stroke-width="1.2"
-              marker-end="url(#spec-arrow)"
-            />
-            <path
-              d="M 536 176 H 592 Q 600 176 600 184 V 296 H 672"
-              fill="none"
-              stroke="#087f5b"
-              stroke-width="1.2"
-              marker-end="url(#spec-accent)"
-            />
-            <line
-              x1="536"
-              y1="320"
-              x2="672"
-              y2="320"
-              stroke="#087f5b"
-              stroke-width="1.2"
-              marker-end="url(#spec-accent)"
-            />
-            <path
-              d="M 536 464 H 592 Q 600 464 600 456 V 344 H 672"
-              fill="none"
-              stroke="#087f5b"
-              stroke-width="1.2"
-              marker-end="url(#spec-accent)"
-            />
-            <line
-              x1="848"
-              y1="320"
-              x2="1000"
-              y2="320"
-              stroke="#087f5b"
-              stroke-width="1.2"
-              marker-end="url(#spec-accent)"
-            />
-            <path
-              d="M 760 280 V 120 H 456 V 136"
-              fill="none"
-              stroke="#526a70"
-              stroke-width="1"
-              stroke-dasharray="4,3"
-              marker-end="url(#spec-arrow)"
-            />
 
             <rect
               x="72"
@@ -883,6 +825,84 @@
               BOUNDED FOLLOW-UP / MAX ROUNDS + BUDGET
             </text>
 
+            <path
+              d="M 248 320 H 312 V 176 H 376"
+              fill="none"
+              stroke="#526a70"
+              stroke-width="1.75"
+              marker-end="url(#spec-arrow)"
+            />
+            <line
+              x1="248"
+              y1="320"
+              x2="376"
+              y2="320"
+              fill="none"
+              stroke="#526a70"
+              stroke-width="1.75"
+              marker-end="url(#spec-arrow)"
+            />
+            <path
+              d="M 248 320 H 312 V 464 H 376"
+              fill="none"
+              stroke="#526a70"
+              stroke-width="1.75"
+              marker-end="url(#spec-arrow)"
+            />
+            <path
+              d="M 536 176 H 604 V 320 H 672"
+              fill="none"
+              stroke="#087f5b"
+              stroke-width="1.75"
+              marker-end="url(#spec-accent)"
+            />
+            <line
+              x1="536"
+              y1="320"
+              x2="672"
+              y2="320"
+              fill="none"
+              stroke="#087f5b"
+              stroke-width="1.75"
+              marker-end="url(#spec-accent)"
+            />
+            <path
+              d="M 536 464 H 604 V 320 H 672"
+              fill="none"
+              stroke="#087f5b"
+              stroke-width="1.75"
+              marker-end="url(#spec-accent)"
+            />
+            <line
+              x1="848"
+              y1="320"
+              x2="1000"
+              y2="320"
+              fill="none"
+              stroke="#087f5b"
+              stroke-width="1.75"
+              marker-end="url(#spec-accent)"
+            />
+            <line
+              x1="760"
+              y1="280"
+              x2="760"
+              y2="128"
+              fill="none"
+              stroke="#526a70"
+              stroke-width="1.5"
+              stroke-dasharray="6,4"
+              marker-end="url(#spec-arrow)"
+            />
+            <path
+              d="M 580 108 H 456 V 136"
+              fill="none"
+              stroke="#526a70"
+              stroke-width="1.5"
+              stroke-dasharray="6,4"
+              marker-end="url(#spec-arrow)"
+            />
+
             <line
               x1="40"
               y1="640"
@@ -954,91 +974,30 @@
             <defs>
               <marker
                 id="er-arrow"
-                markerWidth="8"
-                markerHeight="6"
-                refX="7"
-                refY="3"
+                markerUnits="userSpaceOnUse"
+                markerWidth="12"
+                markerHeight="10"
+                refX="11"
+                refY="5"
                 orient="auto"
+                overflow="visible"
               >
-                <polygon points="0 0, 8 3, 0 6" fill="#526a70" />
+                <path d="M 0 0 L 12 5 L 0 10 z" fill="#526a70" />
               </marker>
               <marker
                 id="er-accent"
-                markerWidth="8"
-                markerHeight="6"
-                refX="7"
-                refY="3"
+                markerUnits="userSpaceOnUse"
+                markerWidth="12"
+                markerHeight="10"
+                refX="11"
+                refY="5"
                 orient="auto"
+                overflow="visible"
               >
-                <polygon points="0 0, 8 3, 0 6" fill="#087f5b" />
-              </marker>
-              <marker
-                id="er-link"
-                markerWidth="8"
-                markerHeight="6"
-                refX="7"
-                refY="3"
-                orient="auto"
-              >
-                <polygon points="0 0, 8 3, 0 6" fill="#2f6f89" />
+                <path d="M 0 0 L 12 5 L 0 10 z" fill="#087f5b" />
               </marker>
             </defs>
             <rect width="1280" height="720" fill="#fafaf7" />
-
-            <line
-              x1="224"
-              y1="192"
-              x2="304"
-              y2="192"
-              stroke="#526a70"
-              marker-end="url(#er-arrow)"
-            />
-            <line
-              x1="464"
-              y1="192"
-              x2="544"
-              y2="192"
-              stroke="#087f5b"
-              stroke-width="1.2"
-              marker-end="url(#er-accent)"
-            />
-            <line
-              x1="704"
-              y1="192"
-              x2="784"
-              y2="192"
-              stroke="#526a70"
-              marker-end="url(#er-arrow)"
-            />
-            <line
-              x1="944"
-              y1="192"
-              x2="1024"
-              y2="192"
-              stroke="#526a70"
-              marker-end="url(#er-arrow)"
-            />
-            <path
-              d="M 384 240 V 384"
-              fill="none"
-              stroke="#087f5b"
-              stroke-width="1.2"
-              marker-end="url(#er-accent)"
-            />
-            <line
-              x1="864"
-              y1="240"
-              x2="864"
-              y2="384"
-              stroke="#526a70"
-              marker-end="url(#er-arrow)"
-            />
-            <path
-              d="M 1104 240 V 416 Q 1104 424 1096 424 H 944"
-              fill="none"
-              stroke="#526a70"
-              marker-end="url(#er-arrow)"
-            />
 
             <g>
               <rect
@@ -1395,16 +1354,84 @@
               </text>
             </g>
 
+            <line
+              x1="224"
+              y1="192"
+              x2="304"
+              y2="192"
+              fill="none"
+              stroke="#526a70"
+              stroke-width="1.75"
+              marker-end="url(#er-arrow)"
+            />
+            <line
+              x1="464"
+              y1="192"
+              x2="544"
+              y2="192"
+              fill="none"
+              stroke="#087f5b"
+              stroke-width="1.75"
+              marker-end="url(#er-accent)"
+            />
+            <line
+              x1="704"
+              y1="192"
+              x2="784"
+              y2="192"
+              fill="none"
+              stroke="#526a70"
+              stroke-width="1.75"
+              marker-end="url(#er-arrow)"
+            />
+            <line
+              x1="944"
+              y1="192"
+              x2="1024"
+              y2="192"
+              fill="none"
+              stroke="#526a70"
+              stroke-width="1.75"
+              marker-end="url(#er-arrow)"
+            />
+            <line
+              x1="384"
+              y1="240"
+              x2="384"
+              y2="384"
+              fill="none"
+              stroke="#087f5b"
+              stroke-width="1.75"
+              marker-end="url(#er-accent)"
+            />
+            <line
+              x1="864"
+              y1="240"
+              x2="864"
+              y2="384"
+              fill="none"
+              stroke="#526a70"
+              stroke-width="1.75"
+              marker-end="url(#er-arrow)"
+            />
+            <path
+              d="M 1104 240 V 432 H 944"
+              fill="none"
+              stroke="#526a70"
+              stroke-width="1.75"
+              marker-end="url(#er-arrow)"
+            />
+
             <rect
               x="240"
               y="168"
-              width="64"
+              width="48"
               height="16"
               rx="2"
               fill="#fafaf7"
             />
             <text
-              x="272"
+              x="264"
               y="180"
               text-anchor="middle"
               fill="#526a70"
@@ -1468,7 +1495,7 @@
               TRIGGERS
             </text>
             <rect
-              x="392"
+              x="396"
               y="296"
               width="88"
               height="16"
@@ -1476,7 +1503,7 @@
               fill="#fafaf7"
             />
             <text
-              x="436"
+              x="440"
               y="308"
               text-anchor="middle"
               fill="#087f5b"
@@ -1550,33 +1577,39 @@
             <defs>
               <marker
                 id="seq-arrow"
-                markerWidth="8"
-                markerHeight="6"
-                refX="7"
-                refY="3"
+                markerUnits="userSpaceOnUse"
+                markerWidth="12"
+                markerHeight="10"
+                refX="11"
+                refY="5"
                 orient="auto"
+                overflow="visible"
               >
-                <polygon points="0 0, 8 3, 0 6" fill="#526a70" />
+                <path d="M 0 0 L 12 5 L 0 10 z" fill="#526a70" />
               </marker>
               <marker
                 id="seq-accent"
-                markerWidth="8"
-                markerHeight="6"
-                refX="7"
-                refY="3"
+                markerUnits="userSpaceOnUse"
+                markerWidth="12"
+                markerHeight="10"
+                refX="11"
+                refY="5"
                 orient="auto"
+                overflow="visible"
               >
-                <polygon points="0 0, 8 3, 0 6" fill="#087f5b" />
+                <path d="M 0 0 L 12 5 L 0 10 z" fill="#087f5b" />
               </marker>
               <marker
                 id="seq-link"
-                markerWidth="8"
-                markerHeight="6"
-                refX="7"
-                refY="3"
+                markerUnits="userSpaceOnUse"
+                markerWidth="12"
+                markerHeight="10"
+                refX="11"
+                refY="5"
                 orient="auto"
+                overflow="visible"
               >
-                <polygon points="0 0, 8 3, 0 6" fill="#2f6f89" />
+                <path d="M 0 0 L 12 5 L 0 10 z" fill="#2f6f89" />
               </marker>
             </defs>
             <rect width="1280" height="720" fill="#fafaf7" />
@@ -1620,60 +1653,6 @@
               y2="600"
               stroke="rgba(23,33,36,0.2)"
               stroke-dasharray="3,3"
-            />
-
-            <line
-              x1="120"
-              y1="184"
-              x2="368"
-              y2="184"
-              stroke="#2f6f89"
-              stroke-width="1.2"
-              marker-end="url(#seq-link)"
-            />
-            <line
-              x1="376"
-              y1="248"
-              x2="624"
-              y2="248"
-              stroke="#526a70"
-              stroke-width="1.2"
-              marker-end="url(#seq-arrow)"
-            />
-            <line
-              x1="632"
-              y1="312"
-              x2="880"
-              y2="312"
-              stroke="#2f6f89"
-              stroke-width="1.2"
-              marker-end="url(#seq-link)"
-            />
-            <line
-              x1="888"
-              y1="376"
-              x2="640"
-              y2="376"
-              stroke="#526a70"
-              stroke-width="1"
-              stroke-dasharray="4,3"
-              marker-end="url(#seq-arrow)"
-            />
-            <path
-              d="M 632 424 H 704 V 456 H 640"
-              fill="none"
-              stroke="#526a70"
-              stroke-width="1.2"
-              marker-end="url(#seq-arrow)"
-            />
-            <line
-              x1="632"
-              y1="520"
-              x2="1136"
-              y2="520"
-              stroke="#087f5b"
-              stroke-width="1.2"
-              marker-end="url(#seq-accent)"
             />
 
             <rect
@@ -1778,6 +1757,95 @@
             </text>
 
             <rect
+              x="720"
+              y="416"
+              width="144"
+              height="56"
+              rx="4"
+              fill="rgba(23,33,36,0.02)"
+              stroke="rgba(23,33,36,0.2)"
+            />
+            <text
+              x="732"
+              y="432"
+              fill="#526a70"
+              font-family="'Geist Mono', monospace"
+              font-size="8"
+            >
+              SELF
+            </text>
+            <text
+              x="792"
+              y="452"
+              text-anchor="middle"
+              fill="#172124"
+              font-family="'Geist', sans-serif"
+              font-size="12"
+              font-weight="600"
+            >
+              Validate + score
+            </text>
+
+            <line
+              x1="120"
+              y1="184"
+              x2="376"
+              y2="184"
+              fill="none"
+              stroke="#2f6f89"
+              stroke-width="1.75"
+              marker-end="url(#seq-link)"
+            />
+            <line
+              x1="376"
+              y1="248"
+              x2="632"
+              y2="248"
+              fill="none"
+              stroke="#526a70"
+              stroke-width="1.75"
+              marker-end="url(#seq-arrow)"
+            />
+            <line
+              x1="632"
+              y1="312"
+              x2="888"
+              y2="312"
+              fill="none"
+              stroke="#2f6f89"
+              stroke-width="1.75"
+              marker-end="url(#seq-link)"
+            />
+            <line
+              x1="888"
+              y1="376"
+              x2="632"
+              y2="376"
+              fill="none"
+              stroke="#526a70"
+              stroke-width="1.5"
+              stroke-dasharray="6,4"
+              marker-end="url(#seq-arrow)"
+            />
+            <path
+              d="M 632 424 H 720 V 472 H 632"
+              fill="none"
+              stroke="#526a70"
+              stroke-width="1.75"
+              marker-end="url(#seq-arrow)"
+            />
+            <line
+              x1="632"
+              y1="520"
+              x2="1144"
+              y2="520"
+              fill="none"
+              stroke="#087f5b"
+              stroke-width="1.75"
+              marker-end="url(#seq-accent)"
+            />
+
+            <rect
               x="184"
               y="156"
               width="128"
@@ -1848,35 +1916,6 @@
               font-size="8"
             >
               CANDIDATES
-            </text>
-            <rect
-              x="720"
-              y="416"
-              width="144"
-              height="56"
-              rx="4"
-              fill="rgba(23,33,36,0.02)"
-              stroke="rgba(23,33,36,0.2)"
-            />
-            <text
-              x="732"
-              y="432"
-              fill="#526a70"
-              font-family="'Geist Mono', monospace"
-              font-size="8"
-            >
-              SELF
-            </text>
-            <text
-              x="792"
-              y="452"
-              text-anchor="middle"
-              fill="#172124"
-              font-family="'Geist', sans-serif"
-              font-size="12"
-              font-weight="600"
-            >
-              Validate + score
             </text>
             <rect
               x="840"

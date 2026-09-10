@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 import { z } from "zod"
 
 import { AssessmentReportWorkspace } from "@/components/assessment-report-workspace"
+import { AssessmentReportStatus } from "@/components/assessment-report-status"
 import { getAssessmentReportService } from "@/lib/assessment-report-service"
 
 export const dynamic = "force-dynamic"
@@ -19,7 +20,12 @@ export default async function AssessmentReportPage({
 }) {
   const parsed = z.uuid().safeParse((await params).assessmentId)
   if (!parsed.success) notFound()
-  const report = await getAssessmentReportService().get(parsed.data)
-  if (report === null) notFound()
+  const service = getAssessmentReportService()
+  const report = await service.get(parsed.data)
+  if (report === null) {
+    const status = await service.status(parsed.data)
+    if (status === null) notFound()
+    return <AssessmentReportStatus assessment={status} />
+  }
   return <AssessmentReportWorkspace report={report} />
 }

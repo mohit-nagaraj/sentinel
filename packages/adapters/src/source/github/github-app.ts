@@ -96,6 +96,7 @@ const pullRequestResponseSchema = z.looseObject({
   id: z.union([z.string(), z.number()]),
   number: z.number().int().positive(),
   html_url: z.string().min(1),
+  title: z.string().trim().min(1).max(512),
   state: z.enum(["open", "closed"]),
   draft: z.boolean().nullable(),
   updated_at: timestampSchema,
@@ -418,6 +419,7 @@ export interface ResolvedGithubPullRequest {
   readonly pullRequestId: string
   readonly pullRequestNumber: number
   readonly pullRequestUrl: string
+  readonly title: string
   readonly baseSha: string
   readonly headSha: string
   readonly providerUpdatedAt: string
@@ -655,6 +657,7 @@ export class GithubAppClient {
         identity.repository,
         response.data.number
       ),
+      title: response.data.title,
       baseSha: response.data.base.sha.toLowerCase(),
       headSha: response.data.head.sha.toLowerCase(),
       providerUpdatedAt: response.data.updated_at,

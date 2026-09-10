@@ -175,7 +175,7 @@ describe.runIf(enabled)("Hi.Events Code Explorer mission evaluation", () => {
           loadAzureOpenAIEnvironment(process.env),
           {
             maxInputCharacters: 16_000,
-            maxOutputTokens: 512,
+            maxOutputTokens: 1_024,
             maxTools: 16,
             maxToolCalls: 1,
             maxToolOutputCharacters: 32_768,

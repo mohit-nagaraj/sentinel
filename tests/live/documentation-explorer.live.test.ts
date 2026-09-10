@@ -118,7 +118,7 @@ describeHiEvents("Hi.Events Documentation Explorer mission evaluation", () => {
         loadAzureOpenAIEnvironment(process.env),
         {
           maxInputCharacters: 16_000,
-          maxOutputTokens: 512,
+          maxOutputTokens: 1_024,
           maxTools: 6,
           maxToolCalls: 1,
           maxToolOutputCharacters: 32_768,

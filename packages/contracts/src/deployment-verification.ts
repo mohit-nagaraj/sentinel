@@ -29,7 +29,7 @@ export const VERIFICATION_PLAN_POLICY_VERSION =
   "verification-plan-policy-v1" as const
 
 export const deploymentRoleSchema = z.enum(["baseline", "pr_head"])
-export const deploymentProviderSchema = z.literal("render")
+export const deploymentProviderSchema = z.enum(["render", "railway"])
 export const deploymentPurposeSchema = z.enum([
   "baseline_observation",
   "pr_head_verification",
@@ -37,6 +37,39 @@ export const deploymentPurposeSchema = z.enum([
 ])
 
 const providerResourceIdSchema = z.string().trim().min(1).max(256)
+
+export const deploymentReadinessProbeSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("application"),
+    path: normalizedPathSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("api_json"),
+    path: normalizedPathSchema,
+    expectedStatuses: z
+      .array(z.number().int().min(200).max(399))
+      .min(1)
+      .max(20),
+  }),
+])
+
+export const deploymentProviderRegistrationSchema = z.discriminatedUnion(
+  "kind",
+  [
+    z.strictObject({
+      kind: z.literal("render"),
+      serviceId: providerResourceIdSchema,
+      deployId: providerResourceIdSchema,
+    }),
+    z.strictObject({
+      kind: z.literal("railway"),
+      projectId: providerResourceIdSchema,
+      environmentId: providerResourceIdSchema,
+      serviceId: providerResourceIdSchema,
+      deployId: providerResourceIdSchema,
+    }),
+  ]
+)
 
 export const deploymentCompatibilitySchema = z.strictObject({
   fingerprint: contentHashSchema,
@@ -59,11 +92,8 @@ export const deploymentRegistrationSchema = z
     commitSha: commitShaSchema,
     publicUrl: publicHttpUrlSchema,
     healthPath: normalizedPathSchema,
-    provider: z.strictObject({
-      kind: deploymentProviderSchema,
-      serviceId: providerResourceIdSchema,
-      deployId: providerResourceIdSchema,
-    }),
+    readinessProbe: deploymentReadinessProbeSchema.optional(),
+    provider: deploymentProviderRegistrationSchema,
     compatibility: deploymentCompatibilitySchema,
     registeredAt: timestampSchema,
     expiresAt: timestampSchema,
@@ -99,6 +129,23 @@ export const deploymentRegistrationSchema = z
         message: "Allowed origins must include the deployment origin",
       })
     }
+    if (registration.provider.kind === "railway") {
+      if (registration.readinessProbe === undefined) {
+        context.addIssue({
+          code: "custom",
+          path: ["readinessProbe"],
+          message:
+            "Railway deployments require an application or JSON API readiness probe",
+        })
+      } else if (registration.readinessProbe.path === "/up") {
+        context.addIssue({
+          code: "custom",
+          path: ["readinessProbe", "path"],
+          message:
+            "Railway readiness cannot rely on the static platform uptime path",
+        })
+      }
+    }
   })
 
 export const deploymentProviderStatusSchema = z.enum([
@@ -115,9 +162,8 @@ export const deploymentProviderStatusSchema = z.enum([
   "canceled",
 ])
 
-export const deploymentProviderProofSchema = z.strictObject({
+const deploymentProviderProofFields = {
   schemaVersion: schemaVersionSchema,
-  provider: deploymentProviderSchema,
   serviceId: providerResourceIdSchema,
   deployId: providerResourceIdSchema,
   repository: repositoryIdentitySchema.optional(),
@@ -125,7 +171,20 @@ export const deploymentProviderProofSchema = z.strictObject({
   publicUrl: publicHttpUrlSchema.optional(),
   status: deploymentProviderStatusSchema,
   observedAt: timestampSchema,
-})
+} as const
+
+export const deploymentProviderProofSchema = z.discriminatedUnion("provider", [
+  z.strictObject({
+    ...deploymentProviderProofFields,
+    provider: z.literal("render"),
+  }),
+  z.strictObject({
+    ...deploymentProviderProofFields,
+    provider: z.literal("railway"),
+    projectId: providerResourceIdSchema,
+    environmentId: providerResourceIdSchema,
+  }),
+])
 
 export const deploymentIdentityStateSchema = z.enum([
   "exact",
@@ -436,6 +495,13 @@ export const verificationPlanSchema = z
 
 export type DeploymentRegistration = z.infer<
   typeof deploymentRegistrationSchema
+>
+export type DeploymentProvider = z.infer<typeof deploymentProviderSchema>
+export type DeploymentProviderRegistration = z.infer<
+  typeof deploymentProviderRegistrationSchema
+>
+export type DeploymentReadinessProbeConfiguration = z.infer<
+  typeof deploymentReadinessProbeSchema
 >
 export type DeploymentProviderProof = z.infer<
   typeof deploymentProviderProofSchema

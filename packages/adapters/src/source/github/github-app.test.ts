@@ -115,6 +115,7 @@ function requesterHarness(options: {
             id: 9012,
             number: 7,
             html_url: "https://github.com/owner/repo/pull/7",
+            title: "Improve checkout attribution",
             state: "open",
             draft: false,
             updated_at: "2026-09-08T12:00:00Z",
@@ -346,6 +347,7 @@ describe("GitHub pull request and check API", () => {
     ).resolves.toMatchObject({
       repositoryId: "5678",
       pullRequestId: "9012",
+      title: "Improve checkout attribution",
       baseSha: "a".repeat(40),
       headSha: "b".repeat(40),
       state: "open",

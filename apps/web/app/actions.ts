@@ -60,21 +60,15 @@ export async function listOnboardingApplications() {
 }
 
 export async function initializeKnowledgeAction(applicationIdInput: string) {
-  const requestHeaders = await headers()
-  if (
-    !isOperatorRequestAuthorized(
-      requestHeaders.get("authorization"),
-      process.env
-    )
-  ) {
-    throw new Error("Control-plane request is unauthorized")
-  }
+  const controlPlane = await authorizedControlPlane()
   const applicationId = databaseApplicationIdSchema.parse(applicationIdInput)
+  const idempotencyKey =
+    await controlPlane.initializationIdempotencyKey(applicationId)
   const result = await getRunControlService().command({
     schemaVersion: 1,
     applicationId,
     type: "initialize_knowledge",
-    idempotencyKey: `initialize_knowledge:${applicationId}`,
+    idempotencyKey,
     budget: initializationBudget,
     payload: {},
   })

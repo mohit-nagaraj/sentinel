@@ -5,6 +5,7 @@ import {
   contentHashSchema,
   evidenceCuratorResultSchema,
   graphEvidencePathSchema,
+  githubCheckLifecycleSchema,
   hashCanonical,
   missionBudgetSchema,
   prInvestigationBaselineOutcomeSchema,
@@ -75,7 +76,10 @@ import type {
   GraphRunInput,
   RunExecutionContext,
 } from "./run-dispatch.ts"
-import type { AssessmentReportRunFinalizerPort } from "./report.ts"
+import type {
+  AssessmentReportCheckPort,
+  AssessmentReportRunFinalizerPort,
+} from "./report.ts"
 
 export const PR_INVESTIGATION_GRAPH_NAME = "assess_pull_request" as const
 
@@ -1198,6 +1202,8 @@ export function createPrInvestigationCompiledRunGraph(input: {
   readonly service: PrInvestigationService
   readonly resolver: PrInvestigationRunInputResolver
   readonly reports: AssessmentReportRunFinalizerPort
+  readonly checks: AssessmentReportCheckPort
+  readonly now?: () => Date
 }): CompiledRunGraph {
   const resolve = async (
     graphInput: GraphRunInput,
@@ -1227,28 +1233,62 @@ export function createPrInvestigationCompiledRunGraph(input: {
     context: RunExecutionContext
   ): Promise<GraphExecutionResult> => {
     const resolved = await resolve(graphInput, context)
-    const result = await input.service.start(resolved)
-    await context.assertActive()
-    if (
-      result.status === "completed" &&
-      result.result?.status === "completed"
-    ) {
-      const report = await input.reports.finalize(
-        { investigation: result.result },
-        context.signal
-      )
-      await context.assertActive()
-      if (report === "superseded") return { status: "cancelled" }
+    const now = input.now ?? (() => new Date())
+    const startedAt = now().toISOString()
+    const running = await input.checks.publishCheck({
+      assessmentId: resolved.assessmentId,
+      headSha: resolved.pullRequest.headSha,
+      lifecycle: githubCheckLifecycleSchema.parse({
+        state: "running",
+        startedAt,
+      }),
+    })
+    if (running === "superseded") return { status: "cancelled" }
+    if (running === "sync_pending") {
+      throw new Error("Assessment GitHub check synchronization is pending")
     }
-    return result.status === "superseded"
-      ? { status: "cancelled" }
-      : {
-          status: "succeeded",
-          publication: {
-            kind: "assessment",
+    try {
+      const result = await input.service.start(resolved)
+      await context.assertActive()
+      if (
+        (result.status === "completed" || result.status === "action_required") &&
+        result.result !== undefined
+      ) {
+        const report = await input.reports.finalize(
+          { investigation: result.result },
+          context.signal
+        )
+        await context.assertActive()
+        if (report === "superseded") return { status: "cancelled" }
+      }
+      return result.status === "superseded"
+        ? { status: "cancelled" }
+        : {
+            status: "succeeded",
+            publication: {
+              kind: "assessment",
+              assessmentId: resolved.assessmentId,
+            },
+          }
+    } catch (error) {
+      if (context.signal.aborted !== true) {
+        await input.checks
+          .publishCheck({
             assessmentId: resolved.assessmentId,
-          },
-        }
+            headSha: resolved.pullRequest.headSha,
+            lifecycle: githubCheckLifecycleSchema.parse({
+              state: "completed",
+              outcome: "infrastructure_failed",
+              title: "Sentinel analysis failed",
+              summary:
+                "Sentinel could not complete this assessment. Retry the run or inspect the Sentinel activity record for the bounded failure category.",
+              completedAt: now().toISOString(),
+            }),
+          })
+          .catch(() => undefined)
+      }
+      throw error
+    }
   }
 
   return {

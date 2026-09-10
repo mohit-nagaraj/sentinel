@@ -234,7 +234,7 @@ export class KnowledgeGraphQueryRepository {
              stale: coalesce(assessment.stale, requirement.stale, false)
            } AS item
            ORDER BY requirement.stable_key
-           LIMIT $limit`,
+           LIMIT toInteger($limit)`,
           {
             applicationId,
             graphRevision,
@@ -308,7 +308,7 @@ export class KnowledgeGraphQueryRepository {
              stale: coalesce(workflow.stale, false)
            } AS item
            ORDER BY workflow.stable_key
-           LIMIT $limit`,
+           LIMIT toInteger($limit)`,
           { applicationId, graphRevision, cursor, limit: limit + 1 }
         )
         const items = result.records.map((record) =>
@@ -352,7 +352,7 @@ export class KnowledgeGraphQueryRepository {
                n.normalized_path, n.stable_key)) CONTAINS toLower($query)
            RETURN ${graphNodeProjection} AS node
            ORDER BY node.label, node.id
-           LIMIT $limit`,
+           LIMIT toInteger($limit)`,
           { applicationId, graphRevision, query, kinds: kinds ?? null, limit }
         )
         return knowledgeGraphSearchResultSchema.parse({
@@ -416,7 +416,7 @@ export class KnowledgeGraphQueryRepository {
              AND all(link IN relationships(path) WHERE link.application_id = $applicationId AND link.graph_revision = $graphRevision AND ($relationships IS NULL OR type(link) IN $relationships))
            WITH seed, n, min(length(path)) AS distance
            ORDER BY distance, n.stable_key
-           LIMIT $limit
+           LIMIT toInteger($limit)
            RETURN seed.stable_key AS seedId, collect(${graphNodeProjection}) AS nodes`,
           {
             applicationId,
@@ -453,7 +453,7 @@ export class KnowledgeGraphQueryRepository {
              stale: coalesce(r.stale, false)
            } AS relationship
            ORDER BY relationship.id
-           LIMIT $limit`,
+           LIMIT toInteger($limit)`,
           {
             applicationId,
             graphRevision,
@@ -539,7 +539,7 @@ export class KnowledgeGraphQueryRepository {
              capturedAt: toString(link.last_confirmed_at),
              explanation: link.evidence_explanation,
              sourceUri: link.source_uri,
-             artifactId: coalesce(link.artifact_id, link.evidence_ref),
+              artifactId: link.artifact_id,
              stale: coalesce(link.stale, false)
            }] AS links`,
           { applicationId, graphRevision, requirementId }
@@ -628,7 +628,7 @@ export class KnowledgeGraphQueryRepository {
                capturedAt: toString(link.last_confirmed_at),
                explanation: link.evidence_explanation,
                sourceUri: link.source_uri,
-               artifactId: coalesce(link.artifact_id, link.evidence_ref),
+               artifactId: link.artifact_id,
                stale: coalesce(link.stale, false)
              }] AS competingEvidence
            RETURN {
@@ -679,7 +679,7 @@ export class KnowledgeGraphQueryRepository {
              previousReviews: []
            } AS item
            ORDER BY candidate.stable_key
-           LIMIT $limit`,
+           LIMIT toInteger($limit)`,
           { applicationId, graphRevision, cursor, linkId, limit: limit + 1 }
         )
         const items = result.records.map((record) =>

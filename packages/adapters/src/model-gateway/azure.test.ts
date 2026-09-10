@@ -128,7 +128,9 @@ describe("Azure OpenAI model gateway", () => {
 
   it("sends strict JSON schema and revalidates output", async () => {
     const schema = z.strictObject({ answer: z.number().int() })
-    const transport = new QueueTransport([completed('{"answer":42}')])
+    const transport = new QueueTransport([
+      completed('{"result":{"answer":42}}'),
+    ])
     const gateway = new AzureOpenAIModelGateway(transport, "deployment")
     await expect(
       gateway.generateStructured({
@@ -143,13 +145,17 @@ describe("Azure OpenAI model gateway", () => {
           type: "json_schema",
           name: "answer_result",
           strict: true,
-          schema: { type: "object", additionalProperties: false },
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["result"],
+          },
         },
       },
     })
 
     const malformed = new AzureOpenAIModelGateway(
-      new QueueTransport([completed('{"answer":"wrong"}')]),
+      new QueueTransport([completed('{"result":{"answer":"wrong"}}')]),
       "deployment"
     )
     await expect(
@@ -158,7 +164,10 @@ describe("Azure OpenAI model gateway", () => {
         schemaName: "answer_result",
         schema,
       })
-    ).rejects.toMatchObject({ code: "malformed_output" })
+    ).rejects.toMatchObject({
+      code: "malformed_output",
+      issuePaths: ["$.result.answer"],
+    })
 
     const unsupportedTransport = new QueueTransport([completed("unused")])
     await expect(
@@ -172,6 +181,37 @@ describe("Azure OpenAI model gateway", () => {
       })
     ).rejects.toMatchObject({ code: "invalid_request", retryable: false })
     expect(unsupportedTransport.requests).toHaveLength(0)
+  })
+
+  it("wraps root unions in an object for strict structured output", async () => {
+    const schema = z.discriminatedUnion("kind", [
+      z.strictObject({ kind: z.literal("count"), value: z.number().int() }),
+      z.strictObject({ kind: z.literal("skip"), reason: z.string() }),
+    ])
+    const transport = new QueueTransport([
+      completed('{"result":{"kind":"count","value":42}}'),
+    ])
+    const gateway = new AzureOpenAIModelGateway(transport, "deployment")
+
+    await expect(
+      gateway.generateStructured({
+        input: "Return a decision",
+        schemaName: "union_result",
+        schema,
+      })
+    ).resolves.toMatchObject({
+      output: { kind: "count", value: 42 },
+    })
+    expect(transport.requests[0]).toMatchObject({
+      text: {
+        format: {
+          schema: {
+            type: "object",
+            properties: { result: { anyOf: expect.any(Array) } },
+          },
+        },
+      },
+    })
   })
 
   it("validates strict tool calls and correlates continuation outputs", async () => {
@@ -281,6 +321,46 @@ describe("Azure OpenAI model gateway", () => {
         [{ callId: "call-1", output: 42 }]
       )
     ).rejects.toMatchObject({ code: "invalid_request" })
+  })
+
+  it("normalizes strict nullable tool fields back to optional arguments", async () => {
+    const call = {
+      type: "function_call",
+      call_id: "call-optional",
+      name: "search",
+      arguments: '{"query":"tickets","limit":null}',
+    }
+    const transport = new QueueTransport([completed("", [call])])
+    const gateway = new AzureOpenAIModelGateway(transport, "deployment")
+
+    const decision = await gateway.decideTools({
+      input: "Search for tickets",
+      toolChoice: "required",
+      tools: [
+        {
+          name: "search",
+          description: "Search one bounded source.",
+          parameters: z.strictObject({
+            query: z.string(),
+            limit: z.number().int().positive().optional(),
+          }),
+        },
+      ],
+    })
+
+    expect(decision.kind).toBe("tool_calls")
+    if (decision.kind !== "tool_calls") throw new Error("expected tool calls")
+    expect(decision.output[0]?.arguments).toEqual({ query: "tickets" })
+    expect(transport.requests[0]).toMatchObject({
+      tools: [
+        {
+          parameters: {
+            required: ["query", "limit"],
+            properties: { limit: { anyOf: expect.any(Array) } },
+          },
+        },
+      ],
+    })
   })
 
   it("returns a direct terminal answer when auto tool choice uses no tool", async () => {

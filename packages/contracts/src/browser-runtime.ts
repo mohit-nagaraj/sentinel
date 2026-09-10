@@ -88,6 +88,7 @@ export const browserActionCandidateSchema = z.strictObject({
   kind: browserActionKindSchema,
   role: reasonCodeSchema.optional(),
   name: shortTextSchema.optional(),
+  contextLabel: shortTextSchema.optional(),
   inputSlot: reasonCodeSchema.optional(),
   disabled: z.boolean(),
   policy: browserPolicyDecisionSchema,

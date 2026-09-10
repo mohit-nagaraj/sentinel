@@ -75,6 +75,13 @@ const relationshipPolicies: Partial<
     tier: "B",
     requiredMethods: [["cited_excerpt"], ["validated_requirement_extraction"]],
   },
+  COVERED_BY: {
+    tier: "B",
+    requiredMethods: [
+      ["validated_requirement_extraction"],
+      ["browser_transition"],
+    ],
+  },
   HAS_STEP: { tier: "A", requiredMethods: [["crawl_record"]] },
   NEXT: { tier: "A", requiredMethods: [["browser_transition"]] },
   ON_SCREEN: { tier: "A", requiredMethods: [["browser_transition"]] },

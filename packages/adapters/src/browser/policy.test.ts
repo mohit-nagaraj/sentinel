@@ -97,6 +97,9 @@ describe("browser policy", () => {
   })
 
   it("allows bounded semantic navigation and named inputs", () => {
+    expect(
+      classifyBrowserAction({ kind: "click", name: "Details" }, policy)
+    ).toMatchObject({ category: "safe_read", replaySafe: true })
     const progress = classifyBrowserAction(
       { kind: "click", name: "Continue", submit: true },
       policy

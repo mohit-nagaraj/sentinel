@@ -14,6 +14,8 @@ import {
 import {
   DeploymentAttestationError,
   DeploymentValidationService,
+  PublicDeploymentReadinessProbe,
+  RailwayApiDeploymentAttestor,
   RenderApiDeploymentAttestor,
 } from "./verification.ts"
 
@@ -64,6 +66,30 @@ function registration(
   })
 }
 
+function railwayRegistration(): DeploymentRegistration {
+  return deploymentRegistrationSchema.parse({
+    ...registration(),
+    publicUrl: "https://hi-events-pr-42.up.railway.app",
+    healthPath: "/up",
+    readinessProbe: {
+      kind: "api_json",
+      path: "/api/health",
+      expectedStatuses: [200],
+    },
+    provider: {
+      kind: "railway",
+      projectId: "project-head-42",
+      environmentId: "environment-head-42",
+      serviceId: "service-head-42",
+      deployId: "deployment-head-42",
+    },
+    compatibility: {
+      ...registration().compatibility,
+      allowedOrigins: ["https://hi-events-pr-42.up.railway.app"],
+    },
+  })
+}
+
 function proof(overrides: Partial<DeploymentProviderProof> = {}) {
   return deploymentProviderProofSchema.parse({
     schemaVersion: 1 as const,
@@ -78,6 +104,31 @@ function proof(overrides: Partial<DeploymentProviderProof> = {}) {
     commitSha: headSha,
     publicUrl: "https://hi-events-pr-42.onrender.com/",
     status: "live" as const,
+    observedAt: "2026-09-09T10:00:00.000Z",
+    ...overrides,
+  })
+}
+
+function railwayProof(
+  overrides: Partial<
+    Extract<DeploymentProviderProof, { readonly provider: "railway" }>
+  > = {}
+): DeploymentProviderProof {
+  return deploymentProviderProofSchema.parse({
+    schemaVersion: 1,
+    provider: "railway",
+    projectId: "project-head-42",
+    environmentId: "environment-head-42",
+    serviceId: "service-head-42",
+    deployId: "deployment-head-42",
+    repository: {
+      host: "github.com",
+      owner: "hieventsdev",
+      name: "hi.events",
+    },
+    commitSha: headSha,
+    publicUrl: "https://hi-events-pr-42.up.railway.app",
+    status: "live",
     observedAt: "2026-09-09T10:00:00.000Z",
     ...overrides,
   })
@@ -300,6 +351,22 @@ describe("DeploymentValidationService", () => {
     expect(overdue.reason).toBe("deployment_cleanup_overdue")
     expect(isolated.reason).toBe("deployment_service_mismatch")
   })
+
+  it("rejects a Railway deployment from a different project or environment", async () => {
+    const railway = railwayRegistration()
+    const result = await service({
+      proof: railwayProof({ environmentId: "environment-other" }),
+    }).validate(request(railway))
+
+    expect(result).toMatchObject({
+      identityState: "mismatch",
+      trustState: "untrusted",
+      reason: "deployment_service_mismatch",
+      browserAccessAllowed: false,
+      credentialAccessAllowed: false,
+    })
+    expect(result.actionRequired).toContain("Railway")
+  })
 })
 
 describe("RenderApiDeploymentAttestor", () => {
@@ -362,5 +429,171 @@ describe("RenderApiDeploymentAttestor", () => {
     await expect(attestor.attest(registration())).rejects.toMatchObject({
       code: "provider_identity_unknown",
     })
+  })
+})
+
+describe("RailwayApiDeploymentAttestor", () => {
+  it("attests exact Railway project, service, environment, commit, repository, and domain evidence", async () => {
+    const fetchMock = vi.fn(
+      async (_input: URL | RequestInfo, init?: RequestInit) => {
+        const request = JSON.parse(String(init?.body)) as {
+          readonly query: string
+          readonly variables: Record<string, string>
+        }
+        const data = request.query.includes("SentinelRailwayDeployment")
+          ? {
+              deployment: {
+                id: "deployment-head-42",
+                projectId: "project-head-42",
+                serviceId: "service-head-42",
+                environmentId: "environment-head-42",
+                status: "SUCCESS",
+                staticUrl: "hi-events-pr-42.up.railway.app",
+                url: null,
+                meta: { commitHash: headSha, branch: "pr-42" },
+              },
+            }
+          : {
+              serviceInstance: {
+                serviceId: "service-head-42",
+                environmentId: "environment-head-42",
+                source: { repo: "HiEventsDev/Hi.Events" },
+                domains: {
+                  serviceDomains: [
+                    { domain: "hi-events-pr-42.up.railway.app" },
+                  ],
+                  customDomains: [],
+                },
+              },
+            }
+        return new Response(JSON.stringify({ data }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+      }
+    )
+    const attestor = new RailwayApiDeploymentAttestor({
+      token: "railway-test-token",
+      fetch: fetchMock as typeof fetch,
+      now: () => new Date("2026-09-09T10:00:00.000Z"),
+    })
+
+    await expect(attestor.attest(railwayRegistration())).resolves.toMatchObject(
+      {
+        provider: "railway",
+        projectId: "project-head-42",
+        environmentId: "environment-head-42",
+        serviceId: "service-head-42",
+        deployId: "deployment-head-42",
+        commitSha: headSha,
+        repository: {
+          host: "github.com",
+          owner: "hieventsdev",
+          name: "hi.events",
+        },
+        publicUrl: "https://hi-events-pr-42.up.railway.app/",
+        status: "live",
+      }
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init?.method).toBe("POST")
+      expect(init?.headers).toMatchObject({
+        Authorization: "Bearer railway-test-token",
+        "Content-Type": "application/json",
+      })
+    }
+  })
+
+  it("uses project-token auth and fails closed on GraphQL identity errors", async () => {
+    const fetchMock = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        void input
+        void init
+        return Response.json({
+          errors: [
+            {
+              message: "Deployment not found",
+              extensions: { code: "NOT_FOUND" },
+            },
+          ],
+          data: null,
+        })
+      }
+    )
+    const attestor = new RailwayApiDeploymentAttestor({
+      token: "railway-project-token",
+      tokenType: "project",
+      fetch: fetchMock as typeof fetch,
+    })
+
+    await expect(attestor.attest(railwayRegistration())).rejects.toMatchObject({
+      code: "provider_identity_unknown",
+    })
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      "Project-Access-Token": "railway-project-token",
+    })
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty(
+      "Authorization"
+    )
+  })
+})
+
+describe("PublicDeploymentReadinessProbe", () => {
+  it("probes the configured JSON API instead of the static Railway uptime path", async () => {
+    const urls: string[] = []
+    const readiness = new PublicDeploymentReadinessProbe({
+      check: async (url) => {
+        urls.push(url)
+        return {
+          finalUrl: url,
+          status: 200,
+          contentType: "application/health+json; charset=utf-8",
+        }
+      },
+    })
+
+    await expect(readiness.check(railwayRegistration())).resolves.toEqual({
+      finalUrl: "https://hi-events-pr-42.up.railway.app/api/health",
+      status: 200,
+    })
+    expect(urls).toEqual(["https://hi-events-pr-42.up.railway.app/api/health"])
+  })
+
+  it("supports a browser application probe and rejects non-JSON API responses", async () => {
+    const applicationChecks: string[] = []
+    const appRegistration = deploymentRegistrationSchema.parse({
+      ...railwayRegistration(),
+      readinessProbe: { kind: "application", path: "/events/demo" },
+    })
+    const readiness = new PublicDeploymentReadinessProbe(
+      {
+        check: async (url) => ({
+          finalUrl: url,
+          status: 200,
+          contentType: "text/html",
+        }),
+      },
+      {
+        application: {
+          check: async (url, origins) => {
+            applicationChecks.push(url)
+            expect(origins).toEqual(["https://hi-events-pr-42.up.railway.app/"])
+            return { finalUrl: url, title: "Hi.Events" }
+          },
+        },
+      }
+    )
+
+    await expect(readiness.check(appRegistration)).resolves.toEqual({
+      finalUrl: "https://hi-events-pr-42.up.railway.app/events/demo",
+      status: 200,
+    })
+    expect(applicationChecks).toEqual([
+      "https://hi-events-pr-42.up.railway.app/events/demo",
+    ])
+    await expect(readiness.check(railwayRegistration())).rejects.toThrow(
+      "did not return JSON"
+    )
   })
 })

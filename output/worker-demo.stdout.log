@@ -1,0 +1,2 @@
+{"timestamp":"2026-09-10T05:49:07.594Z","level":"info","event":"worker_health_listening","workerId":"worker-local"}
+{"timestamp":"2026-09-10T05:49:08.085Z","level":"info","event":"worker_graphs_ready","workerId":"worker-local"}

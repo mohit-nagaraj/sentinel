@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   deploymentRegistrationSchema,
+  deploymentProviderProofSchema,
   deploymentValidationResultSchema,
   verificationPlanSchema,
 } from "./deployment-verification.ts"
@@ -57,6 +58,55 @@ describe("deployment verification contracts", () => {
           ...registration().compatibility,
           allowedOrigins: ["https://other.onrender.com"],
         },
+      }).success
+    ).toBe(false)
+  })
+
+  it("requires Railway project/environment identity and a real application or API probe", () => {
+    const railway = {
+      ...registration(),
+      publicUrl: "https://hi-events-pr-42.up.railway.app",
+      healthPath: "/up",
+      readinessProbe: {
+        kind: "api_json",
+        path: "/api/health",
+        expectedStatuses: [200],
+      },
+      provider: {
+        kind: "railway",
+        projectId: "project-1",
+        environmentId: "environment-1",
+        serviceId: "service-1",
+        deployId: "deployment-1",
+      },
+      compatibility: {
+        ...registration().compatibility,
+        allowedOrigins: ["https://hi-events-pr-42.up.railway.app"],
+      },
+    }
+
+    expect(deploymentRegistrationSchema.safeParse(railway).success).toBe(true)
+    expect(
+      deploymentRegistrationSchema.safeParse({
+        ...railway,
+        readinessProbe: undefined,
+      }).success
+    ).toBe(false)
+    expect(
+      deploymentRegistrationSchema.safeParse({
+        ...railway,
+        readinessProbe: { kind: "application", path: "/up" },
+      }).success
+    ).toBe(false)
+
+    expect(
+      deploymentProviderProofSchema.safeParse({
+        schemaVersion: 1,
+        provider: "railway",
+        serviceId: "service-1",
+        deployId: "deployment-1",
+        status: "live",
+        observedAt: "2026-09-09T10:00:00.000Z",
       }).success
     ).toBe(false)
   })

@@ -85,6 +85,67 @@ describe("activity projector", () => {
     ])
   })
 
+  it("sums the latest cumulative budget from each specialist mission", () => {
+    const firstMission = `mission:v1:${"1".repeat(64)}`
+    const secondMission = `mission:v1:${"2".repeat(64)}`
+    const projected = projectActivityFeed([
+      event(1, {
+        agent: "documentation",
+        missionId: firstMission,
+        kind: "budget_updated",
+        status: "completed",
+        budget: { consumed: 1, limit: 30, unit: "tool_calls" },
+      }),
+      event(2, {
+        agent: "documentation",
+        missionId: firstMission,
+        kind: "budget_updated",
+        status: "completed",
+        budget: { consumed: 4, limit: 30, unit: "tool_calls" },
+      }),
+      event(3, {
+        agent: "documentation",
+        missionId: secondMission,
+        kind: "budget_updated",
+        status: "completed",
+        budget: { consumed: 2, limit: 20, unit: "tool_calls" },
+      }),
+    ])
+
+    expect(projected.budgets).toEqual([
+      { consumed: 6, limit: 50, unit: "tool_calls" },
+    ])
+  })
+
+  it("does not present rejected tool calls as completed evidence", () => {
+    const projected = projectActivityEvent(
+      event(1, {
+        agent: "documentation",
+        missionId: `mission:v1:${"1".repeat(64)}`,
+        kind: "tool_completed",
+        toolName: "submit_requirement_claim",
+        status: "completed",
+        evidenceIds: [`evidence:v1:${"a".repeat(64)}`],
+        activity: {
+          category: "tool",
+          action: {
+            kind: "submit_requirement_claim",
+            label: "submit requirement claim" as never,
+            status: "failed",
+          },
+          coverageDelta: 1,
+        },
+      })
+    )
+
+    expect(projected).toMatchObject({
+      status: "failed",
+      summary: "Requirement claim rejected",
+      evidenceGain: 0,
+    })
+    expect(projected.coverageDelta).toBeUndefined()
+  })
+
   it("rejects raw hidden-reasoning, selector, DOM, and credential fields", () => {
     const valid = event(1)
     for (const unsafe of [

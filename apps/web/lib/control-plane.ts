@@ -543,6 +543,21 @@ export class ControlPlane {
     )
   }
 
+  async initializationIdempotencyKey(
+    applicationIdInput: string
+  ): Promise<string> {
+    const applicationId = z.uuid().parse(applicationIdInput)
+    const record = await this.options.store.get(this.operatorId, applicationId)
+    if (
+      record === null ||
+      record.confirmationFingerprint === null ||
+      record.confirmationFingerprint !== record.inputFingerprint
+    ) {
+      throw new Error("Application scope is not confirmed")
+    }
+    return `initialize_knowledge:${applicationId}:${record.inputFingerprint.slice("sha256:".length)}`
+  }
+
   async inspect(formData: FormData): Promise<OnboardingActionState> {
     const submittedValues = readSafeOnboardingValues(formData)
     const completedThrough = onboardingCompletedStepSchema.parse(

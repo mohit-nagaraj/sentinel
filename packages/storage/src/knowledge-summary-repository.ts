@@ -276,7 +276,7 @@ export class KnowledgeSummaryRepository {
         and onboarding.operator_id = $1::uuid
        where review.application_id = $2::uuid
          and review.link_stable_key in (
-           select jsonb_array_elements_text($3::jsonb)
+           select jsonb_array_elements_text($3::text::jsonb)
          )
        order by review.decided_at desc, review.id desc`,
       [operatorId, applicationId, JSON.stringify(linkIds)]

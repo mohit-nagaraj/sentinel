@@ -1,7 +1,14 @@
 "use client"
 
 import Link from "next/link"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import {
   AlertTriangle,
   Braces,
@@ -155,12 +162,14 @@ function ActivityCard({ item }: { readonly item: ActivityViewModel }) {
             <dt className="sr-only">Action</dt>
             <dd className="font-medium break-words">{item.action.label}</dd>
           </div>
-          <div>
-            <dt className="sr-only">Action status</dt>
-            <dd className="font-mono text-[0.6875rem] text-muted-foreground">
-              {humanize(item.action.status)}
-            </dd>
-          </div>
+          {item.action.status === item.status ? null : (
+            <div>
+              <dt className="sr-only">Action status</dt>
+              <dd className="font-mono text-[0.6875rem] text-muted-foreground">
+                {humanize(item.action.status)}
+              </dd>
+            </div>
+          )}
         </dl>
       )}
 
@@ -222,6 +231,26 @@ function SpecialistLane({
   readonly className?: string
 }) {
   const Icon = lane.icon
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const followsLatestRef = useRef(true)
+  const latestSequence = items.at(-1)?.sequence
+
+  const handleScroll = useCallback(() => {
+    const scrollArea = scrollAreaRef.current
+    if (scrollArea === null) return
+    followsLatestRef.current =
+      scrollArea.scrollHeight -
+        scrollArea.scrollTop -
+        scrollArea.clientHeight <=
+      8
+  }, [])
+
+  useLayoutEffect(() => {
+    const scrollArea = scrollAreaRef.current
+    if (scrollArea === null || !followsLatestRef.current) return
+    scrollArea.scrollTop = scrollArea.scrollHeight
+  }, [items.length, latestSequence])
+
   return (
     <section
       aria-labelledby={headingId}
@@ -242,7 +271,14 @@ function SpecialistLane({
         </div>
         <p className="text-xs text-muted-foreground">{lane.description}</p>
       </header>
-      <div className="grid max-h-[34rem] gap-3 overflow-y-auto p-3">
+      <div
+        ref={scrollAreaRef}
+        role="region"
+        aria-label={`${lane.label} activity events`}
+        tabIndex={0}
+        className="scrollbar-hidden grid max-h-[34rem] gap-3 overflow-y-auto p-3"
+        onScroll={handleScroll}
+      >
         {items.length === 0 ? (
           <EmptyLane label={lane.label} />
         ) : (
@@ -449,7 +485,10 @@ export function RunActivityWorkspace({
       )
       return {
         ...merged,
-        connection: live ? "connecting" : "offline",
+        connection:
+          live && !terminalStatuses.has(initialRun.status)
+            ? "connecting"
+            : "offline",
       }
     } catch {
       return {
@@ -481,7 +520,7 @@ export function RunActivityWorkspace({
   }, [])
 
   useEffect(() => {
-    if (!live) return
+    if (!live || terminalStatuses.has(run.status)) return
     let disposed = false
     const controller = new ActivityCatchUpController({
       read: () => feedRef.current,
@@ -606,16 +645,49 @@ export function RunActivityWorkspace({
           })
         )
         if (connection === "live") void synchronize().catch(() => undefined)
+        if (
+          connection === "reconnecting" ||
+          connection === "offline" ||
+          connection === "error"
+        ) {
+          startFallbackPolling()
+        }
       },
     })
-    void realtime.start().catch(() => undefined)
+    let fallbackTimer: number | undefined
+    const clearFallbackPolling = () => {
+      if (fallbackTimer === undefined) return
+      window.clearInterval(fallbackTimer)
+      fallbackTimer = undefined
+    }
+    const poll = () => {
+      void synchronize()
+        .then(() => {
+          if (disposed) return
+          setSlow(false)
+          writeFeed(
+            activityFeedReducer(feedRef.current, {
+              type: "connection",
+              connection: "live",
+            })
+          )
+        })
+        .catch(() => undefined)
+    }
+    function startFallbackPolling() {
+      if (fallbackTimer !== undefined || disposed) return
+      poll()
+      fallbackTimer = window.setInterval(poll, 2_000)
+    }
+    void realtime.start().catch(() => startFallbackPolling())
     void controller.wake().catch(() => undefined)
     return () => {
       disposed = true
+      clearFallbackPolling()
       controller.stop()
       void realtime.stop()
     }
-  }, [live, run.id, transport, writeFeed])
+  }, [live, run.id, run.status, transport, writeFeed])
 
   useEffect(() => {
     if (
@@ -724,6 +796,22 @@ export function RunActivityWorkspace({
           const parsed = publicRunSchema.parse(
             (payload as { readonly run?: unknown }).run
           )
+          if (action === "retry" && parsed.id !== run.id) {
+            const nextFeed = {
+              ...createActivityFeedState(parsed.id),
+              connection: live ? ("connecting" as const) : ("offline" as const),
+            }
+            announcedCursor.current = 0
+            feedRef.current = nextFeed
+            setFeed(nextFeed)
+            setInterrupt(null)
+            setSlow(false)
+            window.history.replaceState(
+              window.history.state,
+              "",
+              `/applications/${encodeURIComponent(parsed.applicationId)}/activity/${encodeURIComponent(parsed.id)}`
+            )
+          }
           setRun(parsed)
         }
         setConfirmStop(false)
@@ -738,7 +826,7 @@ export function RunActivityWorkspace({
         setBusy(null)
       }
     },
-    [interrupt, refreshRun, run.id]
+    [interrupt, live, refreshRun, run.id]
   )
 
   const terminal = terminalStatuses.has(run.status)
@@ -747,7 +835,7 @@ export function RunActivityWorkspace({
   const canStop = activeStatuses.has(run.status) || run.status === "interrupted"
 
   return (
-    <main className="min-h-full bg-background text-foreground">
+    <main className="bg-background text-foreground">
       <section className="border-b border-border px-4 py-4 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
@@ -756,7 +844,9 @@ export function RunActivityWorkspace({
             </p>
             <h2 className="mt-1 text-lg font-semibold">Specialist activity</h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Ordered decisions, actions, and evidence for this run.
+              {run.assessment === undefined
+                ? "Ordered decisions, actions, and evidence for this run."
+                : `${run.assessment.repository.owner}/${run.assessment.repository.name} PR #${run.assessment.pullRequestNumber} at ${run.assessment.headSha.slice(0, 12)}. Ordered decisions, actions, and evidence follow.`}
             </p>
           </div>
           <div className="flex min-h-11 flex-wrap items-center justify-end gap-2">
@@ -836,7 +926,7 @@ export function RunActivityWorkspace({
                 </Button>
               </div>
             ) : null}
-            {run.status === "failed" ? (
+            {run.status === "failed" && run.error?.retryable === true ? (
               <Button
                 type="button"
                 className="min-h-11 rounded-md"
@@ -933,7 +1023,9 @@ export function RunActivityWorkspace({
               ? "Run completed. The full activity record is available below."
               : run.status === "cancelled"
                 ? "Run stopped. Completed activity remains available."
-                : "Run failed. Review the Curator record before retrying."}
+                : run.error === undefined
+                  ? "Run failed before a terminal result was produced."
+                  : `Run failed. ${run.error.message} Error ${run.error.code}.${run.error.retryable ? " Retry is available." : " Update the configuration before starting again."}`}
           </div>
           {run.status === "succeeded" && run.assessmentId !== undefined ? (
             <Link

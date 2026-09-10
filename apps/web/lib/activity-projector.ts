@@ -82,18 +82,23 @@ function laneFor(event: RunEvent): ActivityLane {
 }
 
 function eventStatus(event: RunEvent): string {
+  if (event.activity?.action?.status === "failed") return "failed"
   return event.status
 }
 
 export function projectActivityEvent(input: unknown): ActivityViewModel {
   const event = runEventSchema.parse(input)
   const category = event.activity?.category ?? defaultCategory(event)
+  const actionFailed = event.activity?.action?.status === "failed"
   return {
     sequence: event.sequence,
     lane: laneFor(event),
     category,
     categoryLabel: categoryLabels[category],
-    summary: event.summary,
+    summary:
+      actionFailed && event.toolName === "submit_requirement_claim"
+        ? "Requirement claim rejected"
+        : event.summary,
     ...(event.activity?.detail === undefined
       ? {}
       : { detail: event.activity.detail }),
@@ -107,8 +112,8 @@ export function projectActivityEvent(input: unknown): ActivityViewModel {
     ...(event.activity?.request === undefined
       ? {}
       : { request: event.activity.request }),
-    evidenceGain: event.evidenceIds.length,
-    ...(event.activity?.coverageDelta === undefined
+    evidenceGain: actionFailed ? 0 : event.evidenceIds.length,
+    ...(event.activity?.coverageDelta === undefined || actionFailed
       ? {}
       : { coverageDelta: event.activity.coverageDelta }),
     ...(event.activity?.screenshotArtifactId === undefined
@@ -121,27 +126,55 @@ export function projectActivityEvent(input: unknown): ActivityViewModel {
 export function projectActivityFeed(
   events: readonly RunEvent[]
 ): ActivityProjection {
-  const projected = [...events]
-    .sort((left, right) => left.sequence - right.sequence)
-    .map(projectActivityEvent)
+  const sortedEvents = [...events].sort(
+    (left, right) => left.sequence - right.sequence
+  )
+  const projected = sortedEvents.map(projectActivityEvent)
   const lanes: Record<ActivityLane, ActivityViewModel[]> = {
     documentation: [],
     code: [],
     application: [],
     curator: [],
   }
-  const budgets = new Map<string, NonNullable<RunEvent["budget"]>>()
+  const runBudgets = new Map<string, NonNullable<RunEvent["budget"]>>()
+  const missionBudgets = new Map<string, NonNullable<RunEvent["budget"]>>()
   for (const [index, item] of projected.entries()) {
     lanes[item.lane].push(item)
-    const eventBudget = events.find(
-      (event) => event.sequence === item.sequence
-    )?.budget
-    if (eventBudget !== undefined) budgets.set(eventBudget.unit, eventBudget)
+    const source = sortedEvents[index]
+    const eventBudget = source?.budget
+    if (eventBudget !== undefined) {
+      if (source.missionId === undefined) {
+        runBudgets.set(eventBudget.unit, eventBudget)
+      } else {
+        missionBudgets.set(
+          `${source.missionId}:${eventBudget.unit}`,
+          eventBudget
+        )
+      }
+    }
     projected[index] = item
   }
+  const missionTotals = new Map<string, NonNullable<RunEvent["budget"]>>()
+  for (const budget of missionBudgets.values()) {
+    const current = missionTotals.get(budget.unit)
+    missionTotals.set(budget.unit, {
+      unit: budget.unit,
+      consumed: (current?.consumed ?? 0) + budget.consumed,
+      limit: (current?.limit ?? 0) + budget.limit,
+    })
+  }
+  const budgetUnits = [
+    ...new Set([...missionTotals.keys(), ...runBudgets.keys()]),
+  ].sort()
   return {
     lanes,
-    budgets: [...budgets.values()],
+    budgets: budgetUnits.map((unit) => {
+      const budget = runBudgets.get(unit) ?? missionTotals.get(unit)
+      if (budget === undefined) {
+        throw new Error("Projected budget unit is missing")
+      }
+      return budget
+    }),
     storyboard: projected.filter(
       (item) => item.screenshotArtifactId !== undefined
     ),

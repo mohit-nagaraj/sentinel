@@ -5,6 +5,7 @@ import {
   contentHashSchema,
   reportVerificationSchema,
   reportVerificationEnrichmentSchema,
+  runStatusSchema,
   timestampSchema,
   type AssessmentReportView,
   type ReportVerification,
@@ -37,12 +38,50 @@ const ownedRowSchema = z.object({
   latest_verification: z.unknown().nullable(),
 })
 
+const ownedStatusRowSchema = z.object({
+  assessment_id: z.uuid(),
+  application_database_id: z.uuid(),
+  run_id: z.uuid(),
+  run_status: runStatusSchema,
+  pull_request_number: z.coerce.number().int().positive(),
+  repository_owner: z.string().trim().min(1),
+  repository_name: z.string().trim().min(1),
+  error_category: z.string().nullable(),
+  error_code: z.string().nullable(),
+  error_retryable: z.boolean().nullable(),
+})
+
 export interface OwnedAssessmentReport {
   readonly assessmentId: string
   readonly applicationDatabaseId: string
   readonly artifactId: string
   readonly view: AssessmentReportView
   readonly verificationEnrichment: ReportVerificationEnrichment | null
+}
+
+export type OwnedAssessmentStatus = ReturnType<
+  typeof mapOwnedAssessmentStatus
+>
+
+function mapOwnedAssessmentStatus(value: unknown) {
+  const row = ownedStatusRowSchema.parse(value)
+  return {
+    assessmentId: row.assessment_id,
+    applicationDatabaseId: row.application_database_id,
+    runId: row.run_id,
+    runStatus: row.run_status,
+    pullRequestNumber: row.pull_request_number,
+    repositoryOwner: row.repository_owner,
+    repositoryName: row.repository_name,
+    error:
+      row.error_category === null || row.error_code === null
+        ? null
+        : {
+            category: row.error_category,
+            code: row.error_code,
+            retryable: row.error_retryable ?? false,
+          },
+  }
 }
 
 export class AssessmentReportRepository {
@@ -182,6 +221,46 @@ export class AssessmentReportRepository {
           ? null
           : reportVerificationEnrichmentSchema.parse(row.latest_verification),
     }
+  }
+
+  async getOwnedStatus(input: {
+    readonly operatorId: string
+    readonly assessmentId: string
+  }): Promise<OwnedAssessmentStatus | null> {
+    const rows = await this.database.query(
+      `select assessment.id as assessment_id,
+              application.id as application_database_id,
+              latest_run.id as run_id,
+              latest_run.status as run_status,
+              assessment.pull_request_number,
+              assessment.repository_owner,
+              assessment.repository_name,
+              latest_run.error_category,
+              latest_run.error_code,
+              latest_run.error_retryable
+         from sentinel.pr_assessments assessment
+         join sentinel.applications application
+           on application.id = assessment.application_id
+         join sentinel.onboarding_configurations onboarding
+           on onboarding.application_id = application.id
+          and onboarding.operator_id = $1::uuid
+         join lateral (
+           with recursive retries as (
+             select run.*
+               from sentinel.runs run
+              where run.id = assessment.run_id
+             union all
+             select child.*
+               from sentinel.runs child
+               join retries parent on child.retry_of = parent.id
+           )
+           select * from retries order by created_at desc, id desc limit 1
+         ) latest_run on true
+        where assessment.id = $2::uuid
+        limit 1`,
+      [z.uuid().parse(input.operatorId), z.uuid().parse(input.assessmentId)]
+    )
+    return rows[0] === undefined ? null : mapOwnedAssessmentStatus(rows[0])
   }
 
   async appendVerification(

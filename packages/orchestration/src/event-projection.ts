@@ -93,10 +93,15 @@ export function projectLangGraphEmission(
 }
 
 export class DurableRunEventSink implements OrchestrationEventSink {
-  private sequence = 0
+  private sequence: number
   private readonly instanceId = randomUUID()
 
-  constructor(private readonly appendRunEvent: AppendRunEvent) {}
+  constructor(
+    private readonly appendRunEvent: AppendRunEvent,
+    initialSequence = 0
+  ) {
+    this.sequence = z.number().int().nonnegative().parse(initialSequence)
+  }
 
   async append(
     event: OrchestrationEvent,

@@ -143,6 +143,59 @@ export const applicationExplorerPlannerDecisionSchema = z.discriminatedUnion(
   ]
 )
 
+const modelObservePageToolInputSchema = observePageToolInputSchema.extend({
+  previousObservationEvidenceId: evidenceIdSchema.nullable(),
+  previousStateFingerprint: contentHashSchema.nullable(),
+})
+
+const modelFinishApplicationMissionToolInputSchema = z.strictObject({
+  ...toolInputBase,
+  tool: z.literal("finish_application_mission"),
+  terminal: z.strictObject({
+    schemaVersion: schemaVersionSchema,
+    classification: applicationExplorerTerminalClassificationSchema,
+    status: terminalStatusSchema.nullable(),
+    reasonCode: reasonCodeSchema,
+    summary: persistedTextSchema,
+  }),
+})
+
+export const applicationExplorerPlannerModelDecisionSchema =
+  z.discriminatedUnion("tool", [
+    modelObservePageToolInputSchema,
+    performObservedActionToolInputSchema,
+    navigateHistoryToolInputSchema,
+    modelFinishApplicationMissionToolInputSchema,
+  ])
+
+export function parseApplicationExplorerPlannerModelDecision(input: unknown) {
+  const decision = applicationExplorerPlannerModelDecisionSchema.parse(input)
+  if (decision.tool !== "observe_page") {
+    if (decision.tool === "finish_application_mission") {
+      return applicationExplorerPlannerDecisionSchema.parse({
+        ...decision,
+        terminal: {
+          ...decision.terminal,
+          status:
+            terminalStatusByClassification[decision.terminal.classification],
+        },
+      })
+    }
+    return applicationExplorerPlannerDecisionSchema.parse(decision)
+  }
+  return applicationExplorerPlannerDecisionSchema.parse({
+    ...decision,
+    ...(decision.previousObservationEvidenceId === null
+      ? {}
+      : {
+          previousObservationEvidenceId: decision.previousObservationEvidenceId,
+        }),
+    ...(decision.previousStateFingerprint === null
+      ? {}
+      : { previousStateFingerprint: decision.previousStateFingerprint }),
+  })
+}
+
 export const applicationExplorerContextCandidateSchema = z.strictObject({
   schemaVersion: schemaVersionSchema,
   rank: z.number().int().positive().max(250),
