@@ -134,6 +134,14 @@ describe("run control contracts", () => {
       status: "succeeded",
       attemptCount: 0,
       assessmentId,
+      assessment: {
+        id: assessmentId,
+        repository: { host: "github.com", owner: "sentinel", name: "demo" },
+        pullRequestNumber: 29,
+        baseSha: "1".repeat(40),
+        headSha: "2".repeat(40),
+        reportAvailable: true,
+      },
       createdAt: "2026-09-08T00:00:00.000Z",
       finishedAt: "2026-09-08T00:01:00.000Z",
     }

@@ -3,6 +3,8 @@
 import {
   artifactIdSchema,
   createEventId,
+  evidenceIdSchema,
+  missionIdSchema,
   runIdSchema,
   type RunEvent,
 } from "@sentinel/contracts"
@@ -86,8 +88,8 @@ describe("activity projector", () => {
   })
 
   it("sums the latest cumulative budget from each specialist mission", () => {
-    const firstMission = `mission:v1:${"1".repeat(64)}`
-    const secondMission = `mission:v1:${"2".repeat(64)}`
+    const firstMission = missionIdSchema.parse(`mission:v1:${"1".repeat(64)}`)
+    const secondMission = missionIdSchema.parse(`mission:v1:${"2".repeat(64)}`)
     const projected = projectActivityFeed([
       event(1, {
         agent: "documentation",
@@ -121,11 +123,11 @@ describe("activity projector", () => {
     const projected = projectActivityEvent(
       event(1, {
         agent: "documentation",
-        missionId: `mission:v1:${"1".repeat(64)}`,
+        missionId: missionIdSchema.parse(`mission:v1:${"1".repeat(64)}`),
         kind: "tool_completed",
         toolName: "submit_requirement_claim",
         status: "completed",
-        evidenceIds: [`evidence:v1:${"a".repeat(64)}`],
+        evidenceIds: [evidenceIdSchema.parse(`evidence:v1:${"a".repeat(64)}`)],
         activity: {
           category: "tool",
           action: {

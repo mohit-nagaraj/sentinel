@@ -122,7 +122,10 @@ function runtimeDependencies(
     const state = await runs.controlState(databaseRunId(runId), workerId)
     if (state !== "active") {
       const error = new Error(state)
-      error.name = state === "lease_lost" ? "LeaseOwnershipError" : "CancelledOrchestrationError"
+      error.name =
+        state === "lease_lost"
+          ? "LeaseOwnershipError"
+          : "CancelledOrchestrationError"
       throw error
     }
   }
@@ -225,7 +228,9 @@ function endpointsFor(
 ) {
   const endpoints: EndpointEvidence[] = []
   for (const candidate of typescript.apiCallCandidates) {
-    const file = typescript.files.find(({ path }) => path === candidate.filePath)
+    const file = typescript.files.find(
+      ({ path }) => path === candidate.filePath
+    )
     if (file === undefined) continue
     endpoints.push(
       ...endpointFromFrontendCandidate({
@@ -253,7 +258,9 @@ function endpointsFor(
 export async function createPrAssessmentGraph(input: {
   readonly databaseUrl: string
   readonly workerId: string
-  readonly checkpointer: Parameters<typeof createPrInvestigation>[0]["checkpointer"]
+  readonly checkpointer: Parameters<
+    typeof createPrInvestigation
+  >[0]["checkpointer"]
 }): Promise<CompiledRunGraph> {
   const database = createPostgresDatabase(input.databaseUrl, {
     maxConnections: 1,
@@ -312,7 +319,8 @@ export async function createPrAssessmentGraph(input: {
         analyze: async (start, signal) => {
           try {
             const context = contexts.get(start.runId)
-            if (context === undefined) throw new Error("PR runtime context is missing")
+            if (context === undefined)
+              throw new Error("PR runtime context is missing")
             const connector = await connectorFor(context)
             const [base, head] = await Promise.all([
               connector.resolveCommit(
@@ -338,18 +346,18 @@ export async function createPrAssessmentGraph(input: {
                 limit: 100_000,
               })
               const analysis = await new PrDiffAnalyzer().analyze({
-                  pullRequestId: start.pullRequest.id,
-                  applicationId: start.applicationId,
-                  runId: start.runId,
-                  repository: context.repository,
-                  baseSha: context.baseSha,
-                  headSha: context.headSha,
-                  graphCommitSha: context.graphCommitSha,
-                  indexedPaths,
-                  baseSnapshot,
-                  headSnapshot,
-                  ...(signal === undefined ? {} : { signal }),
-                })
+                pullRequestId: start.pullRequest.id,
+                applicationId: start.applicationId,
+                runId: start.runId,
+                repository: context.repository,
+                baseSha: context.baseSha,
+                headSha: context.headSha,
+                graphCommitSha: context.graphCommitSha,
+                indexedPaths,
+                baseSnapshot,
+                headSnapshot,
+                ...(signal === undefined ? {} : { signal }),
+              })
               changedPaths.set(
                 start.runId,
                 [
@@ -382,7 +390,8 @@ export async function createPrAssessmentGraph(input: {
         investigate: async (mission, signal) => {
           try {
             const context = contexts.get(mission.runId)
-            if (context === undefined) throw new Error("PR runtime context is missing")
+            if (context === undefined)
+              throw new Error("PR runtime context is missing")
             const connector = await connectorFor(context)
             const investigationPaths =
               changedPaths.get(mission.runId) ?? mission.scope.repositoryPaths
@@ -393,121 +402,144 @@ export async function createPrAssessmentGraph(input: {
             )
             try {
               const snapshot = resolved.checkout.snapshots.get("source")
-              if (snapshot === undefined) throw new Error("PR head checkout is unavailable")
+              if (snapshot === undefined)
+                throw new Error("PR head checkout is unavailable")
               const typescript = await indexTypeScriptSource({
-              reader: snapshot,
-              applicationId: context.applicationId,
-              runId: mission.runId,
-              repository: context.repository,
-              commitSha: context.headSha,
-              roots: investigationPaths,
-              ...(signal === undefined ? {} : { signal }),
-              limits: {
-                timeoutMs: Math.min(mission.budget.elapsedMs, 8 * 60_000),
-                maxTotalBytes: Math.min(mission.budget.repositoryBytes, 512 * 1_024 * 1_024),
-                maxFiles: Math.min(mission.budget.repositoryFiles, 50_000),
-                maxTotalNodes: 40_000_000,
-              },
-            })
-            const phpPaths = snapshot
-              .enumerate()
-              .filter(
-                (entry) =>
-                  entry.kind === "file" &&
-                  entry.path.endsWith(".php") &&
-                  investigationPaths.some(
-                    (root) => entry.path === root || entry.path.startsWith(`${root}/`)
-                  )
-              )
-              .map((entry) => entry.path)
-            const php =
-              phpPaths.length === 0
-                ? undefined
-                : await new PhpLaravelIndexer({
-                    limits: {
-                      maxFiles: Math.min(
-                        10_000,
-                        mission.budget.repositoryFiles
-                      ),
-                      maxTotalBytes: Math.min(
-                        256 * 1_024 * 1_024,
-                        mission.budget.repositoryBytes
-                      ),
-                      maxFacts: 1_000_000,
-                      maxRequestBytes: 4 * 1_024 * 1_024,
-                      maxOutputBytes: 256 * 1_024 * 1_024,
-                      timeoutMs: Math.min(
-                        mission.budget.elapsedMs,
-                        8 * 60_000
-                      ),
-                    },
-                  }).indexCheckout(
-                    snapshot,
-                    phpPaths,
-                    {
+                reader: snapshot,
+                applicationId: context.applicationId,
+                runId: mission.runId,
+                repository: context.repository,
+                commitSha: context.headSha,
+                roots: investigationPaths,
+                ...(signal === undefined ? {} : { signal }),
+                limits: {
+                  timeoutMs: Math.min(mission.budget.elapsedMs, 8 * 60_000),
+                  maxTotalBytes: Math.min(
+                    mission.budget.repositoryBytes,
+                    512 * 1_024 * 1_024
+                  ),
+                  maxFiles: Math.min(mission.budget.repositoryFiles, 50_000),
+                  maxTotalNodes: 40_000_000,
+                },
+              })
+              const phpPaths = snapshot
+                .enumerate()
+                .filter(
+                  (entry) =>
+                    entry.kind === "file" &&
+                    entry.path.endsWith(".php") &&
+                    investigationPaths.some(
+                      (root) =>
+                        entry.path === root || entry.path.startsWith(`${root}/`)
+                    )
+                )
+                .map((entry) => entry.path)
+              const php =
+                phpPaths.length === 0
+                  ? undefined
+                  : await new PhpLaravelIndexer({
+                      limits: {
+                        maxFiles: Math.min(
+                          10_000,
+                          mission.budget.repositoryFiles
+                        ),
+                        maxTotalBytes: Math.min(
+                          256 * 1_024 * 1_024,
+                          mission.budget.repositoryBytes
+                        ),
+                        maxFacts: 1_000_000,
+                        maxRequestBytes: 4 * 1_024 * 1_024,
+                        maxOutputBytes: 256 * 1_024 * 1_024,
+                        timeoutMs: Math.min(
+                          mission.budget.elapsedMs,
+                          8 * 60_000
+                        ),
+                      },
+                    }).indexCheckout(snapshot, phpPaths, {
                       applicationId: context.applicationId,
                       repository: context.repository,
                       commitSha: context.headSha,
-                    }
-                  )
-            const endpoints = endpointsFor(
-              context.applicationId,
-              context.repository,
-              context.headSha,
-              typescript,
-              php
-            )
-            const scope = {
-              applicationDatabaseId: context.applicationDatabaseId,
-              applicationStableId: context.applicationId,
-              runDatabaseId: context.runDatabaseId,
-              runStableId: mission.runId,
-            }
-            const specialist = createCodeExplorerSpecialist({
-              mission,
-              model,
-              tools: new CodeExplorerTools(
-                new CodeExplorerRepository({
-                  applicationId: context.applicationId,
-                  runId: mission.runId,
-                  typescript: {
-                    index: typescript,
-                    query: createTypeScriptIndexQuery(typescript, snapshot),
-                  },
-                  ...(php === undefined
-                    ? {}
-                    : { php: { index: new PhpCodeIndex(php), snapshot } }),
-                  endpoints,
-                }),
-                mission
-              ),
-              store: new PostgresCodeExplorerSpecialistStore(database, scope),
-              executionCoordinator:
-                new PostgresSpecialistToolExecutionCoordinator(database, scope),
-              runtime: runtimeDependencies(input.workerId, runs, signal),
-              checkpointer: input.checkpointer,
-              options: { maxIterations: 30, maxTotalResultItems: 2_000 },
-            })
-              for (let attempt = 0; attempt < 4; attempt += 1) {
-                try {
-                  const result =
-                    attempt === 0
-                      ? await specialist.service.start()
-                      : await specialist.service.continue()
-                  if (result.codeMission !== undefined) {
-                    return codeMissionResultSchema.parse(result.codeMission)
-                  }
-                } catch (error) {
-                  if (!(error instanceof Error) || error.name !== "GraphInterrupt") {
-                    throw error
-                  }
-                  const interrupted = await specialist.service.getCodeResult()
-                  if (interrupted !== undefined) {
-                    return codeMissionResultSchema.parse(interrupted)
-                  }
-                }
+                    })
+              const endpoints = endpointsFor(
+                context.applicationId,
+                context.repository,
+                context.headSha,
+                typescript,
+                php
+              )
+              const scope = {
+                applicationDatabaseId: context.applicationDatabaseId,
+                applicationStableId: context.applicationId,
+                runDatabaseId: context.runDatabaseId,
+                runStableId: mission.runId,
               }
-              throw new Error("Code Explorer did not reach a terminal result")
+              const specialist = createCodeExplorerSpecialist({
+                mission,
+                model,
+                tools: new CodeExplorerTools(
+                  new CodeExplorerRepository({
+                    applicationId: context.applicationId,
+                    runId: mission.runId,
+                    typescript: {
+                      index: typescript,
+                      query: createTypeScriptIndexQuery(typescript, snapshot),
+                    },
+                    ...(php === undefined
+                      ? {}
+                      : { php: { index: new PhpCodeIndex(php), snapshot } }),
+                    endpoints,
+                  }),
+                  mission
+                ),
+                store: new PostgresCodeExplorerSpecialistStore(database, scope),
+                executionCoordinator:
+                  new PostgresSpecialistToolExecutionCoordinator(
+                    database,
+                    scope
+                  ),
+                runtime: runtimeDependencies(input.workerId, runs, signal),
+                checkpointer: input.checkpointer,
+                options: { maxIterations: 30, maxTotalResultItems: 2_000 },
+              })
+              try {
+                const result = await specialist.service.start()
+                if (result.codeMission !== undefined) {
+                  return codeMissionResultSchema.parse(result.codeMission)
+                }
+              } catch (error) {
+                if (
+                  !(error instanceof Error) ||
+                  error.name !== "GraphInterrupt"
+                ) {
+                  throw error
+                }
+                const interrupted = await specialist.service.getCodeResult()
+                if (interrupted !== undefined) {
+                  return codeMissionResultSchema.parse(interrupted)
+                }
+                return codeMissionResultSchema.parse({
+                  schemaVersion: 1,
+                  missionId: mission.id,
+                  status: "partial",
+                  claims: [],
+                  paths: [],
+                  unresolved: [],
+                  unresolvedBoundaries: [],
+                  exclusions: [
+                    "Additional head-code enrichment paused at its internal checkpoint; the current graph remains the source of impact evidence.",
+                  ],
+                  suggestedFollowups: [],
+                  stopReason: {
+                    code: "specialist_checkpoint_paused",
+                    summary:
+                      "Head-code enrichment paused before producing additional claims.",
+                  },
+                  budgetUsed: zeroBudget,
+                  traversalHopsUsed: 0,
+                  resultItemsUsed: 0,
+                })
+              }
+              throw new Error("Code Explorer produced no rich mission result")
             } finally {
               await resolved.checkout.dispose()
             }
@@ -520,9 +552,26 @@ export async function createPrAssessmentGraph(input: {
           }
         },
       },
-      graph,
+      graph: {
+        findPullRequestImpactPaths: async (query, signal) => {
+          try {
+            return await graph.findPullRequestImpactPaths(query, signal)
+          } catch (error) {
+            logWorkerError("pr_graph_query_failed", error, {
+              applicationId: query.applicationId,
+              graphRevision: query.graphRevision,
+              seedCount: query.seedIds.length,
+            })
+            throw error
+          }
+        },
+      },
       overlay: {
-        stageAssessmentEvidence: async ({ start, codeResults, graphPaths }) => ({
+        stageAssessmentEvidence: async ({
+          start,
+          codeResults,
+          graphPaths,
+        }) => ({
           curatorEvidenceStateId: hashCanonical({
             kind: "pr-assessment-evidence-state",
             applicationId: start.applicationId,
@@ -532,7 +581,9 @@ export async function createPrAssessmentGraph(input: {
             version: 1,
           }),
           validatedClaimIds: [],
-          rejectedClaimIds: codeResults.flatMap(({ claims }) => claims.map(({ id }) => id)),
+          rejectedClaimIds: codeResults.flatMap(({ claims }) =>
+            claims.map(({ id }) => id)
+          ),
           conflictIds: [],
         }),
         loadReconciledAssessmentEvidence: async ({ originalOverlay }) =>
@@ -540,12 +591,16 @@ export async function createPrAssessmentGraph(input: {
       },
       curator: {
         reconcile: async ({ applicationId, runId, evidenceStateId }) => {
-          const overlay = await investigationStore.findOverlayByEvidenceStateId(
-            evidenceStateId
-          )
-          if (overlay === null) throw new Error("PR assessment overlay is missing")
+          const overlay =
+            await investigationStore.findOverlayByEvidenceStateId(
+              evidenceStateId
+            )
+          if (overlay === null)
+            throw new Error("PR assessment overlay is missing")
           const nodes = new Set(
-            overlay.graphPaths.flatMap(({ path }) => path.nodes.map(({ id }) => id))
+            overlay.graphPaths.flatMap(({ path }) =>
+              path.nodes.map(({ id }) => id)
+            )
           )
           const entityKinds = overlay.graphPaths.flatMap(({ path }) =>
             path.nodes.map(({ kind }) => kind)
@@ -563,7 +618,10 @@ export async function createPrAssessmentGraph(input: {
               applicationId,
               runId,
               evidenceStateId,
-              evidenceFingerprint: hashCanonical({ evidenceStateId, overlayId: overlay.id }),
+              evidenceFingerprint: hashCanonical({
+                evidenceStateId,
+                overlayId: overlay.id,
+              }),
               gaps: [],
               stats: {
                 entityCount: nodes.size,
@@ -571,10 +629,17 @@ export async function createPrAssessmentGraph(input: {
                   (total, { path }) => total + path.relationships.length,
                   0
                 ),
-                requirementCount: entityKinds.filter((kind) => kind === "requirement").length,
-                workflowCount: entityKinds.filter((kind) => kind === "workflow").length,
-                endpointCount: entityKinds.filter((kind) => kind === "api-endpoint").length,
-                codeSymbolCount: entityKinds.filter((kind) => kind === "code-symbol").length,
+                requirementCount: entityKinds.filter(
+                  (kind) => kind === "requirement"
+                ).length,
+                workflowCount: entityKinds.filter((kind) => kind === "workflow")
+                  .length,
+                endpointCount: entityKinds.filter(
+                  (kind) => kind === "api-endpoint"
+                ).length,
+                codeSymbolCount: entityKinds.filter(
+                  (kind) => kind === "code-symbol"
+                ).length,
                 gapCount: 0,
                 humanGapCount: 0,
               },
@@ -594,7 +659,9 @@ export async function createPrAssessmentGraph(input: {
             assessmentId,
             headSha,
             result,
-            analysis: await investigationStore.loadAnalysis(result.diffAnalysisId),
+            analysis: await investigationStore.loadAnalysis(
+              result.diffAnalysisId
+            ),
           }),
       },
     },
@@ -617,7 +684,8 @@ export async function createPrAssessmentGraph(input: {
     publisher: {
       publish: async ({ view, markdown }) => {
         const context = contexts.get(view.runId)
-        if (context === undefined) throw new Error("PR report context is missing")
+        if (context === undefined)
+          throw new Error("PR report context is missing")
         await (artifactReady ??= artifacts.initialize())
         return reports.publish({
           applicationDatabaseId: context.applicationDatabaseId,
@@ -630,13 +698,16 @@ export async function createPrAssessmentGraph(input: {
     source: {
       resolve: async ({ investigation }) => {
         const context = contexts.get(investigation.runId)
-        if (context === undefined) throw new Error("PR report context is missing")
+        if (context === undefined)
+          throw new Error("PR report context is missing")
         const analysis = await investigationStore.loadAnalysis(
           investigation.diffAnalysisId
         )
         let overlay: PrInvestigationOverlay | undefined
         if (investigation.status === "completed") {
-          overlay = await investigationStore.loadOverlay(investigation.overlayId)
+          overlay = await investigationStore.loadOverlay(
+            investigation.overlayId
+          )
         }
         const candidates =
           overlay === undefined
@@ -676,7 +747,9 @@ export async function createPrAssessmentGraph(input: {
           coverage: [],
           exclusions: [
             ...(investigation.status === "action_required"
-              ? ["The active knowledge graph must be refreshed before this pull request can be assessed safely."]
+              ? [
+                  "The active knowledge graph must be refreshed before this pull request can be assessed safely.",
+                ]
               : []),
             ...investigation.unknowns.map(
               ({ unresolvedReasons }) =>
@@ -686,7 +759,8 @@ export async function createPrAssessmentGraph(input: {
           verification: {
             status: "verification_unavailable" as const,
             results: [],
-            reason: "No trusted deployment of this pull-request head is registered.",
+            reason:
+              "No trusted deployment of this pull-request head is registered.",
             version: 0,
           },
           generatedAt: new Date().toISOString(),
@@ -707,7 +781,8 @@ export async function createPrAssessmentGraph(input: {
           applicationDatabaseId: graphInput.applicationId,
           runDatabaseId: graphInput.runId,
         })
-        if (context === null) throw new Error("Current PR assessment context is unavailable")
+        if (context === null)
+          throw new Error("Current PR assessment context is unavailable")
         const resolved = await github.resolvePullRequest({
           installationId: context.installationId,
           pullRequestUrl: `https://github.com/${context.repository.owner}/${context.repository.name}/pull/${context.pullRequestNumber}`,
@@ -718,7 +793,9 @@ export async function createPrAssessmentGraph(input: {
           resolved.baseSha !== context.baseSha ||
           resolved.headSha !== context.headSha
         ) {
-          throw new Error("Pull request head changed before assessment execution")
+          throw new Error(
+            "Pull request head changed before assessment execution"
+          )
         }
         const runId = `run:${graphInput.runId}`
         contexts.set(runId, context)

@@ -113,7 +113,7 @@ export default async function ApplicationActivityPage({
                         <p className="mt-1 truncate text-xs text-muted-foreground">
                           {run.assessment.repository.owner}/
                           {run.assessment.repository.name} PR #
-                          {run.assessment.pullRequestNumber} / head {" "}
+                          {run.assessment.pullRequestNumber} / head{" "}
                           <span className="font-mono">
                             {run.assessment.headSha.slice(0, 12)}
                           </span>

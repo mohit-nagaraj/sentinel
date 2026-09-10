@@ -240,11 +240,7 @@ export class Neo4jGraphQueryRepository {
     readonly limit?: number
   }): Promise<readonly string[]> {
     const applicationId = applicationIdSchema.parse(input.applicationId)
-    const graphRevision = z
-      .number()
-      .int()
-      .positive()
-      .parse(input.graphRevision)
+    const graphRevision = z.number().int().positive().parse(input.graphRevision)
     const limit = z
       .number()
       .int()

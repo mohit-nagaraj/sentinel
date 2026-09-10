@@ -57,7 +57,19 @@ function run(status: PublicRun["status"] = "running"): PublicRun {
     ...(new Set(["cancelled", "succeeded", "failed"]).has(status)
       ? { finishedAt: "2026-09-09T00:01:00.000Z" }
       : {}),
-    ...(status === "succeeded" ? { assessmentId } : {}),
+    ...(status === "succeeded"
+      ? {
+          assessmentId,
+          assessment: {
+            id: assessmentId,
+            repository: { host: "github.com", owner: "sentinel", name: "demo" },
+            pullRequestNumber: 29,
+            baseSha: "1".repeat(40),
+            headSha: "2".repeat(40),
+            reportAvailable: true,
+          },
+        }
+      : {}),
     ...(status === "failed"
       ? {
           error: {
@@ -464,6 +476,7 @@ describe("run activity workspace", () => {
         initialRun={publicRunSchema.parse({
           ...run("succeeded"),
           assessmentId: undefined,
+          assessment: undefined,
         })}
         initialEventPage={page([])}
         live={false}

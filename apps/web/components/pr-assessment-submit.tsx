@@ -94,7 +94,10 @@ export function PrAssessmentSubmit({
             htmlFor="pull-request-url"
             className="flex items-center gap-2 text-sm font-semibold"
           >
-            <GitPullRequest className="size-4 text-primary" aria-hidden="true" />
+            <GitPullRequest
+              className="size-4 text-primary"
+              aria-hidden="true"
+            />
             Assess a pull request
           </label>
           <Input
@@ -105,7 +108,9 @@ export function PrAssessmentSubmit({
             value={pullRequestUrl}
             onChange={(event) => setPullRequestUrl(event.target.value)}
             placeholder="https://github.com/owner/repository/pull/123"
-            aria-describedby={message === null ? undefined : "assessment-message"}
+            aria-describedby={
+              message === null ? undefined : "assessment-message"
+            }
             disabled={submitting}
           />
         </div>

@@ -205,10 +205,7 @@ export class PostgresPrInvestigationStore implements PrInvestigationStore {
   }
 
   saveCuratorResult(value: EvidenceCuratorResult) {
-    return this.save(
-      "curator-result",
-      evidenceCuratorResultSchema.parse(value)
-    )
+    return this.save("curator-result", evidenceCuratorResultSchema.parse(value))
   }
 
   async loadCuratorResult(id: string) {
@@ -285,8 +282,7 @@ export class PrAssessmentRuntimeRepository {
       baseSha: row.base_sha,
       headSha: row.head_sha,
       installationId: row.github_installation_id,
-      repositoryPaths:
-        row.compatibility_report.proposedScope.repositoryPaths,
+      repositoryPaths: row.compatibility_report.proposedScope.repositoryPaths,
     }
   }
 

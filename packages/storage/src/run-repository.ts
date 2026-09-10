@@ -203,7 +203,11 @@ function mapRun(row: RunRow): RunRecord {
     assessmentId: parsed.assessment_id ?? null,
     ...(assessment === undefined
       ? {}
-      : { assessment: publicRunSchema.shape.assessment.unwrap().parse(assessment) }),
+      : {
+          assessment: publicRunSchema.shape.assessment
+            .unwrap()
+            .parse(assessment),
+        }),
   }
 }
 
@@ -632,9 +636,22 @@ export class RunRepository {
        join sentinel.onboarding_configurations onboarding
          on onboarding.application_id = run.application_id
         and onboarding.operator_id = $1::uuid
-       left join sentinel.pr_assessments assessment
-         on assessment.application_id = run.application_id
-        and assessment.run_id = run.id
+       left join lateral (
+         with recursive lineage as (
+           select run.id, run.retry_of, 0 as depth
+           union all
+           select parent.id, parent.retry_of, lineage.depth + 1
+             from sentinel.runs parent
+             join lineage on parent.id = lineage.retry_of
+            where lineage.depth < 20
+         )
+         select assessment.*
+           from lineage
+           join sentinel.pr_assessments assessment
+             on assessment.application_id = run.application_id
+            and assessment.run_id = lineage.id
+          limit 1
+       ) assessment on true
        where run.id = $2::uuid`,
       [operatorIdSchema.parse(operatorId), databaseRunIdSchema.parse(runId)]
     )
@@ -665,9 +682,22 @@ export class RunRepository {
        join sentinel.onboarding_configurations onboarding
          on onboarding.application_id = run.application_id
         and onboarding.operator_id = $1::uuid
-       left join sentinel.pr_assessments assessment
-         on assessment.application_id = run.application_id
-        and assessment.run_id = run.id
+       left join lateral (
+         with recursive lineage as (
+           select run.id, run.retry_of, 0 as depth
+           union all
+           select parent.id, parent.retry_of, lineage.depth + 1
+             from sentinel.runs parent
+             join lineage on parent.id = lineage.retry_of
+            where lineage.depth < 20
+         )
+         select assessment.*
+           from lineage
+           join sentinel.pr_assessments assessment
+             on assessment.application_id = run.application_id
+            and assessment.run_id = lineage.id
+          limit 1
+       ) assessment on true
        where ($2::uuid is null or run.application_id = $2::uuid)
          and ($3::timestamptz is null or (
            date_trunc('milliseconds', run.created_at), run.id

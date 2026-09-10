@@ -141,7 +141,8 @@ export function projectActivityFeed(
   for (const [index, item] of projected.entries()) {
     lanes[item.lane].push(item)
     const source = sortedEvents[index]
-    const eventBudget = source?.budget
+    if (source === undefined) continue
+    const eventBudget = source.budget
     if (eventBudget !== undefined) {
       if (source.missionId === undefined) {
         runBudgets.set(eventBudget.unit, eventBudget)

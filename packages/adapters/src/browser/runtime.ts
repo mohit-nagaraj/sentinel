@@ -651,6 +651,7 @@ export class PlaywrightBrowserEvidenceRuntime implements BrowserEvidenceRuntime 
         (candidate) => candidate.signature === record.candidate.signature
       )
       if (
+        current.stateFingerprint !== record.observation.stateFingerprint ||
         currentCandidate === undefined ||
         currentCandidate.behaviorFingerprint !== record.behaviorFingerprint
       ) {

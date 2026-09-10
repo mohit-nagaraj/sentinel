@@ -59,9 +59,7 @@ export interface OwnedAssessmentReport {
   readonly verificationEnrichment: ReportVerificationEnrichment | null
 }
 
-export type OwnedAssessmentStatus = ReturnType<
-  typeof mapOwnedAssessmentStatus
->
+export type OwnedAssessmentStatus = ReturnType<typeof mapOwnedAssessmentStatus>
 
 function mapOwnedAssessmentStatus(value: unknown) {
   const row = ownedStatusRowSchema.parse(value)

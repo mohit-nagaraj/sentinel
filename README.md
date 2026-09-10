@@ -10,10 +10,11 @@ paths to screens, workflows, and requirements, then produces a blast-radius
 report a QA lead can inspect — citations included, hidden model reasoning
 excluded.
 
-The reference slice is [Hi.Events](https://github.com/HiEventsDev/Hi.Events)
-[PR #1338](https://github.com/HiEventsDev/Hi.Events/pull/1338) (UTM attribution
-and the admin attribution report). Architecture, trust boundaries, and scope
-cuts live in [DESIGN.md](DESIGN.md).
+The reference slice is the
+[mohit-nagaraj/Hi.Events](https://github.com/mohit-nagaraj/Hi.Events) fork,
+[PR #1](https://github.com/mohit-nagaraj/Hi.Events/pull/1) (promo-code discount
+type enum). Architecture, trust boundaries, and scope cuts live in
+[DESIGN.md](DESIGN.md).
 
 ## Quick start
 
@@ -122,7 +123,7 @@ Sentinel’s own host.
 - [DESIGN.md](DESIGN.md) — architecture, graph semantics, evaluation, and
   next-week priorities
 - [docs/delivery/sample-report-hi-events-pr-1338.md](docs/delivery/sample-report-hi-events-pr-1338.md)
-  — product-rendered sample for PR #1338
+  — committed product-rendered sample from upstream PR #1338
 - [docs/evaluation/README.md](docs/evaluation/README.md) — harness protocol
 - [docs/security/threat-model.md](docs/security/threat-model.md) — trust
   boundaries and demo limitations

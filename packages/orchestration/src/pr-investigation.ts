@@ -1251,7 +1251,8 @@ export function createPrInvestigationCompiledRunGraph(input: {
       const result = await input.service.start(resolved)
       await context.assertActive()
       if (
-        (result.status === "completed" || result.status === "action_required") &&
+        (result.status === "completed" ||
+          result.status === "action_required") &&
         result.result !== undefined
       ) {
         const report = await input.reports.finalize(

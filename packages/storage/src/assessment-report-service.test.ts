@@ -107,6 +107,7 @@ describe("AssessmentReportDeliveryService", () => {
         artifactId: storedArtifact.id,
       }),
       getOwned: vi.fn().mockResolvedValue(null),
+      getOwnedStatus: vi.fn().mockResolvedValue(null),
     }
     artifacts = {
       persist: vi.fn().mockResolvedValue(storedArtifact),

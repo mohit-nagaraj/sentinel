@@ -940,9 +940,9 @@ describe("Documentation Explorer shared-kernel agent trajectories", () => {
       mode: "targeted_requirement_lookup",
       ordinal: 40,
       budget: {
-        modelCalls: 3,
-        modelInputTokens: 36_000,
-        modelOutputTokens: 1_536,
+        modelCalls: 5,
+        modelInputTokens: 60_000,
+        modelOutputTokens: 2_560,
       },
     })
     const requirementId = fixture.requirementId("checkout_email", "requirement")

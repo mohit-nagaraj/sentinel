@@ -36,7 +36,11 @@ export function AssessmentReportStatus({
         className="w-full max-w-xl border-y border-border py-8 text-center"
       >
         <Icon
-          className={pending ? "mx-auto size-6 text-primary" : "mx-auto size-6 text-destructive"}
+          className={
+            pending
+              ? "mx-auto size-6 text-primary"
+              : "mx-auto size-6 text-destructive"
+          }
           aria-hidden="true"
         />
         <p className="mt-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -44,8 +48,13 @@ export function AssessmentReportStatus({
           {assessment.repositoryOwner}/{assessment.repositoryName} PR #
           {assessment.pullRequestNumber}
         </p>
-        <h1 id="assessment-status-heading" className="mt-2 text-xl font-semibold">
-          {pending ? "Assessment report is being prepared" : "Assessment report is unavailable"}
+        <h1
+          id="assessment-status-heading"
+          className="mt-2 text-xl font-semibold"
+        >
+          {pending
+            ? "Assessment report is being prepared"
+            : "Assessment report is unavailable"}
         </h1>
         <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-muted-foreground">
           {pending

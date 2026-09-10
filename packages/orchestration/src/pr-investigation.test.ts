@@ -760,7 +760,7 @@ describe("PR investigation graph", () => {
     const finalizeReport = vi.fn().mockResolvedValue("published" as const)
     const compiled = createPrInvestigationCompiledRunGraph({
       service: fixture.service,
-      resolver: { resolve: async () => start() },
+      resolver: { resolve: async () => start("stale_relevant") },
       reports: { finalize: finalizeReport },
       checks: { publishCheck: async () => "published" },
     })
